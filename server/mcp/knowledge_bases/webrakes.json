@@ -1,0 +1,85 @@
+{
+  "client_id": "webrakes",
+  "business_name": "WeBrakes - Mobile Brake Repairs",
+  "tagline": "Expert brake repair at your location",
+  "owner_name": "Alex",
+  "greeting": "Hey, thanks for calling WeBrakes! I can help you get a quote or book a brake service. What's going on with your brakes?",
+  "services": [
+    {
+      "name": "Front brake pad replacement",
+      "price": "$159.99 + tax",
+      "duration_minutes": 60,
+      "description": "New front brake pads installed at your location"
+    },
+    {
+      "name": "Rear brake pad replacement",
+      "price": "$179.99 + tax",
+      "duration_minutes": 60,
+      "description": "New rear brake pads installed at your location"
+    },
+    {
+      "name": "Brake rotor replacement (per axle)",
+      "price": "Varies by vehicle — starting at $249.99 + tax",
+      "duration_minutes": 90,
+      "description": "Rotor resurfacing or replacement"
+    },
+    {
+      "name": "Brake fluid flush",
+      "price": "$89.99 + tax",
+      "duration_minutes": 30,
+      "description": "Complete brake fluid replacement"
+    },
+    {
+      "name": "Full brake inspection",
+      "price": "FREE with any service",
+      "duration_minutes": 15,
+      "description": "Complete check of pads, rotors, calipers, fluid"
+    }
+  ],
+  "service_area": "Greater Philadelphia and Delaware Valley — including Media, Ardmore, Glen Mills, Main Line, and surrounding areas",
+  "hours": "Monday through Sunday, 7:00 AM to 7:00 PM",
+  "mobile_service": true,
+  "mobile_note": "Our technician comes to your location — home, office, or any safe parking area",
+  "warranty": "24-month / 24,000-mile guarantee on all services",
+  "parts_quality": "OE-equivalent or better from trusted manufacturers",
+  "payment_methods": "Cash, credit/debit cards, financing available",
+  "booking_instructions": "Customer chooses a day and time that works. Technician arrives fully equipped. Same-day service usually available.",
+  "qualifying_questions": [
+    "What vehicle do you have? (year, make, model)",
+    "What symptoms are you experiencing? (squeaking, grinding, soft pedal, pulling, vibration)",
+    "Which brakes — front, rear, or both?",
+    "Where would you like the service done? (home address, office, etc.)",
+    "What day and time works best for you?"
+  ],
+  "transfer_rules": {
+    "always_transfer_if": [
+      "Customer has a complaint about previous service",
+      "Customer asks about commercial fleet pricing",
+      "Customer asks about insurance claims",
+      "Customer mentions legal issues",
+      "Customer explicitly asks to speak to a person"
+    ],
+    "transfer_to": "Alex",
+    "transfer_message": "Let me connect you with Alex right now. One moment please."
+  },
+  "faqs": [
+    {
+      "question": "Do you come to my location?",
+      "answer": "Yes! We're a mobile service. Our technician comes to your home, office, or anywhere convenient with a safe parking area."
+    },
+    {
+      "question": "How long does it take?",
+      "answer": "Most brake pad replacements take about 45 to 60 minutes. We'll give you an accurate estimate when we see your vehicle."
+    },
+    {
+      "question": "What if I need more than brake pads?",
+      "answer": "Our technician will do a full inspection on-site and let you know exactly what's needed before doing any additional work. No surprises."
+    },
+    {
+      "question": "Do you work on all car brands?",
+      "answer": "Yes — all domestic and European makes and models, including luxury brands like BMW, Mercedes, Audi, and Porsche."
+    }
+  ],
+  "review_link": "https://g.page/r/webrakes/review",
+  "unknown_question_response": "That's a great question! Let me have Alex get back to you on that. Can I take your number so he can call you back within 15 minutes?"
+}

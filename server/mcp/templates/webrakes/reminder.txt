@@ -1,0 +1,1 @@
+Reminder: your {service} appointment with WeBrakes is tomorrow at {time}. Our technician will arrive at your location. See you then!

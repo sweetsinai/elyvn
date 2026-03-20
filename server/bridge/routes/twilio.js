@@ -1,0 +1,224 @@
+const express = require('express');
+const router = express.Router();
+const { randomUUID } = require('crypto');
+const Anthropic = require('@anthropic-ai/sdk');
+const { sendSMS } = require('../utils/sms');
+const telegram = require('../utils/telegram');
+const { cancelBooking } = require('../utils/calcom');
+const fs = require('fs');
+const path = require('path');
+
+const anthropic = new Anthropic();
+
+// POST / — Twilio SMS webhook
+router.post('/', (req, res) => {
+  const { From, To, Body, MessageSid } = req.body;
+
+  // Respond with empty TwiML immediately
+  res.set('Content-Type', 'text/xml');
+  res.status(200).send('<Response></Response>');
+
+  const db = req.app.locals.db;
+  if (!db) {
+    console.error('[twilio] No database connection');
+    return;
+  }
+
+  // Process async
+  setImmediate(() => handleInboundSMS(db, { from: From, to: To, body: Body, messageSid: MessageSid }));
+});
+
+async function handleInboundSMS(db, { from, to, body, messageSid }) {
+  try {
+    console.log(`[twilio] SMS from ${from} to ${to}: ${body}`);
+
+    // Identify client by matching To number
+    const client = db.prepare(
+      'SELECT * FROM clients WHERE twilio_phone = ? OR retell_phone = ?'
+    ).get(to, to);
+
+    if (!client) {
+      console.error(`[twilio] No client found for number ${to}`);
+      return;
+    }
+
+    const trimmed = (body || '').toUpperCase().trim();
+
+    if (trimmed === 'CANCEL') {
+      await handleCancel(db, client, from, to);
+    } else if (trimmed === 'YES') {
+      await handleYes(db, client, from, to);
+    } else {
+      await handleNormalMessage(db, client, from, to, body, messageSid);
+    }
+  } catch (err) {
+    console.error('[twilio] handleInboundSMS error:', err);
+  }
+}
+
+async function handleCancel(db, client, from, replyFrom) {
+  try {
+    // Find most recent booking for this phone via leads table
+    const lead = db.prepare(
+      'SELECT calcom_booking_id FROM leads WHERE phone = ? AND client_id = ? AND calcom_booking_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1'
+    ).get(from, client.id);
+
+    if (!lead?.calcom_booking_id) {
+      await sendSMS(from, 'No upcoming appointment found to cancel.', replyFrom);
+      return;
+    }
+
+    const result = await cancelBooking(lead.calcom_booking_id);
+
+    if (result.success) {
+      // Update lead stage
+      db.prepare(
+        'UPDATE leads SET calcom_booking_id = NULL, stage = \'contacted\', updated_at = ? WHERE phone = ? AND client_id = ?'
+      ).run(new Date().toISOString(), from, client.id);
+
+      await sendSMS(from, 'Your appointment has been cancelled.', replyFrom);
+      console.log(`[twilio] Booking ${lead.calcom_booking_id} cancelled for ${from}`);
+    } else {
+      await sendSMS(from, 'Sorry, we couldn\'t cancel your appointment right now. Please call us directly.', replyFrom);
+    }
+  } catch (err) {
+    console.error('[twilio] handleCancel error:', err);
+    await sendSMS(from, 'Sorry, something went wrong. Please call us directly.', replyFrom).catch(() => {});
+  }
+}
+
+async function handleYes(db, client, from, replyFrom) {
+  try {
+    const bookingLink = client.calcom_booking_link;
+
+    if (bookingLink) {
+      await sendSMS(from, `Book your appointment here: ${bookingLink}`, replyFrom);
+    } else {
+      await sendSMS(from, 'Please call us to schedule your appointment.', replyFrom);
+    }
+  } catch (err) {
+    console.error('[twilio] handleYes error:', err);
+  }
+}
+
+async function handleNormalMessage(db, client, from, to, body, messageSid) {
+  try {
+    // Load client knowledge base
+    let kb = '';
+    const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
+    try {
+      const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
+      kb = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
+    } catch (_) {
+      console.log(`[twilio] No KB found for client ${client.id}`);
+    }
+
+    // Claude generates reply based on KB
+    let reply = '';
+    let confidence = 'medium';
+
+    try {
+      const resp = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        system: `You are a helpful SMS assistant for ${client.business_name || 'our business'}. Answer the customer's question using ONLY the following knowledge base information. Do not make up information not found in the knowledge base.
+
+Knowledge Base:
+${kb || 'No knowledge base available.'}
+
+Reply in JSON format: {"reply": "your reply text (keep under 160 chars for SMS)", "confidence": "high" | "medium" | "low"}
+If you cannot answer from the knowledge base, set confidence to "low".`,
+        messages: [{ role: 'user', content: body }]
+      });
+
+      const rawText = resp.content[0]?.text || '';
+      try {
+        const parsed = JSON.parse(rawText);
+        reply = parsed.reply || rawText;
+        confidence = parsed.confidence || 'medium';
+      } catch (_) {
+        reply = rawText;
+      }
+    } catch (err) {
+      console.error('[twilio] Claude reply generation failed:', err.message);
+      reply = 'Thanks for your message! We\'ll get back to you shortly.';
+      confidence = 'low';
+    }
+
+    // Low confidence: send generic reply + notify owner
+    if (confidence === 'low') {
+      reply = 'Great question! Let me check with the team and get back to you shortly.';
+
+      if (client.owner_phone) {
+        sendSMS(
+          client.owner_phone,
+          `[ELYVN] Question from ${from} that needs your input:\n"${body}"`
+        ).catch(err => console.error('[twilio] Owner notification failed:', err.message));
+      }
+    }
+
+    // Upsert lead
+    const existingLead = db.prepare(
+      'SELECT id FROM leads WHERE phone = ? AND client_id = ?'
+    ).get(from, client.id);
+
+    let leadId;
+    if (existingLead) {
+      leadId = existingLead.id;
+      db.prepare('UPDATE leads SET last_contact = ?, updated_at = ? WHERE id = ?')
+        .run(new Date().toISOString(), new Date().toISOString(), leadId);
+    } else {
+      leadId = randomUUID();
+      db.prepare(`
+        INSERT INTO leads (id, client_id, phone, stage, last_contact, created_at, updated_at)
+        VALUES (?, ?, ?, 'new', ?, ?, ?)
+      `).run(leadId, client.id, from, new Date().toISOString(), new Date().toISOString(), new Date().toISOString());
+    }
+
+    // Insert message record
+    db.prepare(`
+      INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, confidence, created_at)
+      VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, datetime('now'))
+    `).run(randomUUID(), client.id, leadId, from, body, messageSid || null, confidence);
+
+    // Send reply via Twilio REST API
+    await sendSMS(from, reply, to);
+
+    // Record outbound message
+    db.prepare(`
+      INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, confidence, created_at)
+      VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'auto_replied', ?, datetime('now'))
+    `).run(randomUUID(), client.id, leadId, from, reply, confidence);
+
+    // === Telegram notification ===
+    try {
+      const clientForNotify = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
+      if (clientForNotify && clientForNotify.telegram_chat_id) {
+        if (confidence === 'low') {
+          const { text, buttons } = telegram.formatEscalation(
+            { phone: from, body, id: randomUUID() },
+            reply,
+            clientForNotify
+          );
+          telegram.sendMessage(clientForNotify.telegram_chat_id, text, { inline_keyboard: buttons });
+        } else {
+          const { text, buttons } = telegram.formatMessageNotification(
+            { phone: from, body, id: randomUUID() },
+            reply,
+            confidence,
+            clientForNotify
+          );
+          telegram.sendMessage(clientForNotify.telegram_chat_id, text, { inline_keyboard: buttons });
+        }
+      }
+    } catch (tgErr) {
+      console.error('[twilio] Telegram notification failed:', tgErr.message);
+    }
+
+    console.log(`[twilio] Replied to ${from}: ${reply.substring(0, 50)}...`);
+  } catch (err) {
+    console.error('[twilio] handleNormalMessage error:', err);
+  }
+}
+
+module.exports = router;

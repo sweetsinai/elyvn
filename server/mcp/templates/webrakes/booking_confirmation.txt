@@ -1,0 +1,1 @@
+Your appointment is booked for {date} at {time}. Our technician will come to your location fully equipped. See you then! Reply CANCEL to cancel.

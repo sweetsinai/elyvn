@@ -1,0 +1,14 @@
+{
+  "name": "elyvn",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n mcp,bridge,dash -c blue,green,yellow \"cd server/mcp && python main.py\" \"cd server/bridge && node index.js\" \"cd dashboard && npx vite\"",
+    "start": "concurrently -n mcp,bridge \"cd server/mcp && python main.py\" \"cd server/bridge && node index.js\"",
+    "build": "cd dashboard && npx vite build",
+    "db:reset": "rm -f server/mcp/elyvn.db && cd server/mcp && python -c 'from db import init_db; import asyncio; asyncio.run(init_db())'"
+  },
+  "dependencies": {
+    "concurrently": "^8.0.0"
+  }
+}
