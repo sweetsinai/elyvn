@@ -1,6 +1,6 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm install && cd server/bridge && npm install && cd ../../dashboard && npm install && npm run build && cd .. && pip install -r server/requirements.txt"
+buildCommand = "npm install && cd server/bridge && npm install && cd ../../dashboard && npm install && npm run build && cd .. && python3 -m pip install -r server/requirements.txt"
 
 [deploy]
 startCommand = "npm run start"
