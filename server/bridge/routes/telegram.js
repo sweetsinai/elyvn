@@ -110,9 +110,9 @@ async function handleCommand(db, message) {
       const msgs = db.prepare(
         `SELECT COUNT(*) as total FROM messages WHERE client_id = ? AND created_at >= ?`
       ).get(client.id, since);
-      const rev = db.prepare(
-        `SELECT COALESCE(SUM(estimated_revenue), 0) as revenue FROM calls WHERE client_id = ? AND outcome = 'booked' AND created_at >= ?`
-      ).get(client.id, since);
+      const bookedCount = calls.booked || 0;
+      const clientData = db.prepare('SELECT avg_ticket FROM clients WHERE id = ?').get(client.id);
+      const rev = { revenue: bookedCount * (clientData?.avg_ticket || 0) };
 
       await telegram.sendMessage(chatId,
         `<b>Last 7 days</b>\n\n`
