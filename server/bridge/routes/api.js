@@ -381,9 +381,9 @@ router.put('/clients/:clientId', (req, res) => {
 
     const allowedFields = [
       'business_name', 'owner_name', 'owner_phone', 'owner_email',
-      'retell_phone', 'twilio_phone', 'industry', 'timezone',
-      'calcom_event_type_id', 'calcom_booking_link',
-      'avg_ticket'
+      'retell_agent_id', 'retell_phone', 'twilio_phone', 'industry', 'timezone',
+      'calcom_event_type_id', 'calcom_booking_link', 'telegram_chat_id',
+      'avg_ticket', 'is_active'
     ];
 
     const setClauses = [];
