@@ -66,21 +66,27 @@ async function triggerSpeedSequence(db, leadData) {
   // === TOUCH 3: Follow-up SMS (5 minutes) ===
   scheduleFollowUpSMS(db, { leadId, clientId, phone, name, delayMs: 300000, client });
 
-  // === TOUCH 4/5: Standard follow-ups (24h + 72h) ===
+  // === TOUCH 4/5: Standard follow-ups (24h + 72h) — dedup by touch_number ===
   try {
     const now = Date.now();
     const tomorrow = new Date(now + 24 * 60 * 60 * 1000).toISOString();
     const threeDays = new Date(now + 72 * 60 * 60 * 1000).toISOString();
 
-    db.prepare(`
-      INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
-      VALUES (?, ?, ?, 4, 'reminder_or_nudge', NULL, 'pending', ?, 'scheduled')
-    `).run(randomUUID(), leadId, clientId, tomorrow);
+    const has4 = db.prepare("SELECT id FROM followups WHERE lead_id = ? AND touch_number = 4 AND status = 'scheduled'").get(leadId);
+    if (!has4) {
+      db.prepare(`
+        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+        VALUES (?, ?, ?, 4, 'reminder_or_nudge', NULL, 'pending', ?, 'scheduled')
+      `).run(randomUUID(), leadId, clientId, tomorrow);
+    }
 
-    db.prepare(`
-      INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
-      VALUES (?, ?, ?, 5, 'review_or_final', NULL, 'pending', ?, 'scheduled')
-    `).run(randomUUID(), leadId, clientId, threeDays);
+    const has5 = db.prepare("SELECT id FROM followups WHERE lead_id = ? AND touch_number = 5 AND status = 'scheduled'").get(leadId);
+    if (!has5) {
+      db.prepare(`
+        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+        VALUES (?, ?, ?, 5, 'review_or_final', NULL, 'pending', ?, 'scheduled')
+      `).run(randomUUID(), leadId, clientId, threeDays);
+    }
   } catch (err) {
     console.error('[SpeedToLead] Follow-up insert failed:', err.message);
   }
@@ -109,7 +115,6 @@ async function triggerSpeedSequence(db, leadData) {
       {
         reply_markup: {
           inline_keyboard: [[
-            { text: '📞 Call them first', url: `tel:${phone}` },
             { text: '⏸ Cancel sequence', callback_data: `cancel_speed:${leadId}` }
           ]]
         }

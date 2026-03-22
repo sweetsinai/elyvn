@@ -213,7 +213,7 @@ async function handleCallback(db, callbackQuery) {
 
   if (data.startsWith('transcript:')) {
     const callId = data.split(':')[1];
-    const call = db.prepare('SELECT transcript FROM calls WHERE id = ?').get(callId);
+    const call = db.prepare('SELECT transcript FROM calls WHERE call_id = ?').get(callId);
     if (call && call.transcript) {
       let transcript = call.transcript;
       if (transcript.length > 3500) {

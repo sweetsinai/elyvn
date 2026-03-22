@@ -146,44 +146,57 @@ async function handleCallEnded(db, call) {
 
     // 3. Generate summary from transcript
     let summary = '';
-    try {
-      const summaryResp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 150,
-        messages: [{ role: 'user', content: `Summarize this phone call transcript in exactly 2 lines. Be specific about what was discussed and any outcomes:\n\n${transcriptText}` }]
-      });
-      summary = summaryResp.content[0]?.text || '';
-    } catch (err) {
-      console.error('[retell] Summary generation failed:', err.message);
-      summary = 'Summary unavailable';
-    }
-
-    // 4. Score lead 1-10
     let score = 5;
-    try {
-      const scoreResp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 10,
-        messages: [{ role: 'user', content: `Score this lead 1-10 based on their interest, urgency, and qualification from this call transcript. Reply with ONLY a single number:\n\n${transcriptText}` }]
-      });
-      const parsed = parseInt(scoreResp.content[0]?.text?.trim(), 10);
-      if (parsed >= 1 && parsed <= 10) score = parsed;
-    } catch (err) {
-      console.error('[retell] Lead scoring failed:', err.message);
+
+    if (!transcriptText || transcriptText.trim().length < 10) {
+      // Too short to summarize — use fallback
+      console.warn(`[retell] Transcript too short for ${callId} (${transcriptText?.length || 0} chars) — skipping Claude`);
+      summary = callAnalysis.call_summary || 'Call too short for summary';
+      // score stays at 5
+    } else {
+      try {
+        const summaryResp = await anthropic.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 150,
+          messages: [{ role: 'user', content: `Summarize this phone call transcript in exactly 2 lines. Be specific about what was discussed and any outcomes:\n\n${transcriptText}` }]
+        });
+        summary = summaryResp.content[0]?.text || '';
+      } catch (err) {
+        console.error('[retell] Summary generation failed:', err.message);
+        summary = callAnalysis.call_summary || 'Summary unavailable';
+      }
+
+      // 4. Score lead 1-10
+      try {
+        const scoreResp = await anthropic.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 10,
+          messages: [{ role: 'user', content: `Score this lead 1-10 based on their interest, urgency, and qualification from this call transcript. Reply with ONLY a single number:\n\n${transcriptText}` }]
+        });
+        const parsed = parseInt(scoreResp.content[0]?.text?.trim(), 10);
+        if (parsed >= 1 && parsed <= 10) score = parsed;
+      } catch (err) {
+        console.error('[retell] Lead scoring failed:', err.message);
+      }
     }
 
     // 5. Determine outcome
     let outcome = 'info_provided';
-    const analysisOutcome = callAnalysis.call_successful;
     const bookingId = customAnalysis.calcom_booking_id || callData.metadata?.calcom_booking_id;
+    const disconnectionReason = callData.disconnection_reason || call.disconnection_reason || '';
 
     if (bookingId) {
       outcome = 'booked';
-    } else if (callAnalysis.agent_transfer || customAnalysis.transferred) {
+    } else if (
+      callAnalysis.agent_transfer ||
+      customAnalysis.transferred ||
+      disconnectionReason === 'agent_transfer' ||
+      disconnectionReason === 'transfer_to_human'
+    ) {
       outcome = 'transferred';
     } else if (duration < 10) {
       outcome = 'missed';
-    } else if (callAnalysis.voicemail_detected) {
+    } else if (callAnalysis.voicemail_detected || disconnectionReason === 'voicemail_reached') {
       outcome = 'voicemail';
     }
 
@@ -429,6 +442,14 @@ function scheduleFollowUp(db, clientId, callerPhone, outcome) {
         ];
 
     for (const touch of touches) {
+      // Skip if this touch_number already scheduled for this lead
+      const existing = db.prepare(
+        "SELECT id FROM followups WHERE lead_id = ? AND touch_number = ? AND status = 'scheduled'"
+      ).get(leadId, touch.touchNumber);
+      if (existing) {
+        console.log(`[retell] Skipping duplicate followup touch ${touch.touchNumber} for lead ${leadId}`);
+        continue;
+      }
       const scheduledAt = new Date(now.getTime() + touch.delayMs);
       db.prepare(`
         INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)

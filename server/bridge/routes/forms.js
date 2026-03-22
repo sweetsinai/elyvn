@@ -78,15 +78,15 @@ router.post('/:clientId', async (req, res) => {
     if (existingLead) {
       leadId = existingLead.id;
       db.prepare(
-        `UPDATE leads SET name = COALESCE(?, name), last_contact = datetime('now'),
+        `UPDATE leads SET name = COALESCE(?, name), email = COALESCE(?, email), last_contact = datetime('now'),
          stage = 'new', updated_at = datetime('now') WHERE id = ?`
-      ).run(name, leadId);
+      ).run(name, email || null, leadId);
     } else {
       leadId = randomUUID();
       db.prepare(`
-        INSERT INTO leads (id, client_id, name, phone, source, score, stage, last_contact, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'), datetime('now'))
-      `).run(leadId, clientId, name, phone, source);
+        INSERT INTO leads (id, client_id, name, phone, email, source, score, stage, last_contact, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'), datetime('now'))
+      `).run(leadId, clientId, name, phone, email || null, source);
     }
 
     // Log inbound message

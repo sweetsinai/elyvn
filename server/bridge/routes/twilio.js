@@ -103,6 +103,54 @@ async function handleYes(db, client, from, replyFrom) {
 
 async function handleNormalMessage(db, client, from, to, body, messageSid) {
   try {
+    // Check if AI is paused — log message but do not auto-reply
+    if (!client.is_active) {
+      console.log(`[twilio] AI paused for client ${client.id} — logging message from ${from} without reply`);
+      // Upsert lead so the message is tracked
+      const existingLead = db.prepare('SELECT id FROM leads WHERE phone = ? AND client_id = ?').get(from, client.id);
+      let leadId;
+      if (existingLead) {
+        leadId = existingLead.id;
+      } else {
+        leadId = randomUUID();
+        db.prepare(`
+          INSERT INTO leads (id, client_id, phone, stage, last_contact, created_at, updated_at)
+          VALUES (?, ?, ?, 'new', ?, ?, ?)
+        `).run(leadId, client.id, from, new Date().toISOString(), new Date().toISOString(), new Date().toISOString());
+      }
+      // Log inbound message
+      db.prepare(`
+        INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, created_at)
+        VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, datetime('now'))
+      `).run(randomUUID(), client.id, leadId, from, body, messageSid || null);
+      // Notify owner via Telegram
+      if (client.telegram_chat_id) {
+        const tg = require('../utils/telegram');
+        tg.sendMessage(
+          client.telegram_chat_id,
+          `⏸ <b>AI paused</b> — message received (no auto-reply)\n\nFrom: ${from}\nMessage: "${(body || '').substring(0, 200)}"`
+        ).catch(() => {});
+      }
+      return;
+    }
+
+    // Rate limit: don't auto-reply if we already replied to this number in the last 5 minutes
+    const recentOutbound = db.prepare(
+      "SELECT COUNT(*) as c FROM messages WHERE phone = ? AND direction = 'outbound' AND created_at >= datetime('now','-5 minutes')"
+    ).get(from);
+    if (recentOutbound.c > 0) {
+      console.log(`[twilio] Rate limited outbound to ${from} — already replied within 5 min`);
+      // Still log the inbound message
+      const existingLead2 = db.prepare('SELECT id FROM leads WHERE phone = ? AND client_id = ?').get(from, client.id);
+      if (existingLead2) {
+        db.prepare(`
+          INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, created_at)
+          VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, datetime('now'))
+        `).run(randomUUID(), client.id, existingLead2.id, from, body, messageSid || null);
+      }
+      return;
+    }
+
     // Load client knowledge base
     let kb = '';
     const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
@@ -210,14 +258,14 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
       if (clientForNotify && clientForNotify.telegram_chat_id) {
         if (confidence === 'low') {
           const { text, buttons } = telegram.formatEscalation(
-            { phone: from, body, id: randomUUID() },
+            { phone: from, body, id: messageSid || randomUUID() },
             reply,
             clientForNotify
           );
           telegram.sendMessage(clientForNotify.telegram_chat_id, text, { reply_markup: { inline_keyboard: buttons } });
         } else {
           const { text, buttons } = telegram.formatMessageNotification(
-            { phone: from, body, id: randomUUID() },
+            { phone: from, body, id: messageSid || randomUUID() },
             reply,
             confidence,
             clientForNotify
