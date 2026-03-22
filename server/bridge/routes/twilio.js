@@ -135,9 +135,10 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
       try {
         const parsed = JSON.parse(rawText);
         reply = parsed.reply || rawText;
-        confidence = parsed.confidence || 'medium';
+        confidence = ['high', 'medium', 'low'].includes(parsed.confidence) ? parsed.confidence : 'high';
       } catch (_) {
         reply = rawText;
+        confidence = 'high';
       }
     } catch (err) {
       console.error('[twilio] Claude reply generation failed:', err.message);
