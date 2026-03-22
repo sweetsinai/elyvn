@@ -50,25 +50,22 @@ function formatCallNotification(call, client) {
     : call.outcome === 'missed' ? '&#10060;'
     : call.outcome === 'voicemail' ? '&#128233;'
     : '&#128222;';
-  const scoreEmoji = call.lead_score >= 7 ? '&#128293;' : '&#129398;';
+  const scoreEmoji = (call.score || 0) >= 7 ? '&#128293;' : '&#129398;';
   const duration = call.duration ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s` : 'N/A';
   const phone = call.caller_phone || call.phone || '';
 
   const text = `${outcomeEmoji} <b>Call ${call.outcome}</b>\n\n`
     + `<b>Caller:</b> ${call.caller_name || phone}\n`
     + `<b>Duration:</b> ${duration}\n`
-    + `<b>Score:</b> ${call.lead_score || 0}/10 ${scoreEmoji}\n\n`
+    + `<b>Score:</b> ${call.score || 0}/10 ${scoreEmoji}\n\n`
     + `<b>Summary:</b> ${call.summary || 'No summary'}`;
 
   const buttons = [];
   buttons.push([
     { text: 'Full transcript', callback_data: `transcript:${call.id}` },
   ]);
-  if (phone) {
-    buttons[0].push({ text: 'Call back', url: `tel:${phone}` });
-  }
 
-  return { text, reply_markup: { inline_keyboard: buttons } };
+  return { text, buttons };
 }
 
 function formatTransferAlert(call, summary, client) {
@@ -81,20 +78,20 @@ function formatTransferAlert(call, summary, client) {
 }
 
 function formatMessageNotification(message, replyText, confidence, client) {
-  const confEmoji = confidence >= 0.8 ? '&#9989;' : confidence >= 0.5 ? '&#9888;&#65039;' : '&#10060;';
+  const confEmoji = confidence === 'high' ? '&#9989;' : confidence === 'medium' ? '&#9888;&#65039;' : '&#10060;';
   const phone = message.from_phone || message.phone || '';
   const text = `&#128172; <b>New message</b>\n\n`
     + `<b>From:</b> ${message.from_name || phone}\n`
     + `<b>Their message:</b> ${message.body || message.text || ''}\n\n`
     + `<b>AI reply:</b> ${replyText}\n`
-    + `<b>Confidence:</b> ${Math.round((confidence || 0) * 100)}% ${confEmoji}`;
+    + `<b>Confidence:</b> ${confEmoji}`;
 
   const buttons = [[
     { text: 'Good reply', callback_data: `msg_ok:${message.id}` },
     { text: "I'll handle this", callback_data: `msg_takeover:${message.id}:${phone}` },
   ]];
 
-  return { text, reply_markup: { inline_keyboard: buttons } };
+  return { text, buttons };
 }
 
 function formatEscalation(message, aiReply, client) {
@@ -105,14 +102,8 @@ function formatEscalation(message, aiReply, client) {
     + `<b>AI draft (not sent):</b> ${aiReply || 'None'}`;
 
   const buttons = [];
-  if (phone) {
-    buttons.push([
-      { text: 'Call them', url: `tel:${phone}` },
-      { text: 'Text them', url: `sms:${phone}` },
-    ]);
-  }
 
-  return { text, reply_markup: { inline_keyboard: buttons } };
+  return { text, buttons };
 }
 
 function formatBookingNotification(booking, client) {

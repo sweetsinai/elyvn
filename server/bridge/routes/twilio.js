@@ -214,7 +214,7 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
             reply,
             clientForNotify
           );
-          telegram.sendMessage(clientForNotify.telegram_chat_id, text, { inline_keyboard: buttons });
+          telegram.sendMessage(clientForNotify.telegram_chat_id, text, { reply_markup: { inline_keyboard: buttons } });
         } else {
           const { text, buttons } = telegram.formatMessageNotification(
             { phone: from, body, id: randomUUID() },
@@ -222,7 +222,7 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
             confidence,
             clientForNotify
           );
-          telegram.sendMessage(clientForNotify.telegram_chat_id, text, { inline_keyboard: buttons });
+          telegram.sendMessage(clientForNotify.telegram_chat_id, text, { reply_markup: { inline_keyboard: buttons } });
         }
       }
     } catch (tgErr) {

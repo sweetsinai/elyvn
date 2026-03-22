@@ -94,7 +94,7 @@ async function handleCommand(db, message) {
         let msg = `<b>Today's schedule</b> (${bookings.length})\n\n`;
         bookings.forEach((b, i) => {
           const time = b.created_at ? new Date(b.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
-          msg += `${i + 1}. ${time} - ${b.caller_name || b.phone || 'Unknown'}\n`;
+          msg += `${i + 1}. ${time} - ${b.caller_name || b.caller_phone || 'Unknown'}\n`;
           if (b.summary) msg += `   ${b.summary.substring(0, 80)}\n`;
         });
         await telegram.sendMessage(chatId, msg);
@@ -140,7 +140,7 @@ async function handleCommand(db, message) {
             : c.outcome === 'voicemail' ? '&#128233;'
             : '&#128222;';
           const duration = c.duration ? `${Math.floor(c.duration / 60)}m ${c.duration % 60}s` : '';
-          msg += `${outcomeEmoji} ${c.caller_name || c.phone || 'Unknown'}`;
+          msg += `${outcomeEmoji} ${c.caller_name || c.caller_phone || 'Unknown'}`;
           if (duration) msg += ` (${duration})`;
           if (c.score) msg += ` - Score: ${c.score}/10`;
           msg += `\n`;

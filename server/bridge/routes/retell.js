@@ -58,10 +58,14 @@ function handleCallStarted(db, call) {
     const callerPhone = call.from_number;
     const direction = call.direction || 'inbound';
 
-    // Match client by retell phone number
-    const client = db.prepare(
+    // Match client by retell phone number; fall back to agent ID for web calls
+    let client = db.prepare(
       `SELECT id FROM clients WHERE retell_phone = ? OR twilio_phone = ?`
     ).get(toNumber, toNumber);
+
+    if (!client && call.agent_id) {
+      client = db.prepare('SELECT id FROM clients WHERE retell_agent_id = ?').get(call.agent_id);
+    }
 
     const clientId = client?.id || null;
 
@@ -81,27 +85,57 @@ async function handleCallEnded(db, call) {
     const callId = call.call_id;
     console.log(`[retell] call_ended: ${callId}`);
 
-    // 1. Fetch full call data from Retell
-    const retellResp = await fetch(`${RETELL_BASE}/get-call/${callId}`, {
-      headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` }
-    });
-
-    if (!retellResp.ok) {
-      console.error(`[retell] Failed to fetch call ${callId}: ${retellResp.status}`);
-      return;
+    // 1. Fetch full call data from Retell (fall back to webhook payload on failure)
+    let callData = {};
+    if (RETELL_API_KEY) {
+      try {
+        const retellResp = await fetch(`${RETELL_BASE}/get-call/${callId}`, {
+          headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` }
+        });
+        if (retellResp.ok) {
+          callData = await retellResp.json();
+        } else {
+          console.warn(`[retell] Retell API fetch failed for ${callId} (${retellResp.status}), using webhook payload`);
+        }
+      } catch (fetchErr) {
+        console.warn(`[retell] Retell API fetch error for ${callId}:`, fetchErr.message, '— using webhook payload');
+      }
+    } else {
+      console.warn('[retell] No RETELL_API_KEY — using webhook payload data only');
     }
 
-    const callData = await retellResp.json();
     const transcript = callData.transcript || '';
-    const duration = callData.call_length || call.duration || 0;
-    const callAnalysis = callData.call_analysis || {};
-    const customAnalysis = callData.custom_analysis_data || {};
+    const duration = callData.call_length || call.duration || call.call_length || 0;
+    const callAnalysis = callData.call_analysis || call.call_analysis || {};
+    const customAnalysis = callData.custom_analysis_data || call.custom_analysis_data || {};
 
-    // 2. Get existing call record
-    const callRecord = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(callId);
+    // 2. Get existing call record (or create one if call_started was missed)
+    let callRecord = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(callId);
     if (!callRecord) {
-      console.error(`[retell] No call record found for ${callId}`);
-      return;
+      console.warn(`[retell] No call record for ${callId} — inserting from call_ended payload`);
+      const toNumber = callData.to_number || call.to_number;
+      const fromNumber = callData.from_number || call.from_number;
+      const agentId = callData.agent_id || call.agent_id;
+
+      let client = null;
+      if (toNumber) {
+        client = db.prepare('SELECT id FROM clients WHERE retell_phone = ? OR twilio_phone = ?').get(toNumber, toNumber);
+      }
+      if (!client && agentId) {
+        client = db.prepare('SELECT id FROM clients WHERE retell_agent_id = ?').get(agentId);
+      }
+      const insertedClientId = client?.id || null;
+
+      db.prepare(`
+        INSERT INTO calls (id, call_id, client_id, caller_phone, direction, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(randomUUID(), callId, insertedClientId, fromNumber || null, callData.direction || call.direction || 'inbound', new Date().toISOString());
+
+      callRecord = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(callId);
+      if (!callRecord) {
+        console.error(`[retell] Failed to create call record for ${callId}`);
+        return;
+      }
     }
 
     const transcriptText = typeof transcript === 'string'
@@ -264,7 +298,7 @@ async function handleCallEnded(db, call) {
             telegram.sendMessage(clientForNotify.telegram_chat_id, text);
           } else {
             const { text, buttons } = telegram.formatCallNotification(processedCall, clientForNotify);
-            telegram.sendMessage(clientForNotify.telegram_chat_id, text, { inline_keyboard: buttons });
+            telegram.sendMessage(clientForNotify.telegram_chat_id, text, { reply_markup: { inline_keyboard: buttons } });
           }
         }
       }

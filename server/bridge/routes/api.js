@@ -322,7 +322,7 @@ router.post('/clients', (req, res) => {
     const db = req.app.locals.db;
     const {
       business_name, owner_name, owner_phone, owner_email,
-      retell_phone, twilio_phone, industry, timezone,
+      retell_agent_id, retell_phone, twilio_phone, industry, timezone,
       calcom_event_type_id, calcom_booking_link,
       avg_ticket, knowledge_base
     } = req.body;
@@ -337,13 +337,13 @@ router.post('/clients', (req, res) => {
     db.prepare(`
       INSERT INTO clients (
         id, business_name, owner_name, owner_phone, owner_email,
-        retell_phone, twilio_phone, industry, timezone,
+        retell_agent_id, retell_phone, twilio_phone, industry, timezone,
         calcom_event_type_id, calcom_booking_link,
         avg_ticket, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, business_name, owner_name || null, owner_phone || null, owner_email || null,
-      retell_phone || null, twilio_phone || null, industry || null, timezone || 'UTC',
+      retell_agent_id || null, retell_phone || null, twilio_phone || null, industry || null, timezone || 'UTC',
       calcom_event_type_id || null, calcom_booking_link || null,
       avg_ticket || 0, now, now
     );

@@ -34,8 +34,8 @@ const twilioRouter = require('./routes/twilio');
 const apiRouter = require('./routes/api');
 const outreachRouter = require('./routes/outreach');
 
-app.post('/webhooks/retell', retellRouter);
-app.post('/retell-webhook', retellRouter);
+app.use('/webhooks/retell', retellRouter);
+app.use('/retell-webhook', retellRouter);
 app.use('/webhooks/twilio', twilioRouter);
 app.use('/api/outreach', outreachRouter);
 app.use('/api', apiRouter);
