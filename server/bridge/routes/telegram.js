@@ -161,18 +161,14 @@ async function handleCommand(db, message) {
         await telegram.sendMessage(chatId, 'No hot leads right now.');
       } else {
         let msg = '<b>Hot leads</b>\n\n';
-        const buttons = [];
         leads.forEach((l, i) => {
           const scoreEmoji = l.score >= 9 ? '&#128293;&#128293;' : '&#128293;';
-          msg += `${i + 1}. <b>${l.name || l.phone || 'Unknown'}</b> - ${l.score}/10 ${scoreEmoji}\n`;
+          msg += `${i + 1}. <b>${l.name || 'Unknown'}</b> - ${l.score}/10 ${scoreEmoji}\n`;
+          if (l.phone) msg += `   📞 ${l.phone}\n`;
           if (l.summary) msg += `   ${l.summary.substring(0, 80)}\n`;
           msg += `\n`;
-          if (i < 3 && l.phone) {
-            buttons.push([{ text: `Call ${l.name || l.phone}`, url: `tel:${l.phone}` }]);
-          }
         });
-        const opts = buttons.length > 0 ? { reply_markup: { inline_keyboard: buttons } } : {};
-        await telegram.sendMessage(chatId, msg, opts);
+        await telegram.sendMessage(chatId, msg);
       }
       break;
     }
