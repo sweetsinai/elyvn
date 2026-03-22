@@ -190,6 +190,19 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
       VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'auto_replied', ?, datetime('now'))
     `).run(randomUUID(), client.id, leadId, from, reply, confidence);
 
+    // Schedule follow-up touch for brand-new SMS contacts
+    if (!existingLead) {
+      try {
+        const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        db.prepare(`
+          INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+          VALUES (?, ?, ?, 2, 'nudge', NULL, 'pending', ?, 'scheduled')
+        `).run(randomUUID(), leadId, client.id, tomorrow);
+      } catch (fuErr) {
+        console.error('[twilio] Follow-up scheduling error:', fuErr.message);
+      }
+    }
+
     // === Telegram notification ===
     try {
       const clientForNotify = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);

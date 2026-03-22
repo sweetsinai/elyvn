@@ -142,7 +142,7 @@ async function handleCommand(db, message) {
           const duration = c.duration ? `${Math.floor(c.duration / 60)}m ${c.duration % 60}s` : '';
           msg += `${outcomeEmoji} ${c.caller_name || c.phone || 'Unknown'}`;
           if (duration) msg += ` (${duration})`;
-          if (c.lead_score) msg += ` - Score: ${c.lead_score}/10`;
+          if (c.score) msg += ` - Score: ${c.score}/10`;
           msg += `\n`;
           if (c.summary) msg += `  ${c.summary.substring(0, 100)}\n`;
           msg += `\n`;

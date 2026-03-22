@@ -44,6 +44,10 @@ app.use('/api', apiRouter);
 const telegramRoutes = require('./routes/telegram');
 app.use('/webhooks/telegram', telegramRoutes);
 
+// Form webhook (any web form → speed-to-lead)
+const formRoutes = require('./routes/forms');
+app.use('/webhooks/form', formRoutes);
+
 // Static files (production dashboard build)
 app.use(express.static(path.join(__dirname, 'public')));
 

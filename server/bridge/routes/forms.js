@@ -1,0 +1,121 @@
+const express = require('express');
+const router = express.Router();
+const { randomUUID } = require('crypto');
+const telegram = require('../utils/telegram');
+const { triggerSpeedSequence } = require('../utils/speed-to-lead');
+
+// POST /webhooks/form/:clientId
+// Accepts form submissions from any source (WordPress, Typeform, Wix, Squarespace, custom HTML)
+// Supports JSON and URL-encoded bodies
+// Field aliases: Contact Form 7, Typeform, generic caps, standard
+router.post('/:clientId', async (req, res) => {
+  // Always 200 immediately — form builders retry on failure
+  res.status(200).json({ status: 'received', message: 'Lead captured' });
+
+  const db = req.app.locals.db;
+  const clientId = req.params.clientId;
+
+  try {
+    const client = db.prepare('SELECT * FROM clients WHERE id = ? AND is_active = 1').get(clientId);
+    if (!client) {
+      console.error(`[Form] Unknown or inactive client: ${clientId}`);
+      return;
+    }
+
+    const body = req.body || {};
+
+    // Normalize field names across form builder conventions
+    const name = body.name || body.first_name || body['your-name'] || body.Name || body['full-name'] || body.fullName
+      || (body.first_name && body.last_name ? `${body.first_name} ${body.last_name}` : null)
+      || null;
+
+    const phone = normalizePhone(
+      body.phone || body.Phone || body['your-phone'] || body.tel
+      || body.telephone || body.mobile || body.cell || body.phone_number || null
+    );
+
+    const email = body.email || body.Email || body['your-email']
+      || body.email_address || body.emailAddress || null;
+
+    const message = body.message || body.Message || body['your-message']
+      || body.comments || body.inquiry || body.details || body.notes || '';
+
+    const service = body.service || body.Service || body.service_type
+      || body.serviceType || body['service-type'] || null;
+
+    const source = body.utm_source || body.source || body.referrer || 'website_form';
+
+    // No phone — create lead with email only + notify client
+    if (!phone) {
+      console.log(`[Form] No phone in submission for ${clientId}`);
+      if (email) {
+        const leadId = randomUUID();
+        db.prepare(`
+          INSERT INTO leads (id, client_id, name, phone, source, score, stage, last_contact, created_at, updated_at)
+          VALUES (?, ?, ?, '', ?, 5, 'new', datetime('now'), datetime('now'), datetime('now'))
+        `).run(leadId, clientId, name, source);
+
+        if (client.telegram_chat_id) {
+          telegram.sendMessage(
+            client.telegram_chat_id,
+            `📋 <b>New form submission (no phone)</b>\n\n` +
+            (name ? `<b>Name:</b> ${name}\n` : '') +
+            `<b>Email:</b> ${email}\n` +
+            (message ? `<b>Message:</b> "${message.substring(0, 200)}"\n` : '') +
+            `\n⚠️ No phone — can't auto-call or text.`
+          ).catch(() => {});
+        }
+      }
+      return;
+    }
+
+    // Upsert lead
+    const existingLead = db.prepare(
+      'SELECT id FROM leads WHERE client_id = ? AND phone = ?'
+    ).get(clientId, phone);
+
+    let leadId;
+    if (existingLead) {
+      leadId = existingLead.id;
+      db.prepare(
+        `UPDATE leads SET name = COALESCE(?, name), last_contact = datetime('now'),
+         stage = 'new', updated_at = datetime('now') WHERE id = ?`
+      ).run(name, leadId);
+    } else {
+      leadId = randomUUID();
+      db.prepare(`
+        INSERT INTO leads (id, client_id, name, phone, source, score, stage, last_contact, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'), datetime('now'))
+      `).run(leadId, clientId, name, phone, source);
+    }
+
+    // Log inbound message
+    db.prepare(`
+      INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'form', 'inbound', ?, 'received', datetime('now'), datetime('now'))
+    `).run(randomUUID(), clientId, leadId, phone, message || `Form submission: ${service || 'General inquiry'}`);
+
+    // Trigger triple-touch speed sequence
+    await triggerSpeedSequence(db, {
+      leadId, clientId, phone, name, email, message, service,
+      source: 'form',
+      client
+    });
+
+    console.log(`[Form] Speed sequence triggered: ${name || phone} → ${client.business_name}`);
+  } catch (err) {
+    console.error('[Form] Error processing submission:', err.message);
+  }
+});
+
+function normalizePhone(raw) {
+  if (!raw) return null;
+  let cleaned = String(raw).replace(/[^\d+]/g, '');
+  if (cleaned.length === 11 && cleaned.startsWith('1')) cleaned = '+' + cleaned;
+  else if (cleaned.length === 10) cleaned = '+1' + cleaned;
+  if (!cleaned.startsWith('+')) cleaned = '+' + cleaned;
+  if (cleaned.replace(/\D/g, '').length < 10) return null;
+  return cleaned;
+}
+
+module.exports = router;

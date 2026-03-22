@@ -14,7 +14,9 @@ async function sendMessage(chatId, text, options = {}) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) console.error('[telegram] sendMessage failed:', JSON.stringify(data));
+  return data;
 }
 
 async function answerCallback(callbackQueryId, text) {

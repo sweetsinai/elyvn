@@ -208,6 +208,37 @@ async function handleCallEnded(db, call) {
         scheduleFollowUp(db, clientId, callerPhone, outcome);
       }
 
+      // 9b. Missed call — instant text-back + speed-to-lead sequence
+      if (outcome === 'missed') {
+        try {
+          const missedClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+          if (missedClient) {
+            const missedLead = db.prepare('SELECT id FROM leads WHERE phone = ? AND client_id = ?').get(callerPhone, clientId);
+            const missedLeadId = missedLead?.id || randomUUID();
+            if (!missedLead) {
+              db.prepare(`
+                INSERT INTO leads (id, client_id, phone, source, score, stage, last_contact, created_at, updated_at)
+                VALUES (?, ?, ?, 'missed_call', 5, 'new', datetime('now'), datetime('now'), datetime('now'))
+              `).run(missedLeadId, clientId, callerPhone);
+            }
+            const { triggerSpeedSequence } = require('../utils/speed-to-lead');
+            triggerSpeedSequence(db, {
+              leadId: missedLeadId,
+              clientId,
+              phone: callerPhone,
+              name: null,
+              email: null,
+              message: null,
+              service: null,
+              source: 'missed_call',
+              client: missedClient
+            }).catch(err => console.error('[retell] Missed call speed sequence failed:', err.message));
+          }
+        } catch (missedErr) {
+          console.error('[retell] Missed call handler error:', missedErr.message);
+        }
+      }
+
       // 10. Notify owner on transfer or complaint
       const isComplaint = sentiment === 'negative' || (summary && summary.toLowerCase().includes('complaint'));
       if (outcome === 'transferred' || isComplaint) {
