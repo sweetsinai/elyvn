@@ -198,6 +198,29 @@ async function handleCommand(db, message) {
       break;
     }
 
+    case '/brain': {
+      const brainActions = db.prepare(
+        `SELECT m.phone, m.body as action_text, m.created_at, l.name, l.score
+         FROM messages m
+         LEFT JOIN leads l ON m.phone = l.phone AND m.client_id = l.client_id
+         WHERE m.client_id = ? AND m.reply_source = 'brain' AND m.direction = 'outbound'
+         ORDER BY m.created_at DESC LIMIT 10`
+      ).all(client.id);
+
+      if (brainActions.length === 0) {
+        await telegram.sendMessage(chatId, '&#129504; <b>Brain Activity</b>\n\nNo autonomous actions yet. The brain activates after calls and messages.');
+      } else {
+        let msg = '&#129504; <b>Brain Activity (Last 10)</b>\n\n';
+        brainActions.forEach((a, i) => {
+          msg += `${i + 1}. <b>${a.name || a.phone}</b> (Score: ${a.score || '?'})\n`;
+          msg += `   "${(a.action_text || '').substring(0, 80)}"\n`;
+          msg += `   ${new Date(a.created_at).toLocaleString()}\n\n`;
+        });
+        await telegram.sendMessage(chatId, msg);
+      }
+      break;
+    }
+
     case '/help': {
       await telegram.sendMessage(chatId,
         `<b>Commands</b>\n\n`
@@ -205,6 +228,7 @@ async function handleCommand(db, message) {
         + `/stats - Last 7 days stats\n`
         + `/calls - Recent calls\n`
         + `/leads - Hot leads\n`
+        + `/brain - Brain activity feed\n`
         + `/pause - Pause AI answering\n`
         + `/resume - Resume AI answering\n`
         + `/help - Show this message`

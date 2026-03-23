@@ -289,6 +289,24 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
     }
 
     console.log(`[twilio] Replied to ${from}: ${reply.substring(0, 50)}...`);
+
+    // === BRAIN — autonomous post-SMS decisions ===
+    try {
+      const { getLeadMemory } = require('../utils/leadMemory');
+      const { think } = require('../utils/brain');
+      const { executeActions } = require('../utils/actionExecutor');
+
+      const memory = getLeadMemory(db, from, client.id);
+      if (memory) {
+        const decision = await think('sms_received', {
+          from, body, auto_reply: reply, confidence,
+          was_escalated: confidence === 'low',
+        }, memory, db);
+        await executeActions(db, decision.actions, memory);
+      }
+    } catch (brainErr) {
+      console.error('[Brain] Post-SMS error:', brainErr.message);
+    }
   } catch (err) {
     console.error('[twilio] handleNormalMessage error:', err);
   }

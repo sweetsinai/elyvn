@@ -354,6 +354,25 @@ async function handleCallEnded(db, call) {
     }
 
     console.log(`[retell] call_ended processed: ${callId} outcome=${outcome} score=${score}`);
+
+    // === BRAIN — autonomous post-call decisions ===
+    if (callerPhone && clientId) {
+      try {
+        const { getLeadMemory } = require('../utils/leadMemory');
+        const { think } = require('../utils/brain');
+        const { executeActions } = require('../utils/actionExecutor');
+
+        const memory = getLeadMemory(db, callerPhone, clientId);
+        if (memory) {
+          const decision = await think('call_ended', {
+            call_id: callId, duration, outcome, summary, score,
+          }, memory, db);
+          await executeActions(db, decision.actions, memory);
+        }
+      } catch (brainErr) {
+        console.error('[Brain] Post-call error:', brainErr.message);
+      }
+    }
   } catch (err) {
     console.error('[retell] call_ended error:', err);
   }

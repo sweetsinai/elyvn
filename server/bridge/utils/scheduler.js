@@ -150,6 +150,122 @@ function initScheduler(db) {
   }, weeklyDelay);
 
   console.log(`[Scheduler] Weekly report scheduled in ${Math.round(weeklyDelay / 1000 / 60 / 60)} hours (Monday 8 AM)`);
+
+  // Follow-up processor — every 5 minutes
+  setInterval(() => {
+    processFollowups(db).catch(err => console.error('[Scheduler] followup processor error:', err));
+  }, 5 * 60 * 1000);
+  console.log('[Scheduler] Follow-up processor running every 5 minutes');
+
+  // Daily lead review — 9 AM
+  const review = new Date(now);
+  review.setHours(9, 0, 0, 0);
+  if (review <= now) review.setDate(review.getDate() + 1);
+  const reviewDelay = review.getTime() - now.getTime();
+
+  setTimeout(() => {
+    dailyLeadReview(db).catch(err => console.error('[Scheduler] daily review error:', err));
+    setInterval(() => {
+      dailyLeadReview(db).catch(err => console.error('[Scheduler] daily review error:', err));
+    }, 24 * 60 * 60 * 1000);
+  }, reviewDelay);
+  console.log(`[Scheduler] Daily lead review scheduled in ${Math.round(reviewDelay / 1000 / 60)} minutes (9 AM)`);
 }
 
-module.exports = { initScheduler, sendDailySummaries, sendWeeklyReports };
+// === BRAIN-POWERED: Process due follow-ups ===
+async function processFollowups(db) {
+  try {
+    const due = db.prepare(
+      `SELECT f.*, l.phone, l.client_id as lead_client_id
+       FROM followups f
+       JOIN leads l ON f.lead_id = l.id
+       WHERE f.status = 'scheduled' AND f.scheduled_at <= datetime('now')
+       LIMIT 10`
+    ).all();
+
+    if (due.length === 0) return;
+    console.log(`[Scheduler] Processing ${due.length} due follow-ups`);
+
+    const { getLeadMemory } = require('./leadMemory');
+    const { think } = require('./brain');
+    const { executeActions } = require('./actionExecutor');
+
+    for (const followup of due) {
+      try {
+        const memory = getLeadMemory(db, followup.phone, followup.lead_client_id || followup.client_id);
+        if (!memory) {
+          db.prepare("UPDATE followups SET status = 'failed' WHERE id = ?").run(followup.id);
+          continue;
+        }
+
+        const decision = await think('followup_due', {
+          followup_id: followup.id,
+          touch_number: followup.touch_number,
+          original_message: followup.content,
+          scheduled_at: followup.scheduled_at,
+        }, memory, db);
+
+        await executeActions(db, decision.actions, memory);
+        db.prepare("UPDATE followups SET status = 'sent', sent_at = datetime('now') WHERE id = ?").run(followup.id);
+      } catch (err) {
+        console.error(`[Scheduler] Follow-up ${followup.id} failed:`, err.message);
+        db.prepare("UPDATE followups SET status = 'failed' WHERE id = ?").run(followup.id);
+      }
+
+      // Rate limit between brain calls
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  } catch (err) {
+    console.error('[Scheduler] processFollowups error:', err);
+  }
+}
+
+// === BRAIN-POWERED: Daily stale lead review ===
+async function dailyLeadReview(db) {
+  try {
+    const stale = db.prepare(`
+      SELECT l.*, c.id as cid
+      FROM leads l
+      JOIN clients c ON l.client_id = c.id
+      WHERE c.is_active = 1
+      AND l.stage NOT IN ('booked', 'lost')
+      AND l.updated_at < datetime('now', '-2 days')
+      AND l.score >= 5
+      ORDER BY l.score DESC
+      LIMIT 10
+    `).all();
+
+    if (stale.length === 0) {
+      console.log('[Brain] Daily review: no stale leads');
+      return;
+    }
+
+    console.log(`[Brain] Daily review: ${stale.length} stale leads`);
+
+    const { getLeadMemory } = require('./leadMemory');
+    const { think } = require('./brain');
+    const { executeActions } = require('./actionExecutor');
+
+    for (const lead of stale) {
+      try {
+        const memory = getLeadMemory(db, lead.phone, lead.client_id);
+        if (!memory) continue;
+
+        const decision = await think('daily_review', {
+          review_reason: 'Lead inactive 2+ days, not booked',
+          lead_score: lead.score,
+          lead_stage: lead.stage,
+        }, memory, db);
+
+        await executeActions(db, decision.actions, memory);
+        await new Promise(r => setTimeout(r, 2000));
+      } catch (err) {
+        console.error(`[Brain] Daily review failed for ${lead.phone}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('[Brain] dailyLeadReview error:', err);
+  }
+}
+
+module.exports = { initScheduler, sendDailySummaries, sendWeeklyReports, processFollowups, dailyLeadReview };
