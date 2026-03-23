@@ -273,6 +273,76 @@ async function handleCommand(db, message) {
       break;
     }
 
+    case '/outreach': {
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const sent = db.prepare("SELECT COUNT(*) as c FROM emails_sent WHERE status = 'sent' AND sent_at >= ?").get(since);
+      const replied = db.prepare("SELECT COUNT(*) as c FROM emails_sent WHERE reply_at IS NOT NULL AND sent_at >= ?").get(since);
+      const interested = db.prepare("SELECT COUNT(*) as c FROM prospects WHERE status = 'interested' AND updated_at >= ?").get(since);
+      const totalProspects = db.prepare("SELECT COUNT(*) as c FROM prospects").get();
+      const newProspects = db.prepare("SELECT COUNT(*) as c FROM prospects WHERE status = 'new' AND email IS NOT NULL").get();
+
+      await telegram.sendMessage(chatId,
+        `<b>Outreach Stats (7 days)</b>\n\n`
+        + `Emails sent: ${sent.c}\n`
+        + `Replies: ${replied.c}\n`
+        + `Interested: ${interested.c}\n`
+        + `Total prospects: ${totalProspects.c}\n`
+        + `Ready to email: ${newProspects.c}`
+      );
+      break;
+    }
+
+    case '/scrape': {
+      const parts = text.split(' ').slice(1);
+      if (parts.length < 2) {
+        await telegram.sendMessage(chatId, 'Usage: /scrape plumber philadelphia');
+        break;
+      }
+      const industry = parts[0];
+      const city = parts.slice(1).join(' ');
+
+      await telegram.sendMessage(chatId, `Scraping ${industry} in ${city}...`);
+
+      try {
+        const { scrapeGoogleMaps } = require('../utils/scraper');
+        const result = await scrapeGoogleMaps(db, industry, city, '', 50);
+        await telegram.sendMessage(chatId,
+          `Scrape complete\n\nFound: ${result.found}\nNew prospects: ${result.new}`
+        );
+      } catch (scrapeErr) {
+        await telegram.sendMessage(chatId, `Scrape failed: ${scrapeErr.message}`);
+      }
+      break;
+    }
+
+    case '/prospects': {
+      const hot = db.prepare(`
+        SELECT business_name, city, industry, rating, review_count, status, phone
+        FROM prospects
+        WHERE status IN ('interested', 'replied', 'new')
+        ORDER BY
+          CASE status WHEN 'interested' THEN 1 WHEN 'replied' THEN 2 ELSE 3 END,
+          rating DESC
+        LIMIT 10
+      `).all();
+
+      if (hot.length === 0) {
+        await telegram.sendMessage(chatId, 'No prospects yet. Use /scrape to find some.');
+        break;
+      }
+
+      let msg = '<b>Top Prospects</b>\n\n';
+      hot.forEach((p, i) => {
+        const statusLabel = p.status === 'interested' ? '[HOT]' : p.status === 'replied' ? '[REPLIED]' : '[NEW]';
+        msg += `${i+1}. ${statusLabel} <b>${p.business_name}</b>\n`;
+        msg += `   ${p.city} | ${p.industry || 'N/A'} | ${p.rating || '?'}/5 (${p.review_count || 0})\n`;
+        if (p.phone) msg += `   ${p.phone}\n`;
+        msg += `   Status: ${p.status}\n\n`;
+      });
+      await telegram.sendMessage(chatId, msg);
+      break;
+    }
+
     case '/help': {
       await telegram.sendMessage(chatId,
         `<b>Commands</b>\n\n`
@@ -281,6 +351,9 @@ async function handleCommand(db, message) {
         + `/calls - Recent calls\n`
         + `/leads - Hot leads\n`
         + `/brain - Brain activity feed\n`
+        + `/outreach - Outreach stats (7 days)\n`
+        + `/scrape industry city - Scrape Google Maps\n`
+        + `/prospects - Top 10 prospects\n`
         + `/complete +phone - Mark job done + schedule review request\n`
         + `/reviewlink URL - Set Google review link\n`
         + `/pause - Pause AI answering\n`

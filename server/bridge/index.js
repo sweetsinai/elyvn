@@ -74,6 +74,71 @@ try {
   // Ensure google_review_link column on clients
   try { db.exec('ALTER TABLE clients ADD COLUMN google_review_link TEXT'); } catch (_) {}
 
+  // Engine 2: Ensure outreach tables exist
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS prospects (
+      id TEXT PRIMARY KEY,
+      business_name TEXT,
+      phone TEXT,
+      email TEXT,
+      website TEXT,
+      address TEXT,
+      industry TEXT,
+      city TEXT,
+      state TEXT,
+      country TEXT DEFAULT 'US',
+      rating REAL,
+      review_count INTEGER,
+      hours TEXT,
+      status TEXT DEFAULT 'scraped',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS campaigns (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      industry TEXT,
+      city TEXT,
+      total_prospects INTEGER DEFAULT 0,
+      total_sent INTEGER DEFAULT 0,
+      total_replied INTEGER DEFAULT 0,
+      total_positive INTEGER DEFAULT 0,
+      total_booked INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'draft',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS campaign_prospects (
+      id TEXT PRIMARY KEY,
+      campaign_id TEXT,
+      prospect_id TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS emails_sent (
+      id TEXT PRIMARY KEY,
+      campaign_id TEXT,
+      prospect_id TEXT,
+      to_email TEXT,
+      from_email TEXT,
+      subject TEXT,
+      body TEXT,
+      sent_at TEXT,
+      status TEXT DEFAULT 'draft',
+      reply_text TEXT,
+      reply_classification TEXT,
+      reply_at TEXT,
+      auto_response_sent INTEGER DEFAULT 0,
+      error TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
 
   console.log('[server] SQLite connected:', DB_PATH);
 } catch (err) {

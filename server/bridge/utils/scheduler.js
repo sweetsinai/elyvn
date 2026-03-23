@@ -170,6 +170,26 @@ function initScheduler(db) {
     }, 24 * 60 * 60 * 1000);
   }, reviewDelay);
   console.log(`[Scheduler] Daily lead review scheduled in ${Math.round(reviewDelay / 1000 / 60)} minutes (9 AM)`);
+
+  // Engine 2: Daily outreach at 10 AM
+  const outreach = new Date(now);
+  outreach.setHours(10, 0, 0, 0);
+  if (outreach <= now) outreach.setDate(outreach.getDate() + 1);
+  const outreachDelay = outreach.getTime() - now.getTime();
+
+  setTimeout(() => {
+    dailyOutreach(db).catch(err => console.error('[Scheduler] outreach error:', err));
+    setInterval(() => {
+      dailyOutreach(db).catch(err => console.error('[Scheduler] outreach error:', err));
+    }, 24 * 60 * 60 * 1000);
+  }, outreachDelay);
+  console.log(`[Scheduler] Daily outreach scheduled in ${Math.round(outreachDelay / 1000 / 60)} minutes (10 AM)`);
+
+  // Engine 2: Check replies every 30 minutes
+  setInterval(() => {
+    checkReplies(db).catch(err => console.error('[Scheduler] reply check error:', err));
+  }, 30 * 60 * 1000);
+  console.log('[Scheduler] Reply checker running every 30 minutes');
 }
 
 // === BRAIN-POWERED: Process due follow-ups ===
@@ -327,4 +347,172 @@ function createAppointmentReminders(db, appointment, client) {
   }
 }
 
-module.exports = { initScheduler, sendDailySummaries, sendWeeklyReports, processFollowups, dailyLeadReview, createAppointmentReminders };
+// === ENGINE 2: Daily Cold Email Outreach ===
+async function dailyOutreach(db) {
+  try {
+    const { generateColdEmail } = require('./emailGenerator');
+    const { sendColdEmail, DAILY_LIMIT } = require('./emailSender');
+
+    // Get unsent prospects with email addresses
+    const prospects = db.prepare(`
+      SELECT * FROM prospects
+      WHERE status = 'new' AND email IS NOT NULL AND email != ''
+      ORDER BY rating DESC, review_count DESC
+      LIMIT ?
+    `).all(DAILY_LIMIT);
+
+    if (prospects.length === 0) {
+      console.log('[Outreach] No new prospects to email');
+      return;
+    }
+
+    console.log(`[Outreach] Starting daily outreach: ${prospects.length} prospects`);
+    let sent = 0, failed = 0;
+
+    for (const prospect of prospects) {
+      try {
+        const { subject, body } = await generateColdEmail(prospect);
+        const result = await sendColdEmail(db, prospect, subject, body);
+
+        if (result.success) {
+          sent++;
+        } else {
+          failed++;
+          if (result.error === 'Daily limit reached') break;
+        }
+
+        // Wait 2 minutes between sends
+        await new Promise(r => setTimeout(r, 120000));
+      } catch (err) {
+        console.error(`[Outreach] Error for ${prospect.business_name}:`, err.message);
+        failed++;
+      }
+    }
+
+    // Notify owner via Telegram
+    const clients = db.prepare('SELECT telegram_chat_id FROM clients WHERE telegram_chat_id IS NOT NULL LIMIT 1').all();
+    for (const c of clients) {
+      telegram.sendMessage(c.telegram_chat_id,
+        `<b>Daily Outreach Complete</b>\n\nSent: ${sent}\nFailed: ${failed}\nRemaining prospects: ${db.prepare("SELECT COUNT(*) as c FROM prospects WHERE status = 'new' AND email IS NOT NULL").get().c}`
+      ).catch(() => {});
+    }
+
+    console.log(`[Outreach] Done: ${sent} sent, ${failed} failed`);
+  } catch (err) {
+    console.error('[Outreach] dailyOutreach error:', err);
+  }
+}
+
+// === ENGINE 2: Check IMAP for replies ===
+async function checkReplies(db) {
+  try {
+    // Only run if IMAP is configured
+    if (!process.env.IMAP_USER || !process.env.IMAP_PASS) {
+      return;
+    }
+
+    const Imap = require('node-imap');
+    const { classifyReply } = require('./replyClassifier');
+    const { simpleParser } = require('mailparser');
+
+    const imap = new Imap({
+      user: process.env.IMAP_USER,
+      password: process.env.IMAP_PASS,
+      host: process.env.IMAP_HOST || 'imap.gmail.com',
+      port: parseInt(process.env.IMAP_PORT || '993', 10),
+      tls: true,
+      tlsOptions: { rejectUnauthorized: false },
+    });
+
+    await new Promise((resolve, reject) => {
+      imap.once('ready', () => {
+        imap.openBox('INBOX', false, (err) => {
+          if (err) { imap.end(); reject(err); return; }
+
+          // Search for unseen messages from the last 24h
+          const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          imap.search(['UNSEEN', ['SINCE', since]], (err, results) => {
+            if (err || !results || results.length === 0) {
+              imap.end();
+              resolve();
+              return;
+            }
+
+            const f = imap.fetch(results, { bodies: '', markSeen: true });
+            const messages = [];
+
+            f.on('message', (msg) => {
+              let buffer = '';
+              msg.on('body', (stream) => {
+                stream.on('data', (chunk) => { buffer += chunk.toString('utf8'); });
+              });
+              msg.on('end', () => { messages.push(buffer); });
+            });
+
+            f.once('end', async () => {
+              for (const raw of messages) {
+                try {
+                  const parsed = await simpleParser(raw);
+                  const from = parsed.from?.value?.[0]?.address || '';
+                  const subject = parsed.subject || '';
+                  const body = parsed.text || '';
+
+                  // Match to a prospect by email
+                  const prospect = db.prepare('SELECT * FROM prospects WHERE email = ?').get(from);
+                  if (!prospect) continue;
+
+                  // Classify the reply
+                  const result = await classifyReply(body, subject);
+                  console.log(`[Replies] ${from}: ${result.classification} -- ${result.summary}`);
+
+                  // Update the most recent emails_sent for this prospect
+                  db.prepare(`
+                    UPDATE emails_sent SET reply_text = ?, reply_classification = ?, reply_at = datetime('now'), updated_at = datetime('now')
+                    WHERE prospect_id = ? AND reply_text IS NULL
+                    ORDER BY sent_at DESC LIMIT 1
+                  `).run(body.substring(0, 2000), result.classification, prospect.id);
+
+                  // Act on classification
+                  const now = new Date().toISOString();
+                  if (result.classification === 'INTERESTED') {
+                    db.prepare("UPDATE prospects SET status = 'interested', updated_at = ? WHERE id = ?").run(now, prospect.id);
+                    const clients = db.prepare('SELECT telegram_chat_id, calcom_booking_link FROM clients WHERE telegram_chat_id IS NOT NULL').all();
+                    for (const c of clients) {
+                      telegram.sendMessage(c.telegram_chat_id,
+                        `<b>Hot prospect replied!</b>\n\n<b>${prospect.business_name}</b> (${prospect.city})\n"${result.summary}"\n\n${c.calcom_booking_link ? 'Book: ' + c.calcom_booking_link : ''}`
+                      ).catch(() => {});
+                    }
+                  } else if (result.classification === 'NOT_INTERESTED') {
+                    db.prepare("UPDATE prospects SET status = 'declined', updated_at = ? WHERE id = ?").run(now, prospect.id);
+                  } else if (result.classification === 'UNSUBSCRIBE') {
+                    db.prepare("UPDATE prospects SET status = 'unsubscribed', updated_at = ? WHERE id = ?").run(now, prospect.id);
+                  } else {
+                    db.prepare("UPDATE prospects SET status = 'replied', updated_at = ? WHERE id = ?").run(now, prospect.id);
+                    const clients = db.prepare('SELECT telegram_chat_id FROM clients WHERE telegram_chat_id IS NOT NULL').all();
+                    for (const c of clients) {
+                      telegram.sendMessage(c.telegram_chat_id,
+                        `<b>Prospect question</b>\n\n<b>${prospect.business_name}</b>: "${result.summary}"\n\nReply needed.`
+                      ).catch(() => {});
+                    }
+                  }
+                } catch (parseErr) {
+                  console.error('[Replies] Error processing reply:', parseErr.message);
+                }
+              }
+
+              imap.end();
+              resolve();
+            });
+          });
+        });
+      });
+
+      imap.once('error', (err) => { console.error('[IMAP] Error:', err.message); reject(err); });
+      imap.connect();
+    });
+  } catch (err) {
+    console.error('[Replies] checkReplies error:', err.message);
+  }
+}
+
+module.exports = { initScheduler, sendDailySummaries, sendWeeklyReports, processFollowups, dailyLeadReview, createAppointmentReminders, dailyOutreach, checkReplies };
