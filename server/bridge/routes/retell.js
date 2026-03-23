@@ -169,26 +169,32 @@ async function handleCallEnded(db, call) {
         ? transcript.map(t => `${t.role}: ${t.content}`).join('\n')
         : JSON.stringify(transcript);
 
-    // 3. Generate summary from transcript
+    // 3. Generate summary and score
     let summary = '';
     let score = 5;
 
-    if (!transcriptText || transcriptText.trim().length < 10) {
-      // Too short to summarize — use fallback
-      console.warn(`[retell] Transcript too short for ${callId} (${transcriptText?.length || 0} chars) — skipping Claude`);
-      summary = callAnalysis.call_summary || 'Call too short for summary';
-      // score stays at 5
-    } else {
+    // Determine the best text source for summary + scoring
+    const hasTranscript = transcriptText && transcriptText.trim().length >= 10;
+    const analysisSummary = callAnalysis.call_summary || '';
+    const scoringText = hasTranscript ? transcriptText : analysisSummary;
+
+    if (duration <= 15 && !hasTranscript && !analysisSummary) {
+      // Genuinely short call with no content
+      summary = 'Call too short for summary';
+    } else if (scoringText.length >= 10) {
+      // We have text to work with (transcript or call_summary from webhook)
       try {
         const summaryResp = await anthropic.messages.create({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 150,
-          messages: [{ role: 'user', content: `Summarize this phone call transcript in exactly 2 lines. Be specific about what was discussed and any outcomes:\n\n${transcriptText}` }]
+          messages: [{ role: 'user', content: hasTranscript
+            ? `Summarize this phone call transcript in exactly 2 lines. Be specific about what was discussed and any outcomes:\n\n${transcriptText}`
+            : `Rewrite this call summary in 2 clear lines for a business owner:\n\n${analysisSummary}` }]
         });
-        summary = summaryResp.content[0]?.text || '';
+        summary = summaryResp.content[0]?.text || analysisSummary;
       } catch (err) {
         console.error('[retell] Summary generation failed:', err.message);
-        summary = callAnalysis.call_summary || 'Summary unavailable';
+        summary = analysisSummary || 'Summary unavailable';
       }
 
       // 4. Score lead 1-10
@@ -196,13 +202,16 @@ async function handleCallEnded(db, call) {
         const scoreResp = await anthropic.messages.create({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 10,
-          messages: [{ role: 'user', content: `Score this lead 1-10 based on their interest, urgency, and qualification from this call transcript. Reply with ONLY a single number:\n\n${transcriptText}` }]
+          messages: [{ role: 'user', content: `Score this lead 1-10 based on their interest, urgency, and qualification from this call ${hasTranscript ? 'transcript' : 'summary'}. Reply with ONLY a single number:\n\n${scoringText}` }]
         });
         const parsed = parseInt(scoreResp.content[0]?.text?.trim(), 10);
         if (parsed >= 1 && parsed <= 10) score = parsed;
       } catch (err) {
         console.error('[retell] Lead scoring failed:', err.message);
       }
+    } else {
+      // No transcript, no analysis summary — use what we have
+      summary = analysisSummary || 'Summary unavailable';
     }
 
     // 5. Determine outcome
@@ -359,20 +368,35 @@ function handleCallAnalyzed(db, call) {
     const callId = call.call_id;
     const analysis = call.call_analysis || {};
 
+    // Extract transcript if provided
+    const rawTranscript = call.transcript || '';
+    const transcriptText = typeof rawTranscript === 'string'
+      ? rawTranscript
+      : Array.isArray(rawTranscript)
+        ? rawTranscript.map(t => `${t.role}: ${t.content}`).join('\n')
+        : JSON.stringify(rawTranscript);
+
+    const callSummary = analysis.call_summary || '';
+
+    // Update call record — fill transcript and summary if not already set
     db.prepare(`
       UPDATE calls SET
+        transcript = CASE WHEN (transcript IS NULL OR transcript = '') AND ? != '' THEN ? ELSE transcript END,
+        summary = CASE WHEN (summary IS NULL OR summary = '' OR summary = 'Summary unavailable' OR summary = 'Call too short for summary') AND ? != '' THEN ? ELSE summary END,
         sentiment = COALESCE(?, sentiment),
         analysis_data = ?,
         updated_at = ?
       WHERE call_id = ?
     `).run(
+      transcriptText, transcriptText,
+      callSummary, callSummary,
       analysis.user_sentiment || null,
       JSON.stringify(analysis),
       new Date().toISOString(),
       callId
     );
 
-    console.log(`[retell] call_analyzed: ${callId}`);
+    console.log(`[retell] call_analyzed: ${callId} transcript=${transcriptText.length}chars summary=${callSummary.length}chars`);
   } catch (err) {
     console.error('[retell] call_analyzed error:', err);
   }
