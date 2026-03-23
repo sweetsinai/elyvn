@@ -198,6 +198,58 @@ async function handleCommand(db, message) {
       break;
     }
 
+    case '/complete': {
+      const phone = text.split(' ')[1]?.trim();
+      if (!phone) {
+        await telegram.sendMessage(chatId, 'Usage: /complete +15551234567');
+        break;
+      }
+
+      // Mark appointments as completed
+      try {
+        const { randomUUID } = require('crypto');
+        db.prepare(
+          `UPDATE appointments SET status = 'completed', updated_at = datetime('now')
+           WHERE phone = ? AND client_id = ? AND status IN ('confirmed', 'pending')`
+        ).run(phone, client.id);
+
+        // Schedule review request SMS in 2 hours
+        const lead = db.prepare('SELECT id, name FROM leads WHERE phone = ? AND client_id = ?').get(phone, client.id);
+        const reviewLink = client.google_review_link || '';
+        const reviewMsg = reviewLink
+          ? `Thanks for choosing ${client.business_name || 'us'}! If you were happy with the service, a quick review would mean the world to us: ${reviewLink}`
+          : `Thanks for choosing ${client.business_name || 'us'}! We appreciate your business.`;
+
+        if (lead) {
+          const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+          db.prepare(`
+            INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+            VALUES (?, ?, ?, 20, 'review_request', ?, 'template', ?, 'scheduled')
+          `).run(randomUUID(), lead.id, client.id, reviewMsg, scheduledAt);
+        }
+
+        await telegram.sendMessage(chatId,
+          `&#9989; Job marked complete for ${phone}.\n\nReview request scheduled for 2h.${reviewLink ? '' : '\n\n&#9888;&#65039; Set a Google review link via /reviewlink to include it.'}`
+        );
+      } catch (completeErr) {
+        console.error('[telegram] /complete error:', completeErr.message);
+        await telegram.sendMessage(chatId, 'Error marking job complete. Try again.');
+      }
+      break;
+    }
+
+    case '/reviewlink': {
+      const link = text.split(' ').slice(1).join(' ').trim();
+      if (!link) {
+        const current = client.google_review_link || 'not set';
+        await telegram.sendMessage(chatId, `Current review link: ${current}\n\nUsage: /reviewlink https://g.page/...`);
+        break;
+      }
+      db.prepare('UPDATE clients SET google_review_link = ?, updated_at = datetime(\'now\') WHERE id = ?').run(link, client.id);
+      await telegram.sendMessage(chatId, `&#9989; Review link updated.`);
+      break;
+    }
+
     case '/brain': {
       const brainActions = db.prepare(
         `SELECT m.phone, m.body as action_text, m.created_at, l.name, l.score
@@ -229,6 +281,8 @@ async function handleCommand(db, message) {
         + `/calls - Recent calls\n`
         + `/leads - Hot leads\n`
         + `/brain - Brain activity feed\n`
+        + `/complete +phone - Mark job done + schedule review request\n`
+        + `/reviewlink URL - Set Google review link\n`
         + `/pause - Pause AI answering\n`
         + `/resume - Resume AI answering\n`
         + `/help - Show this message`

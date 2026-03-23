@@ -4,6 +4,79 @@ const { randomUUID } = require('crypto');
 const telegram = require('../utils/telegram');
 const { triggerSpeedSequence } = require('../utils/speed-to-lead');
 
+// POST /webhooks/form (no clientId in URL — reads client_id from body)
+router.post('/', async (req, res) => {
+  const body = req.body || {};
+  const clientId = body.client_id || body.clientId;
+  if (!clientId) {
+    return res.status(400).json({ error: 'client_id required in body' });
+  }
+  req.params = { clientId };
+  // Forward to the /:clientId handler below
+  res.status(200).json({ status: 'received', message: 'Lead captured' });
+
+  const db = req.app.locals.db;
+  if (!db) return;
+
+  try {
+    const client = db.prepare('SELECT * FROM clients WHERE id = ? AND is_active = 1').get(clientId);
+    if (!client) { console.error(`[Form] Unknown client: ${clientId}`); return; }
+
+    const name = body.name || body.first_name || body['your-name'] || body.fullName || body.full_name || null;
+    const phone = normalizePhone(body.phone || body.Phone || body['your-phone'] || body.tel || body.mobile || null);
+    const email = body.email || body.Email || body['your-email'] || null;
+    const message = body.message || body.Message || body['your-message'] || body.body || body.inquiry || '';
+    const service = body.service || body.Service || null;
+    const source = body.utm_source || body.source || 'website_form';
+
+    if (!phone) {
+      if (email) {
+        const leadId = randomUUID();
+        db.prepare(`INSERT INTO leads (id, client_id, name, phone, source, score, stage, last_contact, created_at, updated_at)
+          VALUES (?, ?, ?, '', ?, 5, 'new', datetime('now'), datetime('now'), datetime('now'))`).run(leadId, clientId, name, source);
+        if (client.telegram_chat_id) {
+          telegram.sendMessage(client.telegram_chat_id,
+            `&#128203; <b>New form submission (no phone)</b>\n\n` +
+            (name ? `<b>Name:</b> ${name}\n` : '') + `<b>Email:</b> ${email}\n` +
+            (message ? `<b>Message:</b> "${message.substring(0, 200)}"\n` : '') +
+            `\n&#9888;&#65039; No phone — can't auto-call or text.`
+          ).catch(() => {});
+        }
+      }
+      return;
+    }
+
+    const existingLead = db.prepare('SELECT id FROM leads WHERE client_id = ? AND phone = ?').get(clientId, phone);
+    let leadId;
+    if (existingLead) {
+      leadId = existingLead.id;
+      db.prepare(`UPDATE leads SET name = COALESCE(?, name), email = COALESCE(?, email), last_contact = datetime('now'), stage = 'new', updated_at = datetime('now') WHERE id = ?`).run(name, email, leadId);
+    } else {
+      leadId = randomUUID();
+      db.prepare(`INSERT INTO leads (id, client_id, name, phone, email, source, score, stage, last_contact, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'), datetime('now'))`).run(leadId, clientId, name, phone, email, source);
+    }
+
+    db.prepare(`INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'form', 'inbound', ?, 'received', datetime('now'), datetime('now'))`).run(randomUUID(), clientId, leadId, phone, message || `Form: ${service || 'General inquiry'}`);
+
+    await triggerSpeedSequence(db, { leadId, clientId, phone, name, email, message, service, source: 'form', client });
+
+    try {
+      const { getLeadMemory } = require('../utils/leadMemory');
+      const { think } = require('../utils/brain');
+      const { executeActions } = require('../utils/actionExecutor');
+      const memory = getLeadMemory(db, phone, clientId);
+      if (memory) {
+        const decision = await think('form_submitted', { name, phone, email, message, service, source }, memory, db);
+        await executeActions(db, decision.actions, memory);
+      }
+    } catch (brainErr) { console.error('[Brain] Form error:', brainErr.message); }
+
+    console.log(`[Form] Processed: ${name || phone} → ${client.business_name}`);
+  } catch (err) { console.error('[Form] Error:', err.message); }
+});
+
 // POST /webhooks/form/:clientId
 // Accepts form submissions from any source (WordPress, Typeform, Wix, Squarespace, custom HTML)
 // Supports JSON and URL-encoded bodies
@@ -105,6 +178,22 @@ router.post('/:clientId', async (req, res) => {
       source: 'form',
       client
     });
+
+    // Brain: form submission analysis
+    try {
+      const { getLeadMemory } = require('../utils/leadMemory');
+      const { think } = require('../utils/brain');
+      const { executeActions } = require('../utils/actionExecutor');
+      const memory = getLeadMemory(db, phone, clientId);
+      if (memory) {
+        const decision = await think('form_submitted', {
+          name, phone, email, message, service, source,
+        }, memory, db);
+        await executeActions(db, decision.actions, memory);
+      }
+    } catch (brainErr) {
+      console.error('[Brain] Form submission error:', brainErr.message);
+    }
 
     console.log(`[Form] Speed sequence triggered: ${name || phone} → ${client.business_name}`);
   } catch (err) {

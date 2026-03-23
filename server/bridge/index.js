@@ -54,6 +54,27 @@ try {
     CREATE INDEX IF NOT EXISTS idx_followups_lead_id ON followups(lead_id);
   `);
 
+  // Ensure appointments table exists
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS appointments (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      lead_id TEXT,
+      phone TEXT,
+      name TEXT,
+      service TEXT,
+      datetime TEXT,
+      status TEXT DEFAULT 'confirmed',
+      calcom_booking_id TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Ensure google_review_link column on clients
+  try { db.exec('ALTER TABLE clients ADD COLUMN google_review_link TEXT'); } catch (_) {}
+
+
   console.log('[server] SQLite connected:', DB_PATH);
 } catch (err) {
   console.error('[server] SQLite connection failed:', err.message);

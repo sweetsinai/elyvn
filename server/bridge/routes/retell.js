@@ -289,8 +289,8 @@ async function handleCallEnded(db, call) {
         scheduleFollowUp(db, clientId, callerPhone, outcome);
       }
 
-      // 9b. Missed call — instant text-back + speed-to-lead sequence
-      if (outcome === 'missed') {
+      // 9b. Missed/voicemail call — instant text-back + speed-to-lead + brain
+      if (outcome === 'missed' || outcome === 'voicemail' || duration === 0) {
         try {
           const missedClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
           if (missedClient) {
@@ -302,18 +302,46 @@ async function handleCallEnded(db, call) {
                 VALUES (?, ?, ?, 'missed_call', 5, 'new', datetime('now'), datetime('now'), datetime('now'))
               `).run(missedLeadId, clientId, callerPhone);
             }
+
+            // Instant text-back
+            const textBackMsg = `Hi! Sorry we missed your call. How can we help you today? — ${missedClient.business_name || 'Our team'}`;
+            sendSMS(callerPhone, textBackMsg, missedClient.twilio_phone)
+              .catch(err => console.error('[retell] Missed call text-back failed:', err.message));
+
+            // Log text-back in messages
+            db.prepare(`
+              INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at)
+              VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'missed_call_textback', datetime('now'))
+            `).run(randomUUID(), clientId, missedLeadId, callerPhone, textBackMsg);
+
+            // Telegram: missed call alert
+            if (missedClient.telegram_chat_id) {
+              telegram.sendMessage(missedClient.telegram_chat_id,
+                `&#10060; <b>Missed call</b> from ${callerPhone}\n\nAuto text-back sent.`
+              ).catch(() => {});
+            }
+
+            // Speed-to-lead sequence
             const { triggerSpeedSequence } = require('../utils/speed-to-lead');
             triggerSpeedSequence(db, {
-              leadId: missedLeadId,
-              clientId,
-              phone: callerPhone,
-              name: null,
-              email: null,
-              message: null,
-              service: null,
-              source: 'missed_call',
-              client: missedClient
+              leadId: missedLeadId, clientId, phone: callerPhone,
+              name: null, email: null, message: null, service: null,
+              source: 'missed_call', client: missedClient
             }).catch(err => console.error('[retell] Missed call speed sequence failed:', err.message));
+
+            // Brain: missed call analysis
+            try {
+              const { getLeadMemory } = require('../utils/leadMemory');
+              const { think } = require('../utils/brain');
+              const { executeActions } = require('../utils/actionExecutor');
+              const memory = getLeadMemory(db, callerPhone, clientId);
+              if (memory) {
+                const decision = await think('missed_call_textback', { phone: callerPhone, duration, outcome }, memory, db);
+                await executeActions(db, decision.actions, memory);
+              }
+            } catch (brainErr) {
+              console.error('[Brain] Missed call error:', brainErr.message);
+            }
           }
         } catch (missedErr) {
           console.error('[retell] Missed call handler error:', missedErr.message);
