@@ -62,7 +62,7 @@ function formatCallNotification(call, client) {
 
   const buttons = [];
   buttons.push([
-    { text: 'Full transcript', callback_data: `transcript:${call.id}` },
+    { text: 'Full transcript', callback_data: `transcript:${call.call_id || call.id}` },
   ]);
 
   return { text, buttons };
