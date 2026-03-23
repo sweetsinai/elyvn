@@ -105,11 +105,19 @@ function initScheduler(db) {
   const dailyDelay = daily.getTime() - now.getTime();
 
   setTimeout(() => {
-    console.log('[Scheduler] Sending daily summaries');
-    sendDailySummaries(db);
-    setInterval(() => {
+    try {
       console.log('[Scheduler] Sending daily summaries');
       sendDailySummaries(db);
+    } catch (err) {
+      console.error('[Scheduler] Daily summary error:', err);
+    }
+    setInterval(() => {
+      try {
+        console.log('[Scheduler] Sending daily summaries');
+        sendDailySummaries(db);
+      } catch (err) {
+        console.error('[Scheduler] Daily summary interval error:', err);
+      }
     }, 24 * 60 * 60 * 1000);
   }, dailyDelay);
 
@@ -125,11 +133,19 @@ function initScheduler(db) {
   const weeklyDelay = weekly.getTime() - now.getTime();
 
   setTimeout(() => {
-    console.log('[Scheduler] Sending weekly reports');
-    sendWeeklyReports(db);
-    setInterval(() => {
+    try {
       console.log('[Scheduler] Sending weekly reports');
       sendWeeklyReports(db);
+    } catch (err) {
+      console.error('[Scheduler] Weekly report error:', err);
+    }
+    setInterval(() => {
+      try {
+        console.log('[Scheduler] Sending weekly reports');
+        sendWeeklyReports(db);
+      } catch (err) {
+        console.error('[Scheduler] Weekly report interval error:', err);
+      }
     }, 7 * 24 * 60 * 60 * 1000);
   }, weeklyDelay);
 

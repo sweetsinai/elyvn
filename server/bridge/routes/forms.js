@@ -13,6 +13,10 @@ router.post('/:clientId', async (req, res) => {
   res.status(200).json({ status: 'received', message: 'Lead captured' });
 
   const db = req.app.locals.db;
+  if (!db) {
+    console.error('[Form] No database connection');
+    return;
+  }
   const clientId = req.params.clientId;
 
   try {

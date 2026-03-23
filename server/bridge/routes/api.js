@@ -93,9 +93,10 @@ router.get('/calls/:clientId', (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
-    const { page = 1, limit = 20, outcome, startDate, endDate, minScore } = req.query;
-
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const { outcome, startDate, endDate, minScore } = req.query;
+    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const offset = (pageNum - 1) * limitNum;
     const conditions = ['client_id = ?'];
     const params = [clientId];
 
@@ -112,8 +113,11 @@ router.get('/calls/:clientId', (req, res) => {
       params.push(endDate);
     }
     if (minScore) {
-      conditions.push('score >= ?');
-      params.push(parseInt(minScore));
+      const ms = parseInt(minScore);
+      if (!isNaN(ms)) {
+        conditions.push('score >= ?');
+        params.push(ms);
+      }
     }
 
     const where = conditions.join(' AND ');
@@ -123,9 +127,9 @@ router.get('/calls/:clientId', (req, res) => {
     const calls = db.prepare(
       `SELECT id, call_id, caller_phone, direction, duration, outcome, summary, score, sentiment, created_at
        FROM calls WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, parseInt(limit), offset);
+    ).all(...params, limitNum, offset);
 
-    res.json({ calls, total, page: parseInt(page), limit: parseInt(limit) });
+    res.json({ calls, total, page: pageNum, limit: limitNum });
   } catch (err) {
     console.error('[api] calls error:', err);
     res.status(500).json({ error: 'Failed to fetch calls' });
@@ -158,9 +162,10 @@ router.get('/messages/:clientId', (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
-    const { page = 1, limit = 20, status, startDate, endDate } = req.query;
-
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const { status, startDate, endDate } = req.query;
+    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const offset = (pageNum - 1) * limitNum;
     const conditions = ['client_id = ?'];
     const params = [clientId];
 
@@ -183,9 +188,9 @@ router.get('/messages/:clientId', (req, res) => {
 
     const messages = db.prepare(
       `SELECT * FROM messages WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, parseInt(limit), offset);
+    ).all(...params, limitNum, offset);
 
-    res.json({ messages, total, page: parseInt(page), limit: parseInt(limit) });
+    res.json({ messages, total, page: pageNum, limit: limitNum });
   } catch (err) {
     console.error('[api] messages error:', err);
     res.status(500).json({ error: 'Failed to fetch messages' });
@@ -197,9 +202,10 @@ router.get('/leads/:clientId', (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
-    const { page = 1, limit = 20, stage, minScore } = req.query;
-
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const { stage, minScore } = req.query;
+    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const offset = (pageNum - 1) * limitNum;
     const conditions = ['client_id = ?'];
     const params = [clientId];
 
@@ -208,8 +214,11 @@ router.get('/leads/:clientId', (req, res) => {
       params.push(stage);
     }
     if (minScore) {
-      conditions.push('score >= ?');
-      params.push(parseInt(minScore));
+      const ms = parseInt(minScore);
+      if (!isNaN(ms)) {
+        conditions.push('score >= ?');
+        params.push(ms);
+      }
     }
 
     const where = conditions.join(' AND ');
@@ -218,7 +227,7 @@ router.get('/leads/:clientId', (req, res) => {
 
     const leads = db.prepare(
       `SELECT * FROM leads WHERE ${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, parseInt(limit), offset);
+    ).all(...params, limitNum, offset);
 
     // Attach recent interactions to each lead
     const leadsWithInteractions = leads.map(lead => {
@@ -233,7 +242,7 @@ router.get('/leads/:clientId', (req, res) => {
       return { ...lead, recent_calls: recentCalls, recent_messages: recentMessages };
     });
 
-    res.json({ leads: leadsWithInteractions, total, page: parseInt(page), limit: parseInt(limit) });
+    res.json({ leads: leadsWithInteractions, total, page: pageNum, limit: limitNum });
   } catch (err) {
     console.error('[api] leads error:', err);
     res.status(500).json({ error: 'Failed to fetch leads' });

@@ -1,3 +1,13 @@
+// Catch unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[CRASH] UNHANDLED REJECTION:', reason);
+});
+
+// Catch uncaught exceptions — don't exit
+process.on('uncaughtException', (error) => {
+  console.error('[CRASH] UNCAUGHT EXCEPTION:', error);
+});
+
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 
 const express = require('express');
@@ -12,6 +22,18 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Request logging for errors and slow requests
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    if (res.statusCode >= 400 || ms > 5000) {
+      console.log(`[REQ] ${req.method} ${req.path} → ${res.statusCode} (${ms}ms)`);
+    }
+  });
+  next();
+});
 
 // SQLite connection
 const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, '../mcp/elyvn.db');
@@ -85,6 +107,10 @@ app.get('*', (req, res) => {
 
 // Global error handler
 app.use((err, req, res, _next) => {
+  // JSON parse errors from body-parser
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Invalid JSON' });
+  }
   console.error('[server] Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });

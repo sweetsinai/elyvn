@@ -11,10 +11,17 @@ const RETELL_BASE = 'https://api.retellai.com/v2';
 
 // POST / — handles all Retell webhook events
 router.post('/', (req, res) => {
-  const { event, call } = req.body;
+  const body = req.body || {};
+  const event = body.event;
+  const call = body.call || {};
 
   // Always respond 200 immediately
   res.status(200).json({ received: true });
+
+  if (!event) {
+    console.log('[retell] No event in payload');
+    return;
+  }
 
   const db = req.app.locals.db;
   if (!db) {
@@ -40,7 +47,7 @@ router.post('/', (req, res) => {
           handleTransfer(db, call);
           break;
         case 'dtmf':
-          if (call.digit === '*') handleTransfer(db, call);
+          if (call && call.digit === '*') handleTransfer(db, call);
           break;
         default:
           console.log(`[retell] Unhandled event: ${event}`);
@@ -53,6 +60,10 @@ router.post('/', (req, res) => {
 
 function handleCallStarted(db, call) {
   try {
+    if (!call || !call.call_id) {
+      console.warn('[retell] call_started missing call or call_id');
+      return;
+    }
     const callId = call.call_id;
     const toNumber = call.to_number;
     const callerPhone = call.from_number;
@@ -69,6 +80,11 @@ function handleCallStarted(db, call) {
 
     const clientId = client?.id || null;
 
+    if (!clientId) {
+      console.warn(`[retell] call_started: no matching client for ${callId} toNumber=${toNumber}`);
+      return;
+    }
+
     db.prepare(`
       INSERT INTO calls (id, call_id, client_id, caller_phone, direction, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -82,6 +98,10 @@ function handleCallStarted(db, call) {
 
 async function handleCallEnded(db, call) {
   try {
+    if (!call || !call.call_id) {
+      console.warn('[retell] call_ended missing call or call_id');
+      return;
+    }
     const callId = call.call_id;
     console.log(`[retell] call_ended: ${callId}`);
 
@@ -125,6 +145,11 @@ async function handleCallEnded(db, call) {
         client = db.prepare('SELECT id FROM clients WHERE retell_agent_id = ?').get(agentId);
       }
       const insertedClientId = client?.id || null;
+
+      if (!insertedClientId) {
+        console.warn(`[retell] No matching client for call ${callId} — cannot insert (client_id NOT NULL)`);
+        return;
+      }
 
       db.prepare(`
         INSERT INTO calls (id, call_id, client_id, caller_phone, direction, created_at)
@@ -327,6 +352,10 @@ async function handleCallEnded(db, call) {
 
 function handleCallAnalyzed(db, call) {
   try {
+    if (!call || !call.call_id) {
+      console.warn('[retell] call_analyzed missing call or call_id');
+      return;
+    }
     const callId = call.call_id;
     const analysis = call.call_analysis || {};
 
@@ -351,6 +380,10 @@ function handleCallAnalyzed(db, call) {
 
 async function handleTransfer(db, call) {
   try {
+    if (!call || !call.call_id) {
+      console.warn('[retell] transfer missing call or call_id');
+      return;
+    }
     const callId = call.call_id;
     const callerPhone = call.from_number;
     console.log(`[retell] transfer: ${callId}`);

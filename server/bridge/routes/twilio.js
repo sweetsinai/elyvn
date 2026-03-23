@@ -12,7 +12,7 @@ const anthropic = new Anthropic();
 
 // POST / — Twilio SMS webhook
 router.post('/', (req, res) => {
-  const { From, To, Body, MessageSid } = req.body;
+  const { From, To, Body, MessageSid } = req.body || {};
 
   // Respond with empty TwiML immediately
   res.set('Content-Type', 'text/xml');
@@ -24,8 +24,19 @@ router.post('/', (req, res) => {
     return;
   }
 
+  if (!From || !To) {
+    console.warn('[twilio] Missing From or To in SMS webhook');
+    return;
+  }
+
   // Process async
-  setImmediate(() => handleInboundSMS(db, { from: From, to: To, body: Body, messageSid: MessageSid }));
+  setImmediate(() => {
+    try {
+      handleInboundSMS(db, { from: From, to: To, body: Body, messageSid: MessageSid });
+    } catch (err) {
+      console.error('[twilio] setImmediate error:', err);
+    }
+  });
 });
 
 async function handleInboundSMS(db, { from, to, body, messageSid }) {

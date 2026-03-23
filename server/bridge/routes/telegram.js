@@ -15,7 +15,11 @@ router.post('/', (req, res) => {
   res.sendStatus(200);
 
   const db = req.app.locals.db;
-  const update = req.body;
+  if (!db) {
+    console.error('[telegram] No database connection');
+    return;
+  }
+  const update = req.body || {};
 
   if (update.message) {
     handleCommand(db, update.message).catch(err => console.error('Telegram command error:', err));
@@ -25,9 +29,18 @@ router.post('/', (req, res) => {
 });
 
 async function handleCommand(db, message) {
+  if (!message || !message.chat || !message.chat.id) {
+    console.warn('[telegram] handleCommand: missing chat or chat.id');
+    return;
+  }
   const chatId = String(message.chat.id);
   const text = (message.text || '').trim();
   const firstName = message.from?.first_name || 'there';
+
+  // Ignore non-text messages (photos, stickers, etc.)
+  if (!text) {
+    return;
+  }
 
   const client = db.prepare('SELECT * FROM clients WHERE telegram_chat_id = ?').get(chatId);
 
@@ -207,9 +220,18 @@ async function handleCommand(db, message) {
 }
 
 async function handleCallback(db, callbackQuery) {
-  const chatId = String(callbackQuery.message?.chat?.id);
+  if (!callbackQuery) {
+    console.warn('[telegram] handleCallback: missing callbackQuery');
+    return;
+  }
+  const chatId = String(callbackQuery.message?.chat?.id || '');
   const data = callbackQuery.data || '';
   const callbackId = callbackQuery.id;
+
+  if (!chatId || !data) {
+    console.warn('[telegram] handleCallback: missing chatId or data');
+    return;
+  }
 
   if (data.startsWith('transcript:')) {
     const callId = data.split(':')[1];
