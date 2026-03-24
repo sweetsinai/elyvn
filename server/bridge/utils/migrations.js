@@ -236,6 +236,33 @@ const migrations = [
       }
     },
   },
+  {
+    id: '008_leads_prospect_id',
+    description: 'Add prospect_id and last_contact columns to leads for outreach→lead linkage',
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info('leads')").all().map(c => c.name);
+      if (!cols.includes('prospect_id')) {
+        db.exec('ALTER TABLE leads ADD COLUMN prospect_id TEXT');
+      }
+      if (!cols.includes('last_contact')) {
+        db.exec('ALTER TABLE leads ADD COLUMN last_contact TEXT');
+      }
+      if (!cols.includes('calcom_booking_id')) {
+        db.exec('ALTER TABLE leads ADD COLUMN calcom_booking_id TEXT');
+      }
+      // Index for prospect lookups
+      db.exec('CREATE INDEX IF NOT EXISTS idx_leads_prospect_id ON leads(prospect_id)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)');
+    },
+  },
+  {
+    id: '009_emails_sent_indexes',
+    description: 'Add indexes on emails_sent for reply matching',
+    up(db) {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_emails_sent_to_email ON emails_sent(to_email)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_emails_sent_reply ON emails_sent(reply_text, reply_classification)');
+    },
+  },
 ];
 
 /**

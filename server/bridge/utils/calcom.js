@@ -100,4 +100,64 @@ async function getAvailability(eventTypeId, date) {
   }
 }
 
-module.exports = { getBookings, cancelBooking, getAvailability };
+/**
+ * Create a booking via Cal.com API.
+ * @param {object} opts
+ * @param {string|number} opts.eventTypeId - Cal.com event type ID
+ * @param {string} opts.startTime - ISO datetime for the booking
+ * @param {string} opts.name - Attendee name
+ * @param {string} opts.email - Attendee email
+ * @param {string} [opts.phone] - Attendee phone
+ * @param {object} [opts.metadata] - Additional metadata
+ * @returns {Promise<{success: boolean, booking?: object, error?: string}>}
+ */
+async function createBooking(opts) {
+  const { eventTypeId, startTime, name, email, phone, metadata } = opts;
+
+  if (!CALCOM_API_KEY) {
+    console.error('[calcom] No CALCOM_API_KEY configured');
+    return { success: false, error: 'Cal.com API key not configured' };
+  }
+
+  if (!eventTypeId || !startTime || !email) {
+    return { success: false, error: 'Missing required fields: eventTypeId, startTime, email' };
+  }
+
+  try {
+    const body = {
+      eventTypeId: Number(eventTypeId),
+      start: startTime,
+      responses: {
+        name: name || 'Guest',
+        email: email,
+      },
+      metadata: metadata || {},
+    };
+
+    if (phone) {
+      body.responses.phone = phone;
+    }
+
+    const resp = await fetch(`${BASE_URL}/bookings`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error(`[calcom] createBooking failed (${resp.status}):`, errText.substring(0, 300));
+      return { success: false, error: `Cal.com API error: ${resp.status}` };
+    }
+
+    const data = await resp.json();
+    const booking = data.data || data;
+    console.log(`[calcom] Booking created: ${booking.uid || booking.id} for ${email} at ${startTime}`);
+    return { success: true, booking };
+  } catch (err) {
+    console.error('[calcom] createBooking error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+module.exports = { getBookings, cancelBooking, getAvailability, createBooking };

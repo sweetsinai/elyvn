@@ -19,11 +19,41 @@ const cors = require('cors');
 const path = require('path');
 const Database = require('better-sqlite3');
 
+// === STARTUP ENV VALIDATION ===
+const REQUIRED_ENV = ['ANTHROPIC_API_KEY'];
+const RECOMMENDED_ENV = ['RETELL_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'ELYVN_API_KEY'];
+const missingRequired = REQUIRED_ENV.filter(v => !process.env[v]);
+if (missingRequired.length > 0) {
+  console.error(`[FATAL] Missing required env vars: ${missingRequired.join(', ')}`);
+  console.error('[FATAL] Server cannot start without these. Check your .env file.');
+  process.exit(1);
+}
+const missingRecommended = RECOMMENDED_ENV.filter(v => !process.env[v]);
+if (missingRecommended.length > 0) {
+  console.warn(`[WARN] Missing recommended env vars: ${missingRecommended.join(', ')} — some features will be disabled`);
+}
+if (!process.env.ELYVN_API_KEY) {
+  console.warn('[WARN] ELYVN_API_KEY not set — API endpoints are UNPROTECTED. Set this before going live!');
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
-app.use(cors());
+// Middleware — restrict CORS to known origins
+const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
+  : null; // null = allow all in dev, but warn
+
+if (!ALLOWED_ORIGINS) {
+  console.warn('[WARN] CORS_ORIGINS not set — allowing all origins. Set CORS_ORIGINS for production!');
+}
+
+app.use(cors({
+  origin: ALLOWED_ORIGINS || true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-api-key', 'Authorization'],
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -84,11 +114,16 @@ function rateLimiter(req, res, next) {
 
 app.use(rateLimiter);
 
-// Clean up rate limit map every 5 minutes
+// Clean up rate limit map every 5 minutes + cap size to prevent memory leak
 setInterval(() => {
   const cutoff = Date.now() - RATE_LIMIT_WINDOW_MS;
   for (const [ip, entry] of rateLimitMap) {
     if (entry.start < cutoff) rateLimitMap.delete(ip);
+  }
+  // Hard cap: if map somehow grows huge, nuke it
+  if (rateLimitMap.size > 10000) {
+    console.warn(`[rateLimit] Map size ${rateLimitMap.size} exceeded cap, clearing`);
+    rateLimitMap.clear();
   }
 }, 5 * 60 * 1000);
 
@@ -96,7 +131,13 @@ setInterval(() => {
 const API_KEY = process.env.ELYVN_API_KEY;
 
 function apiAuth(req, res, next) {
-  if (!API_KEY) return next(); // no key configured = open (dev mode)
+  // In production, API_KEY MUST be set. In dev, warn but allow through.
+  if (!API_KEY) {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(401).json({ error: 'Server misconfigured — API key not set' });
+    }
+    return next(); // dev mode fallback
+  }
   const provided = req.headers['x-api-key'] || req.query.api_key;
   if (provided === API_KEY) return next();
   return res.status(401).json({ error: 'Unauthorized' });
@@ -234,18 +275,44 @@ app.listen(PORT, () => {
 
     const jobHandlers = {
       'speed_to_lead_sms': async (payload) => {
-        await sendSMS(payload.phone, payload.message, payload.from);
+        await sendSMS(payload.phone, payload.message, payload.from, db, payload.clientId);
       },
       'speed_to_lead_callback': async (payload) => {
         const { scheduleCallback } = require('./utils/speed-to-lead');
         const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(payload.clientId);
+        if (!client) {
+          console.error(`[jobQueue] speed_to_lead_callback — client ${payload.clientId} not found`);
+          return;
+        }
+        // Check if lead already booked before making the callback
+        const lead = db.prepare('SELECT stage FROM leads WHERE id = ?').get(payload.leadId);
+        if (lead && (lead.stage === 'booked' || lead.stage === 'completed')) {
+          console.log(`[jobQueue] Skipping callback — lead ${payload.leadId} already ${lead.stage}`);
+          return;
+        }
         scheduleCallback(db, { ...payload, client });
       },
       'followup_sms': async (payload) => {
-        await sendSMS(payload.phone || payload.to, payload.message || payload.body, payload.from);
+        // Check if lead already booked before sending follow-up
+        if (payload.leadId) {
+          const lead = db.prepare('SELECT stage FROM leads WHERE id = ?').get(payload.leadId);
+          if (lead && (lead.stage === 'booked' || lead.stage === 'completed')) {
+            console.log(`[jobQueue] Skipping followup_sms — lead ${payload.leadId} already ${lead.stage}`);
+            return;
+          }
+        }
+        await sendSMS(payload.phone || payload.to, payload.message || payload.body, payload.from, db, payload.clientId);
       },
       'appointment_reminder': async (payload) => {
-        await sendSMS(payload.phone, payload.message, payload.from);
+        // Verify appointment hasn't been cancelled
+        if (payload.appointmentId) {
+          const appt = db.prepare('SELECT status FROM appointments WHERE id = ?').get(payload.appointmentId);
+          if (appt && appt.status === 'cancelled') {
+            console.log(`[jobQueue] Skipping reminder — appointment ${payload.appointmentId} cancelled`);
+            return;
+          }
+        }
+        await sendSMS(payload.phone, payload.message, payload.from, db, payload.clientId);
       },
       'interested_followup_email': async (payload) => {
         // 24h follow-up for INTERESTED prospects who haven't booked yet

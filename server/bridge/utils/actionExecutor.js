@@ -129,6 +129,78 @@ async function executeOne(db, action, lead, client) {
       return { notified: true };
     }
 
+    case 'book_appointment': {
+      // Brain decided to book an appointment for the lead
+      const phone = action.phone || lead?.phone;
+      const email = action.email || lead?.email;
+      const leadName = action.name || lead?.name || 'Guest';
+
+      if (!phone && !email) return { booked: false, reason: 'no contact info' };
+
+      // Try Cal.com API first
+      const eventTypeId = action.event_type_id || client?.calcom_event_type_id || process.env.CALCOM_EVENT_TYPE_ID;
+      if (eventTypeId && email && action.start_time) {
+        try {
+          const { createBooking } = require('./calcom');
+          const result = await createBooking({
+            eventTypeId,
+            startTime: action.start_time,
+            name: leadName,
+            email,
+            phone,
+            metadata: { lead_id: lead?.id, client_id: client?.id, source: 'brain' },
+          });
+
+          if (result.success) {
+            // Record appointment in DB
+            const appointmentId = randomUUID();
+            const now = new Date().toISOString();
+            db.prepare(`
+              INSERT INTO appointments (id, client_id, lead_id, phone, name, service, datetime, status, calcom_booking_id, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)
+            `).run(appointmentId, client?.id, lead?.id, phone, leadName, action.service || 'Demo', action.start_time, result.booking?.uid || '', now, now);
+
+            // Update lead stage
+            if (lead?.id) {
+              db.prepare("UPDATE leads SET stage = 'booked', score = MAX(score, 9), updated_at = datetime('now') WHERE id = ?").run(lead.id);
+            }
+
+            // Cancel pending follow-ups
+            if (lead?.id) {
+              db.prepare("UPDATE followups SET status = 'cancelled', updated_at = datetime('now') WHERE lead_id = ? AND status = 'scheduled'").run(lead.id);
+            }
+
+            // Notify owner
+            if (client?.telegram_chat_id) {
+              telegram.sendMessage(client.telegram_chat_id,
+                `📅 <b>Brain auto-booked appointment</b>\n\n${leadName} (${phone || email})\n🕐 ${action.start_time}\n📋 ${action.service || 'Demo'}`
+              ).catch(() => {});
+            }
+
+            return { booked: true, appointment_id: appointmentId, via: 'calcom_api' };
+          }
+        } catch (err) {
+          console.error('[Executor] Cal.com booking error:', err.message);
+        }
+      }
+
+      // Fallback: send booking link via SMS
+      const bookingLink = client?.calcom_booking_link || process.env.CALCOM_BOOKING_LINK;
+      if (phone && bookingLink) {
+        const smsText = `Hi ${leadName.split(' ')[0]}! Here's your booking link for ${client?.business_name || 'us'}: ${bookingLink}`;
+        await sendSMS(phone, smsText, client?.twilio_phone, db, client?.id);
+        return { booked: false, fallback: 'sms_link_sent', booking_link: bookingLink };
+      }
+
+      // Notify owner if we can't book
+      if (client?.telegram_chat_id) {
+        telegram.sendMessage(client.telegram_chat_id,
+          `⚠️ <b>Brain wants to book but can't</b>\n\n${leadName} (${phone || email || 'no contact'})\nReason: ${!eventTypeId ? 'No event type configured' : !email ? 'No email' : 'No time slot specified'}\n\nPlease book manually.`
+        ).catch(() => {});
+      }
+      return { booked: false, reason: 'manual_booking_needed' };
+    }
+
     case 'log_insight': {
       console.log(`[Brain Insight] ${lead?.phone}: ${action.insight}`);
       return { logged: true };

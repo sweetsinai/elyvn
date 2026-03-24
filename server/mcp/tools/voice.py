@@ -56,73 +56,79 @@ async def handle_inbound_call(
     calcom_booking_id: Optional[str] = None,
 ) -> dict:
     """Post-call processing for inbound calls. Fetches transcript, summarizes, scores lead."""
-    retell_data = await _fetch_retell_call(call_id)
-    transcript_text = _extract_transcript_text(retell_data) if retell_data else ""
+    try:
+        retell_data = await _fetch_retell_call(call_id)
+        transcript_text = _extract_transcript_text(retell_data) if retell_data else ""
 
-    summary = "Call completed — transcript unavailable."
-    score = 5
-    sentiment = "neutral"
+        summary = "Call completed — transcript unavailable."
+        score = 5
+        sentiment = "neutral"
 
-    if transcript_text:
-        try:
-            client = anthropic.Anthropic()
-            resp = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=300,
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        f"Analyze this call transcript and return JSON with exactly these keys:\n"
-                        f"- summary: 2-sentence summary of the call\n"
-                        f"- score: lead quality 1-10 (10 = ready to buy)\n"
-                        f"- sentiment: positive/neutral/negative\n\n"
-                        f"Transcript:\n{transcript_text}"
-                    ),
-                }],
-            )
-            result_text = resp.content[0].text
+        if transcript_text:
             try:
-                parsed = json.loads(result_text)
-                summary = parsed.get("summary", summary)
-                score = int(parsed.get("score", score))
-                sentiment = parsed.get("sentiment", sentiment)
-            except (json.JSONDecodeError, ValueError):
-                summary = result_text[:500]
-        except Exception as e:
-            logger.error("Anthropic call analysis failed: %s", e)
+                client = anthropic.Anthropic()
+                resp = client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=300,
+                    messages=[{
+                        "role": "user",
+                        "content": (
+                            f"Analyze this call transcript and return JSON with exactly these keys:\n"
+                            f"- summary: 2-sentence summary of the call\n"
+                            f"- score: lead quality 1-10 (10 = ready to buy)\n"
+                            f"- sentiment: positive/neutral/negative\n\n"
+                            f"Transcript:\n{transcript_text}"
+                        ),
+                    }],
+                )
+                result_text = resp.content[0].text
+                try:
+                    parsed = json.loads(result_text)
+                    summary = parsed.get("summary", summary)
+                    score = int(parsed.get("score", score))
+                    sentiment = parsed.get("sentiment", sentiment)
+                except (json.JSONDecodeError, ValueError):
+                    summary = result_text[:500]
+            except anthropic.APIError as e:
+                logger.error("Anthropic call analysis failed: %s", e)
+            except Exception as e:
+                logger.error("Unexpected error in call analysis: %s", e)
 
-    client_cfg = await get_client(client_id)
-    stage = "booked" if calcom_booking_id else ("qualified" if score >= 7 else "new")
+        client_cfg = await get_client(client_id)
+        stage = "booked" if calcom_booking_id else ("qualified" if score >= 7 else "new")
 
-    lead_id = await upsert_lead(
-        client_id=client_id,
-        phone=caller_phone,
-        source="inbound_call",
-        score=score,
-        stage=stage,
-        notes=summary,
-    )
+        lead_id = await upsert_lead(
+            client_id=client_id,
+            phone=caller_phone,
+            source="inbound_call",
+            score=score,
+            stage=stage,
+            notes=summary,
+        )
 
-    await insert_call(
-        client_id=client_id,
-        call_id=call_id,
-        caller_phone=caller_phone,
-        direction="inbound",
-        duration=duration,
-        outcome=outcome,
-        calcom_booking_id=calcom_booking_id,
-        sentiment=sentiment,
-        summary=summary,
-        score=score,
-    )
+        await insert_call(
+            client_id=client_id,
+            call_id=call_id,
+            caller_phone=caller_phone,
+            direction="inbound",
+            duration=duration,
+            outcome=outcome,
+            calcom_booking_id=calcom_booking_id,
+            sentiment=sentiment,
+            summary=summary,
+            score=score,
+        )
 
-    return {
-        "summary": summary,
-        "score": score,
-        "sentiment": sentiment,
-        "lead_id": lead_id,
-        "stage": stage,
-    }
+        return {
+            "summary": summary,
+            "score": score,
+            "sentiment": sentiment,
+            "lead_id": lead_id,
+            "stage": stage,
+        }
+    except Exception as e:
+        logger.error("handle_inbound_call failed: %s", e)
+        return {"error": f"Failed to process inbound call: {str(e)}"}
 
 
 async def transfer_to_human(
@@ -131,39 +137,45 @@ async def transfer_to_human(
     client_id: str,
 ) -> dict:
     """Handle call transfer — fetch transcript, summarize, log as transferred."""
-    retell_data = await _fetch_retell_call(call_id)
-    transcript_text = _extract_transcript_text(retell_data) if retell_data else ""
+    try:
+        retell_data = await _fetch_retell_call(call_id)
+        transcript_text = _extract_transcript_text(retell_data) if retell_data else ""
 
-    summary = "Call transferred to owner — transcript unavailable."
+        summary = "Call transferred to owner — transcript unavailable."
 
-    if transcript_text:
-        try:
-            client = anthropic.Anthropic()
-            resp = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=150,
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        f"Summarize this call in exactly 2 sentences. "
-                        f"Focus on what the caller needs:\n\n{transcript_text}"
-                    ),
-                }],
-            )
-            summary = resp.content[0].text.strip()
-        except Exception as e:
-            logger.error("Anthropic summarization failed: %s", e)
+        if transcript_text:
+            try:
+                client = anthropic.Anthropic()
+                resp = client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=150,
+                    messages=[{
+                        "role": "user",
+                        "content": (
+                            f"Summarize this call in exactly 2 sentences. "
+                            f"Focus on what the caller needs:\n\n{transcript_text}"
+                        ),
+                    }],
+                )
+                summary = resp.content[0].text.strip()
+            except anthropic.APIError as e:
+                logger.error("Anthropic summarization failed: %s", e)
+            except Exception as e:
+                logger.error("Unexpected error in summarization: %s", e)
 
-    await insert_call(
-        client_id=client_id,
-        call_id=call_id,
-        caller_phone=caller_phone,
-        direction="inbound",
-        outcome="transferred",
-        summary=summary,
-    )
+        await insert_call(
+            client_id=client_id,
+            call_id=call_id,
+            caller_phone=caller_phone,
+            direction="inbound",
+            outcome="transferred",
+            summary=summary,
+        )
 
-    return {"summary": summary, "call_id": call_id, "status": "transferred"}
+        return {"summary": summary, "call_id": call_id, "status": "transferred"}
+    except Exception as e:
+        logger.error("transfer_to_human failed: %s", e)
+        return {"error": f"Failed to transfer call: {str(e)}"}
 
 
 async def initiate_outbound_call(
@@ -172,49 +184,53 @@ async def initiate_outbound_call(
     client_id: str,
 ) -> dict:
     """Create an outbound call via Retell AI and log it."""
-    client_cfg = await get_client(client_id)
-    if not client_cfg:
-        return {"error": f"Client {client_id} not found"}
-
-    agent_id = client_cfg.get("retell_agent_id")
-    from_phone = client_cfg.get("retell_phone")
-    if not agent_id or not from_phone:
-        return {"error": "Client missing retell_agent_id or retell_phone"}
-
-    retell_call_id = None
     try:
-        async with httpx.AsyncClient(timeout=15) as http:
-            resp = await http.post(
-                f"{RETELL_BASE}/create-phone-call",
-                headers={
-                    "Authorization": f"Bearer {RETELL_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "from_number": from_phone,
-                    "to_number": contact_phone,
-                    "agent_id": agent_id,
-                    "metadata": {"purpose": purpose, "client_id": client_id},
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            retell_call_id = data.get("call_id")
-    except httpx.HTTPError as e:
-        logger.error("Retell outbound call failed: %s", e)
-        return {"error": f"Retell API error: {e}"}
+        client_cfg = await get_client(client_id)
+        if not client_cfg:
+            return {"error": f"Client {client_id} not found"}
 
-    call_record_id = await insert_call(
-        client_id=client_id,
-        call_id=retell_call_id,
-        caller_phone=contact_phone,
-        direction="outbound",
-        outcome="initiated",
-        summary=purpose,
-    )
+        agent_id = client_cfg.get("retell_agent_id")
+        from_phone = client_cfg.get("retell_phone")
+        if not agent_id or not from_phone:
+            return {"error": "Client missing retell_agent_id or retell_phone"}
 
-    return {
-        "retell_call_id": retell_call_id,
-        "call_record_id": call_record_id,
-        "status": "initiated",
-    }
+        retell_call_id = None
+        try:
+            async with httpx.AsyncClient(timeout=15) as http:
+                resp = await http.post(
+                    f"{RETELL_BASE}/create-phone-call",
+                    headers={
+                        "Authorization": f"Bearer {RETELL_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "from_number": from_phone,
+                        "to_number": contact_phone,
+                        "agent_id": agent_id,
+                        "metadata": {"purpose": purpose, "client_id": client_id},
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                retell_call_id = data.get("call_id")
+        except httpx.HTTPError as e:
+            logger.error("Retell outbound call failed: %s", e)
+            return {"error": f"Retell API error: {str(e)}"}
+
+        call_record_id = await insert_call(
+            client_id=client_id,
+            call_id=retell_call_id,
+            caller_phone=contact_phone,
+            direction="outbound",
+            outcome="initiated",
+            summary=purpose,
+        )
+
+        return {
+            "retell_call_id": retell_call_id,
+            "call_record_id": call_record_id,
+            "status": "initiated",
+        }
+    except Exception as e:
+        logger.error("initiate_outbound_call failed: %s", e)
+        return {"error": f"Failed to initiate outbound call: {str(e)}"}

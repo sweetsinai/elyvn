@@ -4,7 +4,7 @@ const anthropic = new Anthropic();
 async function classifyReply(emailBody, originalSubject) {
   try {
     const resp = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
       max_tokens: 100,
       system: `Classify this email reply into exactly one category. Return JSON only:
 {"classification": "INTERESTED" | "QUESTION" | "NOT_INTERESTED" | "UNSUBSCRIBE", "summary": "one sentence summary"}

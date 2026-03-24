@@ -57,8 +57,17 @@ async function handleBookingCreated(db, payload) {
   const now = new Date().toISOString();
   const calcomBookingId = String(bookingId || uid || '');
 
+  // === IDEMPOTENCY CHECK — skip if this booking was already processed ===
+  if (calcomBookingId) {
+    const existing = db.prepare('SELECT id FROM appointments WHERE calcom_booking_id = ?').get(calcomBookingId);
+    if (existing) {
+      console.log(`[calcom-webhook] Booking ${calcomBookingId} already processed (idempotent skip)`);
+      return;
+    }
+  }
+
   // Find which client this booking belongs to
-  // Match by event type, organizer email, or use default client
+  // Match by organizer email first, then fall back to single-tenant default
   let client = null;
   if (organizer?.email) {
     client = db.prepare('SELECT * FROM clients WHERE owner_email = ? AND is_active = 1').get(organizer.email);
@@ -112,19 +121,51 @@ async function handleBookingCreated(db, payload) {
     }
   }
 
-  // Check if this was an outreach prospect — update prospect status
+  // Check if this was an outreach prospect — match by email in multiple ways
+  let prospect = null;
   if (email) {
-    const prospect = db.prepare('SELECT * FROM prospects WHERE email = ?').get(email);
-    if (prospect) {
-      db.prepare("UPDATE prospects SET status = 'booked', updated_at = ? WHERE id = ?").run(now, prospect.id);
-      console.log(`[calcom-webhook] Prospect ${prospect.id} (${prospect.business_name}) booked!`);
+    // Try 1: Direct match on prospects.email
+    prospect = db.prepare('SELECT * FROM prospects WHERE email = ?').get(email);
 
-      // Cancel any pending follow-up jobs for this prospect
-      try {
-        const { cancelJobs } = require('../utils/jobQueue');
-        cancelJobs(db, { type: 'interested_followup_email', payloadMatch: `"prospect_id":"${prospect.id}"` });
-      } catch (_) {}
+    // Try 2: Match via emails_sent.to_email (prospect may have been emailed at a different address)
+    if (!prospect) {
+      const sentEmail = db.prepare(`
+        SELECT es.prospect_id FROM emails_sent es
+        WHERE es.to_email = ? AND es.prospect_id IS NOT NULL
+        LIMIT 1
+      `).get(email);
+      if (sentEmail?.prospect_id) {
+        prospect = db.prepare('SELECT * FROM prospects WHERE id = ?').get(sentEmail.prospect_id);
+      }
     }
+
+    // Try 3: Match by attendee name against prospect business_name
+    if (!prospect && name) {
+      prospect = db.prepare('SELECT * FROM prospects WHERE business_name LIKE ? LIMIT 1').get(`%${name}%`);
+    }
+  }
+
+  if (prospect) {
+    db.prepare("UPDATE prospects SET status = 'booked', updated_at = ? WHERE id = ?").run(now, prospect.id);
+    console.log(`[calcom-webhook] Prospect ${prospect.id} (${prospect.business_name}) booked!`);
+
+    // Link the lead to the prospect if a lead was just created/updated
+    try {
+      const lead = db.prepare(
+        "SELECT id FROM leads WHERE calcom_booking_id = ? LIMIT 1"
+      ).get(calcomBookingId);
+      if (lead) {
+        db.prepare("UPDATE leads SET prospect_id = ?, source = COALESCE(source, 'outreach'), updated_at = ? WHERE id = ?")
+          .run(prospect.id, now, lead.id);
+      }
+    } catch (_) {}
+
+    // Cancel any pending follow-up jobs for this prospect
+    try {
+      const { cancelJobs } = require('../utils/jobQueue');
+      cancelJobs(db, { payloadContains: `"prospect_id":"${prospect.id}"` });
+      cancelJobs(db, { type: 'noreply_followup', payloadContains: prospect.id });
+    } catch (_) {}
   }
 
   // Send confirmation SMS if we have a phone number

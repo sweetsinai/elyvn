@@ -159,72 +159,10 @@ function scheduleCallback(db, options) {
 
     console.log(`[SpeedToLead] AI callback to ${phone} queued for ${totalDelayMs / 1000}s`);
   } catch (err) {
-    console.error('[SpeedToLead] scheduleCallback error:', err.message);
-
-    // Fallback to setTimeout if job queue fails
-    setTimeout(async () => {
-      try {
-        const lead = db.prepare('SELECT stage FROM leads WHERE id = ?').get(leadId);
-        if (lead && (lead.stage === 'booked' || lead.stage === 'completed')) {
-          console.log(`[SpeedToLead] Skipping callback — lead ${leadId} already at stage: ${lead.stage}`);
-          return;
-        }
-
-        const currentClient = db.prepare('SELECT is_active FROM clients WHERE id = ?').get(clientId);
-        if (!currentClient || !currentClient.is_active) {
-          console.log(`[SpeedToLead] Skipping callback — client ${clientId} AI is paused`);
-          return;
-        }
-
-        if (!RETELL_API_KEY || !client.retell_agent_id) {
-          console.error('[SpeedToLead] Cannot callback — missing RETELL_API_KEY or retell_agent_id');
-          return;
-        }
-
-        const dynamicVars = {};
-        if (name) dynamicVars.customer_name = name;
-        if (service) dynamicVars.service_requested = service;
-        if (message) dynamicVars.original_message = message.substring(0, 200);
-        dynamicVars.callback_reason = reason === 'missed_call_callback'
-          ? 'returning their missed call'
-          : 'following up on their inquiry';
-
-        const response = await fetch('https://api.retellai.com/v2/create-phone-call', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${RETELL_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            from_number: client.retell_phone,
-            to_number: phone,
-            agent_id: client.retell_agent_id,
-            retell_llm_dynamic_variables: dynamicVars,
-            metadata: { lead_id: leadId, client_id: clientId, callback_type: reason }
-          })
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          console.log(`[SpeedToLead] AI callback initiated to ${phone} — call_id: ${result.call_id}`);
-
-          db.prepare(`
-            INSERT INTO calls (id, client_id, call_id, caller_phone, direction, outcome, summary, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'outbound', 'callback_initiated', ?, datetime('now'), datetime('now'))
-          `).run(randomUUID(), clientId, result.call_id || randomUUID(), phone,
-            `Speed callback: ${reason}.${service ? ' Service: ' + service : ''}`);
-
-          db.prepare(
-            `UPDATE leads SET stage = 'contacted', last_contact = datetime('now'), updated_at = datetime('now') WHERE id = ?`
-          ).run(leadId);
-        } else {
-          const errText = await response.text();
-          console.error('[SpeedToLead] Retell callback failed:', response.status, errText.substring(0, 200));
-        }
-      } catch (err) {
-        console.error('[SpeedToLead] Callback error:', err.message);
-      }
-    }, delayMs);
+    console.error('[SpeedToLead] scheduleCallback error (job queue unavailable):', err.message);
+    // No setTimeout fallback — jobs lost on restart are unacceptable in production.
+    // Log a clear error so it's visible in monitoring.
+    console.error(`[SpeedToLead] DROPPED callback for lead ${leadId} phone ${phone} — fix job queue!`);
   }
 }
 
@@ -256,40 +194,8 @@ function scheduleFollowUpSMS(db, options) {
 
     console.log(`[SpeedToLead] Touch 3 follow-up SMS queued for ${phone}`);
   } catch (err) {
-    console.error('[SpeedToLead] scheduleFollowUpSMS error:', err.message);
-
-    // Fallback to setTimeout
-    setTimeout(async () => {
-      try {
-        const lead = db.prepare('SELECT stage FROM leads WHERE id = ?').get(leadId);
-        if (lead && (lead.stage === 'booked' || lead.stage === 'completed')) {
-          console.log('[SpeedToLead] Skipping follow-up SMS — lead already booked');
-          return;
-        }
-
-        const currentClient = db.prepare('SELECT is_active FROM clients WHERE id = ?').get(clientId);
-        if (!currentClient || !currentClient.is_active) return;
-
-        const firstName = name ? name.split(' ')[0] : null;
-        const bookingLink = client.calcom_booking_link || '';
-        const fromNumber = client.twilio_phone || process.env.TWILIO_PHONE_NUMBER;
-
-        const followUpText = `Hi${firstName ? ' ' + firstName : ''}, I just tried reaching you from ${client.business_name}. ` +
-          `No worries if now's not a good time! ` +
-          (bookingLink ? `Book whenever works: ${bookingLink}` : `Just reply and we'll set something up.`);
-
-        await sendSMS(phone, followUpText, fromNumber);
-
-        db.prepare(`
-          INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, reply_text, reply_source, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, 'sms', 'outbound', NULL, ?, 'system', 'sent', datetime('now'), datetime('now'))
-        `).run(randomUUID(), clientId, leadId, phone, followUpText);
-
-        console.log(`[SpeedToLead] Touch 3 follow-up SMS sent to ${phone}`);
-      } catch (err) {
-        console.error('[SpeedToLead] Follow-up SMS error:', err.message);
-      }
-    }, delayMs);
+    console.error('[SpeedToLead] scheduleFollowUpSMS error (job queue unavailable):', err.message);
+    console.error(`[SpeedToLead] DROPPED follow-up SMS for lead ${leadId} phone ${phone} — fix job queue!`);
   }
 }
 

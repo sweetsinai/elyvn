@@ -6,8 +6,20 @@ const { sendSMS, sendSMSToOwner } = require('../utils/sms');
 const telegram = require('../utils/telegram');
 
 const anthropic = new Anthropic();
+const { normalizePhone } = require('../utils/phone');
+const { CircuitBreaker } = require('../utils/resilience');
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
 const RETELL_BASE = 'https://api.retellai.com/v2';
+
+// Circuit breakers for external APIs
+const retellBreaker = new CircuitBreaker(
+  async (url, opts) => {
+    const resp = await fetch(url, opts);
+    if (!resp.ok) throw new Error(`Retell API ${resp.status}`);
+    return resp;
+  },
+  { failureThreshold: 3, failureWindow: 60000, cooldownPeriod: 30000, serviceName: 'Retell' }
+);
 
 // POST / — handles all Retell webhook events
 router.post('/', (req, res) => {
@@ -66,7 +78,7 @@ function handleCallStarted(db, call) {
     }
     const callId = call.call_id;
     const toNumber = call.to_number;
-    const callerPhone = call.from_number;
+    const callerPhone = normalizePhone(call.from_number);
     const direction = call.direction || 'inbound';
 
     // Match client by retell phone number; fall back to agent ID for web calls
@@ -120,7 +132,7 @@ async function handleCallEnded(db, call) {
       try {
         const retellResp = await fetch(`${RETELL_BASE}/get-call/${callId}`, {
           headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` },
-          signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(30000),
         });
         if (retellResp.ok) {
           callData = await retellResp.json();
@@ -144,7 +156,7 @@ async function handleCallEnded(db, call) {
     if (!callRecord) {
       console.warn(`[retell] No call record for ${callId} — inserting from call_ended payload`);
       const toNumber = callData.to_number || call.to_number;
-      const fromNumber = callData.from_number || call.from_number;
+      const fromNumber = normalizePhone(callData.from_number || call.from_number);
       const agentId = callData.agent_id || call.agent_id;
 
       let client = null;
@@ -277,7 +289,7 @@ async function handleCallEnded(db, call) {
       if (existingLead) {
         db.prepare(`
           UPDATE leads SET
-            score = ?,
+            score = MAX(score, ?),
             last_contact = ?,
             stage = CASE WHEN stage = 'new' THEN 'contacted' ELSE stage END,
             updated_at = ?
@@ -320,7 +332,7 @@ async function handleCallEnded(db, call) {
           const voicemailClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
           if (voicemailClient) {
             const voicemailMsg = `Hi, we noticed you called ${voicemailClient.business_name}. Sorry we missed you! Book an appointment: ${voicemailClient.calcom_booking_link || '(booking link not set)'} or we'll call you back during business hours.`;
-            sendSMS(callerPhone, voicemailMsg, voicemailClient.twilio_phone)
+            sendSMS(callerPhone, voicemailMsg, voicemailClient.twilio_phone, db, clientId)
               .catch(err => console.error('[retell] Voicemail SMS failed:', err.message));
 
             db.prepare(`
@@ -360,9 +372,9 @@ async function handleCallEnded(db, call) {
               `).run(missedLeadId, clientId, callerPhone);
             }
 
-            // Instant text-back
+            // Instant text-back (with opt-out check)
             const textBackMsg = `Hi! Sorry we missed your call. How can we help you today? — ${missedClient.business_name || 'Our team'}`;
-            sendSMS(callerPhone, textBackMsg, missedClient.twilio_phone)
+            sendSMS(callerPhone, textBackMsg, missedClient.twilio_phone, db, clientId)
               .catch(err => console.error('[retell] Missed call text-back failed:', err.message));
 
             // Log text-back in messages
@@ -386,19 +398,9 @@ async function handleCallEnded(db, call) {
               source: 'missed_call', client: missedClient
             }).catch(err => console.error('[retell] Missed call speed sequence failed:', err.message));
 
-            // Brain: missed call analysis
-            try {
-              const { getLeadMemory } = require('../utils/leadMemory');
-              const { think } = require('../utils/brain');
-              const { executeActions } = require('../utils/actionExecutor');
-              const memory = getLeadMemory(db, callerPhone, clientId);
-              if (memory) {
-                const decision = await think('missed_call_textback', { phone: callerPhone, duration, outcome }, memory, db);
-                await executeActions(db, decision.actions, memory);
-              }
-            } catch (brainErr) {
-              console.error('[Brain] Missed call error:', brainErr.message);
-            }
+            // NOTE: Brain decision for missed calls is handled by the general post-call
+            // brain block below (line ~443). Removed duplicate brain call here to prevent
+            // double SMS sends and duplicate follow-ups.
           }
         } catch (missedErr) {
           console.error('[retell] Missed call handler error:', missedErr.message);

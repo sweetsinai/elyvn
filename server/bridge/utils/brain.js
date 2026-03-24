@@ -7,8 +7,15 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
 const path = require('path');
+const { CircuitBreaker } = require('./resilience');
 
 const anthropic = new Anthropic();
+
+// Circuit breaker for Claude API — opens after 5 failures in 60s, cools down 30s
+const claudeBreaker = new CircuitBreaker(
+  async (params) => anthropic.messages.create(params),
+  { failureThreshold: 5, failureWindow: 60000, cooldownPeriod: 30000, serviceName: 'Claude-Brain' }
+);
 
 // Per-lead lock to prevent concurrent brain decisions on the same lead
 const leadLocks = new Map();
@@ -26,8 +33,19 @@ async function think(eventType, eventData, leadMemory, db) {
   // Per-lead lock: serialize brain decisions for the same lead
   const lockKey = lead?.id;
   if (lockKey) {
-    while (leadLocks.has(lockKey)) {
-      await leadLocks.get(lockKey);
+    // Wait for existing lock with a 60-second timeout to prevent deadlocks
+    const LOCK_TIMEOUT_MS = 60000;
+    if (leadLocks.has(lockKey)) {
+      const existingLock = leadLocks.get(lockKey);
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Brain lock timeout for lead ${lockKey} after ${LOCK_TIMEOUT_MS}ms`)), LOCK_TIMEOUT_MS)
+      );
+      try {
+        await Promise.race([existingLock, timeout]);
+      } catch (err) {
+        console.error(`[Brain] ${err.message} — forcing lock release`);
+        leadLocks.delete(lockKey);
+      }
     }
     let unlock;
     const lockPromise = new Promise(resolve => { unlock = resolve; });
@@ -92,6 +110,7 @@ AVAILABLE ACTIONS (return as JSON array):
 - { "action": "cancel_pending_followups", "reason": "..." }
 - { "action": "update_lead_stage", "stage": "new|contacted|warm|hot|booked|lost|nurture" }
 - { "action": "update_lead_score", "score": N, "reason": "..." }
+- { "action": "book_appointment", "start_time": "ISO datetime", "service": "...", "email": "...", "phone": "+1..." }
 - { "action": "notify_owner", "message": "...", "urgency": "low|medium|high|critical" }
 - { "action": "log_insight", "insight": "..." }
 - { "action": "no_action", "reason": "..." }
@@ -129,7 +148,7 @@ INSIGHTS:
 What actions should ELYVN take?`;
 
   try {
-    const response = await anthropic.messages.create({
+    const response = await claudeBreaker.call({
       model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
       max_tokens: 1000,
       system: systemPrompt,

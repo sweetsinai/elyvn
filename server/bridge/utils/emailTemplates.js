@@ -32,11 +32,14 @@ function wrapInTemplate(body, options = {}) {
     '<a href="$1" style="color: ' + BRAND_COLOR + '; text-decoration: underline;">$1</a>'
   );
 
+  const physicalAddress = process.env.BUSINESS_ADDRESS || '';
   const unsubscribeBlock = unsubscribeEmail
-    ? `<p style="margin: 0; font-size: 12px; color: #999;">
+    ? `<p style="margin: 0 0 8px 0; font-size: 12px; color: #999;">
         <a href="mailto:${escapeHtml(unsubscribeEmail)}?subject=unsubscribe" style="color: #999; text-decoration: underline;">Unsubscribe</a>
-      </p>`
-    : '';
+        ${physicalAddress ? ` | ${escapeHtml(physicalAddress)}` : ''}
+      </p>
+      <p style="margin: 0; font-size: 11px; color: #bbb;">This email was sent by ELYVN. Reply "STOP" to opt out.</p>`
+    : (physicalAddress ? `<p style="margin: 0; font-size: 11px; color: #bbb;">${escapeHtml(physicalAddress)}</p>` : '');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -107,11 +110,14 @@ function wrapWithCTA(body, ctaText, ctaUrl, signoff = '', options = {}) {
     ? signoff.split('\n').map(l => escapeHtml(l)).join('<br>')
     : '';
 
+  const physicalAddress = process.env.BUSINESS_ADDRESS || '';
   const unsubscribeBlock = unsubscribeEmail
-    ? `<p style="margin: 0; font-size: 12px; color: #999;">
+    ? `<p style="margin: 0 0 8px 0; font-size: 12px; color: #999;">
         <a href="mailto:${escapeHtml(unsubscribeEmail)}?subject=unsubscribe" style="color: #999; text-decoration: underline;">Unsubscribe</a>
-      </p>`
-    : '';
+        ${physicalAddress ? ` | ${escapeHtml(physicalAddress)}` : ''}
+      </p>
+      <p style="margin: 0; font-size: 11px; color: #bbb;">This email was sent by ELYVN. Reply "STOP" to opt out.</p>`
+    : (physicalAddress ? `<p style="margin: 0; font-size: 11px; color: #bbb;">${escapeHtml(physicalAddress)}</p>` : '');
 
   return `<!DOCTYPE html>
 <html lang="en">

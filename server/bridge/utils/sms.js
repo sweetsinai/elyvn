@@ -12,9 +12,22 @@ function getClient() {
   return client;
 }
 
-// Rate limiter: track last send time per phone number
+// Rate limiter: track last send time per phone number (capped to prevent memory leaks)
 const lastSendTime = new Map();
 const MIN_GAP_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_RATE_LIMIT_ENTRIES = 5000;
+
+// Periodic cleanup of stale rate limit entries
+setInterval(() => {
+  const cutoff = Date.now() - MIN_GAP_MS;
+  for (const [phone, time] of lastSendTime) {
+    if (time < cutoff) lastSendTime.delete(phone);
+  }
+  if (lastSendTime.size > MAX_RATE_LIMIT_ENTRIES) {
+    console.warn(`[sms] Rate limit map too large (${lastSendTime.size}), clearing`);
+    lastSendTime.clear();
+  }
+}, 10 * 60 * 1000); // Every 10 minutes
 
 /**
  * Send SMS via Twilio REST API with retry logic.

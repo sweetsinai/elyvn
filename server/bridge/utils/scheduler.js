@@ -463,41 +463,68 @@ async function checkReplies(db) {
                   const subject = parsed.subject || '';
                   const body = parsed.text || '';
 
-                  // Match to a prospect by email
-                  const prospect = db.prepare('SELECT * FROM prospects WHERE email = ?').get(from);
-                  if (!prospect) continue;
+                  // Match reply to a sent email by to_email (the address we sent TO)
+                  // This handles cases where prospect's reply-from differs from scraped email
+                  const sentEmail = db.prepare(`
+                    SELECT es.*, p.id as p_id, p.business_name, p.phone as p_phone, p.city as p_city
+                    FROM emails_sent es
+                    LEFT JOIN prospects p ON p.id = es.prospect_id
+                    WHERE es.to_email = ? AND es.reply_text IS NULL AND es.status = 'sent'
+                    ORDER BY es.sent_at DESC LIMIT 1
+                  `).get(from);
+
+                  if (!sentEmail) {
+                    // Fallback: try matching by prospects.email (in case reply came from a different address)
+                    const fallbackProspect = db.prepare('SELECT * FROM prospects WHERE email = ?').get(from);
+                    if (!fallbackProspect) {
+                      console.log(`[Replies] No matching email found for reply from: ${from}`);
+                      continue;
+                    }
+                    // Try to find the sent email via prospect_id
+                    const fallbackEmail = db.prepare(`
+                      SELECT * FROM emails_sent WHERE prospect_id = ? AND reply_text IS NULL AND status = 'sent'
+                      ORDER BY sent_at DESC LIMIT 1
+                    `).get(fallbackProspect.id);
+                    if (!fallbackEmail) continue;
+                    // Patch sentEmail for downstream use
+                    Object.assign(sentEmail || {}, fallbackEmail, {
+                      p_id: fallbackProspect.id,
+                      business_name: fallbackProspect.business_name,
+                      p_phone: fallbackProspect.phone,
+                      p_city: fallbackProspect.city,
+                    });
+                  }
+
+                  const prospect = sentEmail.p_id ? {
+                    id: sentEmail.p_id,
+                    business_name: sentEmail.business_name,
+                    phone: sentEmail.p_phone,
+                    city: sentEmail.p_city,
+                  } : null;
 
                   // Classify the reply
                   const result = await classifyReply(body, subject);
                   console.log(`[Replies] ${from}: ${result.classification} -- ${result.summary}`);
 
-                  // Update the most recent emails_sent for this prospect
+                  // Update the emails_sent record with reply data
                   db.prepare(`
-                    UPDATE emails_sent SET reply_text = ?, reply_classification = ?, reply_at = datetime('now'), updated_at = datetime('now')
-                    WHERE prospect_id = ? AND reply_text IS NULL
-                    ORDER BY sent_at DESC LIMIT 1
-                  `).run(body.substring(0, 2000), result.classification, prospect.id);
+                    UPDATE emails_sent SET reply_text = ?, reply_at = datetime('now'), updated_at = datetime('now')
+                    WHERE id = ?
+                  `).run(body.substring(0, 2000), sentEmail.id);
+                  // NOTE: reply_classification left NULL — auto-classify cron will handle it
 
-                  // Act on classification
+                  // Act on reply — update prospect status, notify owner
+                  // Classification will be handled by auto-classify cron (which also sends auto-replies)
                   const now = new Date().toISOString();
-                  if (result.classification === 'INTERESTED') {
-                    db.prepare("UPDATE prospects SET status = 'interested', updated_at = ? WHERE id = ?").run(now, prospect.id);
+                  if (prospect) {
+                    // Mark prospect as replied so auto-classify picks it up
+                    db.prepare("UPDATE prospects SET status = 'replied', updated_at = ? WHERE id = ?").run(now, prospect.id);
+
+                    // Telegram notification for all replies
                     const clients = db.prepare('SELECT telegram_chat_id, calcom_booking_link FROM clients WHERE telegram_chat_id IS NOT NULL').all();
                     for (const c of clients) {
                       telegram.sendMessage(c.telegram_chat_id,
-                        `<b>Hot prospect replied!</b>\n\n<b>${prospect.business_name}</b> (${prospect.city})\n"${result.summary}"\n\n${c.calcom_booking_link ? 'Book: ' + c.calcom_booking_link : ''}`
-                      ).catch(() => {});
-                    }
-                  } else if (result.classification === 'NOT_INTERESTED') {
-                    db.prepare("UPDATE prospects SET status = 'declined', updated_at = ? WHERE id = ?").run(now, prospect.id);
-                  } else if (result.classification === 'UNSUBSCRIBE') {
-                    db.prepare("UPDATE prospects SET status = 'unsubscribed', updated_at = ? WHERE id = ?").run(now, prospect.id);
-                  } else {
-                    db.prepare("UPDATE prospects SET status = 'replied', updated_at = ? WHERE id = ?").run(now, prospect.id);
-                    const clients = db.prepare('SELECT telegram_chat_id FROM clients WHERE telegram_chat_id IS NOT NULL').all();
-                    for (const c of clients) {
-                      telegram.sendMessage(c.telegram_chat_id,
-                        `<b>Prospect question</b>\n\n<b>${prospect.business_name}</b>: "${result.summary}"\n\nReply needed.`
+                        `<b>New reply from prospect</b>\n\n<b>${prospect.business_name || from}</b>\n"${result.summary}"\n\nAuto-classification pending.`
                       ).catch(() => {});
                     }
                   }

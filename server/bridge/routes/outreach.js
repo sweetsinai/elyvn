@@ -534,6 +534,29 @@ Reply: ${email.reply_text}`
 
     // === INTERESTED: Full conversion sequence ===
     if (classification === 'INTERESTED') {
+      // 0. Create a lead record so this prospect enters the lead pipeline
+      try {
+        const client = db.prepare('SELECT * FROM clients WHERE is_active = 1 LIMIT 1').get();
+        if (client && prospect) {
+          const existingLead = db.prepare(
+            'SELECT id FROM leads WHERE client_id = ? AND (email = ? OR (phone IS NOT NULL AND phone = ?))'
+          ).get(client.id, email.to_email, prospect.phone || '');
+          if (!existingLead) {
+            const leadId = randomUUID();
+            db.prepare(`
+              INSERT INTO leads (id, client_id, name, phone, email, source, score, stage, prospect_id, last_contact, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, 'outreach', 7, 'qualified', ?, ?, ?, ?)
+            `).run(leadId, client.id, prospect.business_name || '', prospect.phone || null, email.to_email, prospect.id, now, now, now);
+            console.log(`[outreach] Lead ${leadId} created from INTERESTED prospect ${prospect.id}`);
+          } else {
+            // Update existing lead score
+            db.prepare("UPDATE leads SET score = MAX(score, 7), stage = 'qualified', updated_at = ? WHERE id = ?").run(now, existingLead.id);
+          }
+        }
+      } catch (err) {
+        console.error('[outreach] Lead creation from INTERESTED failed:', err.message);
+      }
+
       // 1. Send email with booking link immediately
       const interestedReply = `Hi${prospect?.business_name ? ' ' + prospect.business_name.split(' ')[0] : ''},\n\nGreat to hear from you! I'd love to show you how ELYVN can help you catch every call and book more appointments.\n\nHere's my calendar — pick any time that works for you:\n${BOOKING_LINK}\n\nIf you'd prefer, you can also call us directly and our AI will walk you through a live demo.\n\nLooking forward to chatting!\n\n${SENDER_NAME}\nELYVN`;
 
@@ -713,6 +736,28 @@ Reply: ${email.reply_text}`
 
         // Auto-respond based on classification
         if (classification === 'INTERESTED' && !email.auto_response_sent) {
+          // Create lead from interested prospect
+          try {
+            const client = db.prepare('SELECT * FROM clients WHERE is_active = 1 LIMIT 1').get();
+            if (client && prospect) {
+              const existingLead = db.prepare(
+                'SELECT id FROM leads WHERE client_id = ? AND (email = ? OR (phone IS NOT NULL AND phone = ?))'
+              ).get(client.id, email.to_email, prospect.phone || '');
+              if (!existingLead) {
+                const leadId = randomUUID();
+                db.prepare(`
+                  INSERT INTO leads (id, client_id, name, phone, email, source, score, stage, prospect_id, last_contact, created_at, updated_at)
+                  VALUES (?, ?, ?, ?, ?, 'outreach', 7, 'qualified', ?, ?, ?, ?)
+                `).run(leadId, client.id, prospect.business_name || '', prospect.phone || null, email.to_email, prospect.id, now, now, now);
+                console.log(`[auto-classify] Lead created from INTERESTED prospect ${prospect.id}`);
+              } else {
+                db.prepare("UPDATE leads SET score = MAX(score, 7), stage = 'qualified', updated_at = ? WHERE id = ?").run(now, existingLead.id);
+              }
+            }
+          } catch (err) {
+            console.error('[auto-classify] Lead creation failed:', err.message);
+          }
+
           const interestedReply = `Hi${prospect?.business_name ? ' ' + prospect.business_name.split(' ')[0] : ''},\n\nGreat to hear from you! I'd love to show you how ELYVN can help.\n\nPick any time: ${BOOKING_LINK}\n\nLooking forward to chatting!\n\n${SENDER_NAME}\nELYVN`;
           try {
             const transport = getTransporter();

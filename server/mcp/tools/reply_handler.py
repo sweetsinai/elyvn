@@ -1,5 +1,14 @@
 """
 Reply handler tools (Engine 2) — check IMAP inbox for replies and classify them.
+
+DEPRECATED: Reply checking and classification is now handled by the Node.js bridge server:
+  - scheduler.js checkReplies() — IMAP fetch every 30 min
+  - outreach.js /auto-classify — Claude classification every 5 min
+  - outreach.js /replies/:id/classify — manual classification
+
+This file is kept for backward compatibility with existing MCP tool calls
+but should NOT be used in parallel with the Node.js system to avoid
+double-processing the same inbox messages.
 """
 
 import email

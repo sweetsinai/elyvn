@@ -2,90 +2,122 @@ import { buildQueryString } from './utils';
 
 const API_BASE = '/api';
 
-// Health
+/**
+ * Get API key from session storage. All authenticated requests use this.
+ */
+function getHeaders(extra = {}) {
+  const apiKey = sessionStorage.getItem('elyvn_api_key');
+  return {
+    ...(apiKey ? { 'x-api-key': apiKey } : {}),
+    ...extra,
+  };
+}
+
+function jsonHeaders() {
+  return getHeaders({ 'Content-Type': 'application/json' });
+}
+
+/**
+ * Wrapper for fetch that auto-injects auth header and handles errors.
+ */
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...getHeaders(), ...(options.headers || {}) },
+  });
+  if (res.status === 401) {
+    // Auth expired or invalid — clear and reload
+    sessionStorage.removeItem('elyvn_api_key');
+    window.location.reload();
+    throw new Error('Unauthorized');
+  }
+  return res.json();
+}
+
+// Health (no auth needed)
 export const getHealth = () =>
   fetch('/health').then(r => r.json());
 
 // Stats
 export const getStats = (clientId) =>
-  fetch(`${API_BASE}/stats/${clientId}`).then(r => r.json());
+  apiFetch(`${API_BASE}/stats/${clientId}`);
 
 // Calls
 export const getCalls = (clientId, params = {}) =>
-  fetch(`${API_BASE}/calls/${clientId}${buildQueryString(params)}`).then(r => r.json());
+  apiFetch(`${API_BASE}/calls/${clientId}${buildQueryString(params)}`);
 
 export const getTranscript = (clientId, callId) =>
-  fetch(`${API_BASE}/calls/${clientId}/${callId}/transcript`).then(r => r.json());
+  apiFetch(`${API_BASE}/calls/${clientId}/${callId}/transcript`);
 
 // Messages
 export const getMessages = (clientId, params = {}) =>
-  fetch(`${API_BASE}/messages/${clientId}${buildQueryString(params)}`).then(r => r.json());
+  apiFetch(`${API_BASE}/messages/${clientId}${buildQueryString(params)}`);
 
 // Leads
 export const getLeads = (clientId, params = {}) =>
-  fetch(`${API_BASE}/leads/${clientId}${buildQueryString(params)}`).then(r => r.json());
+  apiFetch(`${API_BASE}/leads/${clientId}${buildQueryString(params)}`);
 
 export const updateLeadStage = (clientId, leadId, stage) =>
-  fetch(`${API_BASE}/leads/${clientId}/${leadId}`, {
+  apiFetch(`${API_BASE}/leads/${clientId}/${leadId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({ stage }),
-  }).then(r => r.json());
+  });
 
 // Bookings
 export const getBookings = (clientId, startDate, endDate) =>
-  fetch(`${API_BASE}/bookings/${clientId}${buildQueryString({ startDate, endDate })}`).then(r => r.json());
+  apiFetch(`${API_BASE}/bookings/${clientId}${buildQueryString({ startDate, endDate })}`);
 
 // Outreach
 export const scrapeBusinesses = (data) =>
-  fetch(`${API_BASE}/outreach/scrape`, {
+  apiFetch(`${API_BASE}/outreach/scrape`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify(data),
-  }).then(r => r.json());
+  });
 
 export const getCampaigns = () =>
-  fetch(`${API_BASE}/outreach/campaign`).then(r => r.json());
+  apiFetch(`${API_BASE}/outreach/campaign`);
 
 export const createCampaign = (data) =>
-  fetch(`${API_BASE}/outreach/campaign`, {
+  apiFetch(`${API_BASE}/outreach/campaign`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify(data),
-  }).then(r => r.json());
+  });
 
 export const generateEmails = (campaignId) =>
-  fetch(`${API_BASE}/outreach/campaign/${campaignId}/generate`, {
+  apiFetch(`${API_BASE}/outreach/campaign/${campaignId}/generate`, {
     method: 'POST',
-  }).then(r => r.json());
+  });
 
 export const sendCampaign = (campaignId) =>
-  fetch(`${API_BASE}/outreach/campaign/${campaignId}/send`, {
+  apiFetch(`${API_BASE}/outreach/campaign/${campaignId}/send`, {
     method: 'POST',
-  }).then(r => r.json());
+  });
 
 export const getReplies = () =>
-  fetch(`${API_BASE}/outreach/replies`).then(r => r.json());
+  apiFetch(`${API_BASE}/outreach/replies`);
 
 export const classifyReply = (emailId) =>
-  fetch(`${API_BASE}/outreach/replies/${emailId}/classify`, {
+  apiFetch(`${API_BASE}/outreach/replies/${emailId}/classify`, {
     method: 'POST',
-  }).then(r => r.json());
+  });
 
 // Clients
 export const getClients = () =>
-  fetch(`${API_BASE}/clients`).then(r => r.json());
+  apiFetch(`${API_BASE}/clients`);
 
 export const createClient = (data) =>
-  fetch(`${API_BASE}/clients`, {
+  apiFetch(`${API_BASE}/clients`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify(data),
-  }).then(r => r.json());
+  });
 
 export const updateClient = (clientId, data) =>
-  fetch(`${API_BASE}/clients/${clientId}`, {
+  apiFetch(`${API_BASE}/clients/${clientId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify(data),
-  }).then(r => r.json());
+  });
