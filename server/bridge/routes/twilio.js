@@ -178,7 +178,7 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
 
     try {
       const resp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
         max_tokens: 300,
         system: `You are a helpful SMS assistant for ${client.business_name || 'our business'}. Answer the customer's question using ONLY the following knowledge base information. Do not make up information not found in the knowledge base.
 
