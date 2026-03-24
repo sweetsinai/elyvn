@@ -110,7 +110,8 @@ async function handleCallEnded(db, call) {
     if (RETELL_API_KEY) {
       try {
         const retellResp = await fetch(`${RETELL_BASE}/get-call/${callId}`, {
-          headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` }
+          headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` },
+          signal: AbortSignal.timeout(10000),
         });
         if (retellResp.ok) {
           callData = await retellResp.json();
@@ -185,7 +186,7 @@ async function handleCallEnded(db, call) {
       // We have text to work with (transcript or call_summary from webhook)
       try {
         const summaryResp = await anthropic.messages.create({
-          model: 'claude-sonnet-4-20250514',
+          model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
           max_tokens: 150,
           messages: [{ role: 'user', content: hasTranscript
             ? `Summarize this phone call transcript in exactly 2 lines. Be specific about what was discussed and any outcomes:\n\n${transcriptText}`
@@ -200,7 +201,7 @@ async function handleCallEnded(db, call) {
       // 4. Score lead 1-10
       try {
         const scoreResp = await anthropic.messages.create({
-          model: 'claude-sonnet-4-20250514',
+          model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
           max_tokens: 10,
           messages: [{ role: 'user', content: `Score this lead 1-10 based on their interest, urgency, and qualification from this call ${hasTranscript ? 'transcript' : 'summary'}. Reply with ONLY a single number:\n\n${scoringText}` }]
         });
@@ -318,7 +319,7 @@ async function handleCallEnded(db, call) {
             if (missedClient.telegram_chat_id) {
               telegram.sendMessage(missedClient.telegram_chat_id,
                 `&#10060; <b>Missed call</b> from ${callerPhone}\n\nAuto text-back sent.`
-              ).catch(() => {});
+              ).catch(err => console.error('[retell] Telegram missed-call alert failed:', err.message));
             }
 
             // Speed-to-lead sequence
@@ -390,12 +391,14 @@ async function handleCallEnded(db, call) {
         const { think } = require('../utils/brain');
         const { executeActions } = require('../utils/actionExecutor');
 
-        const memory = getLeadMemory(db, callerPhone, clientId);
-        if (memory) {
-          const decision = await think('call_ended', {
-            call_id: callId, duration, outcome, summary, score,
-          }, memory, db);
-          await executeActions(db, decision.actions, memory);
+        if (callerPhone && clientId) {
+          const memory = getLeadMemory(db, callerPhone, clientId);
+          if (memory) {
+            const decision = await think('call_ended', {
+              call_id: callId, duration, outcome, summary, score,
+            }, memory, db);
+            await executeActions(db, decision.actions, memory);
+          }
         }
       } catch (brainErr) {
         console.error('[Brain] Post-call error:', brainErr.message);
@@ -476,7 +479,7 @@ async function handleTransfer(db, call) {
 
       try {
         const summaryResp = await anthropic.messages.create({
-          model: 'claude-sonnet-4-20250514',
+          model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
           max_tokens: 100,
           messages: [{ role: 'user', content: `Summarize this call in 2 sentences for the business owner who is about to receive a transfer:\n\n${transcriptText}` }]
         });

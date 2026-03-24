@@ -3,24 +3,23 @@
  * The brain reads this before making any decision.
  */
 const { randomUUID } = require('crypto');
+const { normalizePhone } = require('./phone');
 
 function getLeadMemory(db, phone, clientId) {
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedPhone || !clientId) return null;
 
-  // 1. Get or create lead
+  // 1. Get or create lead (INSERT ON CONFLICT to prevent TOCTOU race)
+  const id = randomUUID();
+  db.prepare(
+    `INSERT INTO leads (id, client_id, phone, score, stage, created_at, updated_at)
+     VALUES (?, ?, ?, 0, 'new', datetime('now'), datetime('now'))
+     ON CONFLICT(client_id, phone) DO NOTHING`
+  ).run(id, clientId, normalizedPhone);
+
   let lead = db.prepare(
     'SELECT * FROM leads WHERE phone = ? AND client_id = ?'
   ).get(normalizedPhone, clientId);
-
-  if (!lead) {
-    const id = randomUUID();
-    db.prepare(
-      `INSERT INTO leads (id, client_id, phone, score, stage, created_at, updated_at)
-       VALUES (?, ?, ?, 0, 'new', datetime('now'), datetime('now'))`
-    ).run(id, clientId, normalizedPhone);
-    lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
-  }
 
   // 2. All calls from this number
   const calls = db.prepare(
@@ -101,12 +100,4 @@ function getLeadMemory(db, phone, clientId) {
   };
 }
 
-function normalizePhone(phone) {
-  if (!phone) return '';
-  const cleaned = String(phone).replace(/[^\d+]/g, '');
-  if (!cleaned) return '';
-  if (!cleaned.startsWith('+')) return '+' + cleaned;
-  return cleaned;
-}
-
-module.exports = { getLeadMemory, normalizePhone };
+module.exports = { getLeadMemory };

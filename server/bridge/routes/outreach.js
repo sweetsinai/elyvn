@@ -293,12 +293,14 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
     let sent = 0;
     let failed = 0;
 
+    const sanitizeHeader = s => String(s || '').replace(/[\r\n]/g, '');
+
     for (const email of drafts) {
       try {
         await transport.sendMail({
-          from: email.from_email,
-          to: email.to_email,
-          subject: email.subject,
+          from: sanitizeHeader(email.from_email),
+          to: sanitizeHeader(email.to_email),
+          subject: sanitizeHeader(email.subject),
           text: email.body,
           html: email.body.replace(/\n/g, '<br>')
         });

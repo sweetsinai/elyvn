@@ -20,13 +20,17 @@ const anthropic = new Anthropic();
 async function think(eventType, eventData, leadMemory, db) {
   const { lead, client, timeline, insights } = leadMemory;
 
-  // Load knowledge base
+  // Load knowledge base (capped at 5000 chars to avoid Claude token overflow)
+  const MAX_KB_SIZE = 5000;
   let knowledgeBase = '';
   if (client) {
     try {
       const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
       const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
       knowledgeBase = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
+      if (knowledgeBase.length > MAX_KB_SIZE) {
+        knowledgeBase = knowledgeBase.substring(0, MAX_KB_SIZE) + '\n[...truncated]';
+      }
     } catch (_) {}
   }
 

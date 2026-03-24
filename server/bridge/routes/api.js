@@ -4,10 +4,12 @@ const { randomUUID } = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getBookings } = require('../utils/calcom');
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 const path = require('path');
 
 const anthropic = new Anthropic();
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // GET /stats/:clientId
 router.get('/stats/:clientId', (req, res) => {
@@ -326,7 +328,7 @@ router.get('/clients', (req, res) => {
 });
 
 // POST /clients
-router.post('/clients', (req, res) => {
+router.post('/clients', async (req, res) => {
   try {
     const db = req.app.locals.db;
     const {
@@ -361,8 +363,8 @@ router.post('/clients', (req, res) => {
     if (knowledge_base) {
       const kbDir = path.join(__dirname, '../../mcp/knowledge_bases');
       try {
-        if (!fs.existsSync(kbDir)) fs.mkdirSync(kbDir, { recursive: true });
-        fs.writeFileSync(path.join(kbDir, `${id}.json`), JSON.stringify(knowledge_base, null, 2));
+        await fsPromises.mkdir(kbDir, { recursive: true });
+        await fsPromises.writeFile(path.join(kbDir, `${id}.json`), JSON.stringify(knowledge_base, null, 2));
       } catch (err) {
         console.error('[api] Failed to save KB:', err.message);
       }
@@ -377,10 +379,11 @@ router.post('/clients', (req, res) => {
 });
 
 // PUT /clients/:clientId
-router.put('/clients/:clientId', (req, res) => {
+router.put('/clients/:clientId', async (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
+    if (!UUID_RE.test(clientId)) return res.status(400).json({ error: 'Invalid client ID format' });
     const updates = req.body;
 
     const existing = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
@@ -421,8 +424,8 @@ router.put('/clients/:clientId', (req, res) => {
     if (updates.knowledge_base) {
       const kbDir = path.join(__dirname, '../../mcp/knowledge_bases');
       try {
-        if (!fs.existsSync(kbDir)) fs.mkdirSync(kbDir, { recursive: true });
-        fs.writeFileSync(path.join(kbDir, `${clientId}.json`), JSON.stringify(updates.knowledge_base, null, 2));
+        await fsPromises.mkdir(kbDir, { recursive: true });
+        await fsPromises.writeFile(path.join(kbDir, `${clientId}.json`), JSON.stringify(updates.knowledge_base, null, 2));
       } catch (err) {
         console.error('[api] Failed to save KB:', err.message);
       }

@@ -1,8 +1,15 @@
 const { randomUUID } = require('crypto');
 const { sendSMS } = require('./sms');
 const telegram = require('./telegram');
+const { normalizePhone } = require('./phone');
 
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
+
+// Named delay constants
+const TOUCH_2_DELAY_MS = 60 * 1000;       // 60 seconds
+const TOUCH_3_DELAY_MS = 5 * 60 * 1000;   // 5 minutes
+const FOLLOWUP_24H_MS = 24 * 60 * 60 * 1000;
+const FOLLOWUP_72H_MS = 72 * 60 * 60 * 1000;
 
 /**
  * Trigger the full speed-to-lead sequence for a new lead from ANY channel.

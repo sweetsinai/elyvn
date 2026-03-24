@@ -49,7 +49,7 @@ try {
     CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id);
     CREATE INDEX IF NOT EXISTS idx_calls_caller_phone ON calls(caller_phone);
     CREATE INDEX IF NOT EXISTS idx_calls_client_id ON calls(client_id);
-    CREATE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone);
     CREATE INDEX IF NOT EXISTS idx_messages_client_phone ON messages(client_id, phone);
     CREATE INDEX IF NOT EXISTS idx_followups_lead_id ON followups(lead_id);
   `);

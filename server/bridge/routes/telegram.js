@@ -205,28 +205,29 @@ async function handleCommand(db, message) {
         break;
       }
 
-      // Mark appointments as completed
+      // Mark appointments as completed + schedule review (in transaction)
       try {
         const { randomUUID } = require('crypto');
-        db.prepare(
-          `UPDATE appointments SET status = 'completed', updated_at = datetime('now')
-           WHERE phone = ? AND client_id = ? AND status IN ('confirmed', 'pending')`
-        ).run(phone, client.id);
-
-        // Schedule review request SMS in 2 hours
-        const lead = db.prepare('SELECT id, name FROM leads WHERE phone = ? AND client_id = ?').get(phone, client.id);
         const reviewLink = client.google_review_link || '';
         const reviewMsg = reviewLink
           ? `Thanks for choosing ${client.business_name || 'us'}! If you were happy with the service, a quick review would mean the world to us: ${reviewLink}`
           : `Thanks for choosing ${client.business_name || 'us'}! We appreciate your business.`;
 
-        if (lead) {
-          const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-          db.prepare(`
-            INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
-            VALUES (?, ?, ?, 20, 'review_request', ?, 'template', ?, 'scheduled')
-          `).run(randomUUID(), lead.id, client.id, reviewMsg, scheduledAt);
-        }
+        db.transaction(() => {
+          db.prepare(
+            `UPDATE appointments SET status = 'completed', updated_at = datetime('now')
+             WHERE phone = ? AND client_id = ? AND status IN ('confirmed', 'pending')`
+          ).run(phone, client.id);
+
+          const lead = db.prepare('SELECT id, name FROM leads WHERE phone = ? AND client_id = ?').get(phone, client.id);
+          if (lead) {
+            const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+            db.prepare(`
+              INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+              VALUES (?, ?, ?, 20, 'review_request', ?, 'template', ?, 'scheduled')
+            `).run(randomUUID(), lead.id, client.id, reviewMsg, scheduledAt);
+          }
+        })();
 
         await telegram.sendMessage(chatId,
           `&#9989; Job marked complete for ${phone}.\n\nReview request scheduled for 2h.${reviewLink ? '' : '\n\n&#9888;&#65039; Set a Google review link via /reviewlink to include it.'}`

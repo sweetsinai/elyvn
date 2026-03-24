@@ -41,7 +41,7 @@ router.post('/', (req, res) => {
 
 async function handleInboundSMS(db, { from, to, body, messageSid }) {
   try {
-    console.log(`[twilio] SMS from ${from} to ${to}: ${body}`);
+    console.log(`[twilio] SMS from ${from} to ${to} (${(body || '').length} chars)`);
 
     // Identify client by matching To number
     const client = db.prepare(
@@ -168,6 +168,7 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
     try {
       const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
       kb = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
+      if (kb.length > 5000) kb = kb.substring(0, 5000) + '\n[...truncated]';
     } catch (_) {
       console.log(`[twilio] No KB found for client ${client.id}`);
     }

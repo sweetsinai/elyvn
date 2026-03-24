@@ -21,7 +21,7 @@ function sendDailySummaries(db) {
     ).get(client.id, today);
 
     const rev = db.prepare(
-      `SELECT COUNT(*) * ? as revenue FROM calls WHERE client_id = ? AND outcome = 'booked' AND date(created_at) = ?`
+      `SELECT COALESCE(COUNT(*) * ?, 0) as revenue FROM calls WHERE client_id = ? AND outcome = 'booked' AND date(created_at) = ?`
     ).get(client.avg_ticket || 0, client.id, today);
 
     const tomorrowSchedule = db.prepare(
@@ -63,7 +63,7 @@ function sendWeeklyReports(db) {
     ).get(client.id, since);
 
     const rev = db.prepare(
-      `SELECT COUNT(*) * ? as revenue FROM calls WHERE client_id = ? AND outcome = 'booked' AND created_at >= ?`
+      `SELECT COALESCE(COUNT(*) * ?, 0) as revenue FROM calls WHERE client_id = ? AND outcome = 'booked' AND created_at >= ?`
     ).get(client.avg_ticket || 0, client.id, since);
 
     const totalCalls = calls.total || 0;

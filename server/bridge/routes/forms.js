@@ -3,6 +3,7 @@ const router = express.Router();
 const { randomUUID } = require('crypto');
 const telegram = require('../utils/telegram');
 const { triggerSpeedSequence } = require('../utils/speed-to-lead');
+const { normalizePhone } = require('../utils/phone');
 
 // POST /webhooks/form (no clientId in URL — reads client_id from body)
 router.post('/', async (req, res) => {
@@ -200,15 +201,5 @@ router.post('/:clientId', async (req, res) => {
     console.error('[Form] Error processing submission:', err.message);
   }
 });
-
-function normalizePhone(raw) {
-  if (!raw) return null;
-  let cleaned = String(raw).replace(/[^\d+]/g, '');
-  if (cleaned.length === 11 && cleaned.startsWith('1')) cleaned = '+' + cleaned;
-  else if (cleaned.length === 10) cleaned = '+1' + cleaned;
-  if (!cleaned.startsWith('+')) cleaned = '+' + cleaned;
-  if (cleaned.replace(/\D/g, '').length < 10) return null;
-  return cleaned;
-}
 
 module.exports = router;
