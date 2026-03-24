@@ -66,19 +66,9 @@ router.post('/scrape', async (req, res) => {
     const query = `${industry} in ${city}${country ? ', ' + country : ''}`;
     console.log(`[outreach] Scraping: ${query}`);
 
-    // Google Places Text Search
-    const placesResp = await fetch('https://places.googleapis.com/v1/places:searchText', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-        'X-Goog-FieldMask': 'places.displayName,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.formattedAddress,places.rating,places.userRatingCount'
-      },
-      body: JSON.stringify({
-        textQuery: query,
-        maxResultCount: Math.min(parseInt(maxResults), 20)
-      })
-    });
+    // Google Places Text Search (legacy API — already enabled on project)
+    const placesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${GOOGLE_PLACES_API_KEY}`;
+    const placesResp = await fetch(placesUrl, { signal: AbortSignal.timeout(15000) });
 
     if (!placesResp.ok) {
       const errText = await placesResp.text();
@@ -87,19 +77,33 @@ router.post('/scrape', async (req, res) => {
     }
 
     const placesData = await placesResp.json();
-    const places = placesData.places || [];
+    if (placesData.status !== 'OK' && placesData.status !== 'ZERO_RESULTS') {
+      console.error('[outreach] Places API status:', placesData.status, placesData.error_message);
+      return res.status(502).json({ error: `Google Places: ${placesData.status}` });
+    }
+    const places = (placesData.results || []).slice(0, Math.min(parseInt(maxResults), 20));
 
     const prospects = [];
     let withEmails = 0;
 
     for (const place of places) {
-      const name = place.displayName?.text || '';
-      const rawPhone = place.nationalPhoneNumber || place.internationalPhoneNumber || null;
+      const name = place.name || '';
+      // Fetch phone from Place Details API
+      let rawPhone = null;
+      let website = null;
+      try {
+        const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=formatted_phone_number,website&key=${GOOGLE_PLACES_API_KEY}`;
+        const detResp = await fetch(detailsUrl, { signal: AbortSignal.timeout(5000) });
+        if (detResp.ok) {
+          const det = await detResp.json();
+          rawPhone = det.result?.formatted_phone_number || null;
+          website = det.result?.website || null;
+        }
+      } catch (_) {}
       const phone = normalizePhoneE164(rawPhone);
-      const website = place.websiteUri || null;
-      const address = place.formattedAddress || null;
+      const address = place.formatted_address || null;
       const rating = place.rating || null;
-      const reviewCount = place.userRatingCount || 0;
+      const reviewCount = place.user_ratings_total || 0;
 
       // Try to find email from website — check homepage AND /contact page
       let email = null;
