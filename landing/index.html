@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>elyvn - AI Operations for Service Businesses</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Hero gradient animation */
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .gradient-animated {
+            background: linear-gradient(-45deg, #0A0F1C, #1a1f3a, #0A0F1C, #1a1f3a);
+            background-size: 400% 400%;
+            animation: gradientShift 15s ease infinite;
+        }
+
+        /* Particle effect */
+        .particle {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: #00E5CC;
+            border-radius: 50%;
+            opacity: 0.3;
+        }
+
+        .particle.animate {
+            animation: float 20s infinite ease-in-out;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) translateX(0px); opacity: 0.3; }
+            50% { transform: translateY(-50px) translateX(30px); opacity: 0.6; }
+        }
+
+        /* Fade in on scroll */
+        .fade-in {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+
+        .fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Glass morphism */
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Buttons */
+        .btn-primary {
+            background: #00E5CC;
+            color: #0A0F1C;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 15px;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-primary:hover {
+            background: #00d4b8;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 229, 204, 0.3);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: #00E5CC;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 15px;
+            border: 2px solid #00E5CC;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-ghost:hover {
+            background: rgba(0, 229, 204, 0.1);
+            transform: translateY(-2px);
+        }
+
+        /* Header */
+        header {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            z-index: 50;
+            background: rgba(10, 15, 28, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 900;
+            color: #00E5CC;
+            letter-spacing: -1px;
+        }
+
+        /* Mobile menu */
+        .mobile-menu {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .mobile-menu {
+                display: block;
+            }
+            .desktop-nav {
+                display: none;
+            }
+            .mobile-menu.active ~ .desktop-nav {
+                display: flex;
+            }
+        }
+
+        /* Accordion */
+        .accordion-button {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 16px 20px;
+            text-align: left;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-radius: 8px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .accordion-button:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .accordion-button.active {
+            background: rgba(0, 229, 204, 0.1);
+            border-color: rgba(0, 229, 204, 0.3);
+        }
+
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            padding: 0 20px;
+            color: rgba(255, 255, 255, 0.7);
+            background: rgba(255, 255, 255, 0.02);
+            margin-top: 8px;
+            border-radius: 0 0 8px 8px;
+        }
+
+        .accordion-content.active {
+            max-height: 500px;
+            padding: 16px 20px;
+        }
+
+        /* Stat cards animation */
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+
+        .stat-card {
+            animation: bounce 3s ease-in-out infinite;
+        }
+
+        .stat-card:nth-child(2) {
+            animation-delay: 0.3s;
+        }
+
+        .stat-card:nth-child(3) {
+            animation-delay: 0.6s;
+        }
+
+        .stat-card:nth-child(4) {
+            animation-delay: 0.9s;
+        }
+
+        /* ROI slider */
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: linear-gradient(to right, #00E5CC, #2E75B6);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00E5CC;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 229, 204, 0.5);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00E5CC;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 10px rgba(0, 229, 204, 0.5);
+        }
+
+        /* Step flow */
+        .step-number {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #00E5CC, #2E75B6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 20px;
+            color: #0A0F1C;
+        }
+
+        /* Feature icons */
+        .feature-icon {
+            width: 60px;
+            height: 60px;
+            background: rgba(0, 229, 204, 0.1);
+            border: 2px solid rgba(0, 229, 204, 0.3);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin-bottom: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover .feature-icon {
+            background: rgba(0, 229, 204, 0.2);
+            border-color: rgba(0, 229, 204, 0.6);
+            transform: translateY(-5px);
+        }
+
+        /* Pricing cards */
+        .pricing-card {
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 40px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .pricing-card:hover {
+            border-color: rgba(0, 229, 204, 0.5);
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(0, 229, 204, 0.1);
+        }
+
+        .pricing-card.featured {
+            border-color: #00E5CC;
+            background: rgba(0, 229, 204, 0.05);
+        }
+
+        .badge-popular {
+            position: absolute;
+            top: -10px;
+            left: 30px;
+            background: #00E5CC;
+            color: #0A0F1C;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Success message animation */
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .success-message {
+            animation: slideIn 0.3s ease;
+        }
+
+        /* Smooth scroll */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .text-6xl {
+                font-size: 2.5rem !important;
+            }
+
+            .text-3xl {
+                font-size: 1.875rem !important;
+            }
+
+            .grid-cols-2 {
+                grid-template-columns: 1fr !important;
+            }
+
+            .grid-cols-4 {
+                grid-template-columns: 1fr 1fr !important;
+            }
+
+            .lg\:grid-cols-2 {
+                grid-template-columns: 1fr !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-[#0A0F1C] text-white overflow-x-hidden">
+    <!-- Header -->
+    <header class="h-20 flex items-center justify-between px-6 lg:px-12">
+        <div class="logo">elyvn</div>
+
+        <nav class="desktop-nav hidden lg:flex gap-8">
+            <a href="#how-it-works" class="text-sm text-gray-300 hover:text-white transition">How it works</a>
+            <a href="#features" class="text-sm text-gray-300 hover:text-white transition">Features</a>
+            <a href="#pricing" class="text-sm text-gray-300 hover:text-white transition">Pricing</a>
+            <a href="#faq" class="text-sm text-gray-300 hover:text-white transition">FAQ</a>
+        </nav>
+
+        <button class="btn-primary hidden lg:block">Start Free Trial</button>
+
+        <!-- Mobile menu button -->
+        <button class="lg:hidden text-xl" onclick="toggleMobileMenu()">☰</button>
+    </header>
+
+    <!-- Mobile menu -->
+    <div id="mobileMenu" class="hidden fixed top-20 left-0 right-0 bg-[#0A0F1C] border-b border-gray-800 z-40 lg:hidden">
+        <nav class="flex flex-col p-6 gap-4">
+            <a href="#how-it-works" class="text-sm text-gray-300 hover:text-white transition">How it works</a>
+            <a href="#features" class="text-sm text-gray-300 hover:text-white transition">Features</a>
+            <a href="#pricing" class="text-sm text-gray-300 hover:text-white transition">Pricing</a>
+            <a href="#faq" class="text-sm text-gray-300 hover:text-white transition">FAQ</a>
+            <button class="btn-primary w-full mt-4">Start Free Trial</button>
+        </nav>
+    </div>
+
+    <!-- Hero Section -->
+    <section class="gradient-animated relative min-h-screen flex items-center justify-center px-6 lg:px-12 pt-20 overflow-hidden">
+        <!-- Particles -->
+        <div id="particlesContainer" class="absolute inset-0"></div>
+
+        <div class="max-w-4xl mx-auto text-center relative z-10 fade-in">
+            <h1 class="text-6xl lg:text-7xl font-black mb-6 leading-tight">
+                Never Miss A
+                <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#00E5CC] to-[#2E75B6]">Lead Again</span>
+            </h1>
+
+            <p class="text-xl lg:text-2xl text-gray-300 mb-12 max-w-2xl mx-auto leading-relaxed">
+                AI that answers every call, replies to every text, and books every appointment — so you can stay on the job.
+            </p>
+
+            <div class="flex flex-col sm:flex-row gap-6 justify-center mb-16">
+                <button class="btn-primary text-lg px-8 py-4">Start Free Trial</button>
+                <button class="btn-ghost text-lg px-8 py-4" onclick="document.getElementById('demo').scrollIntoView()">See It In Action</button>
+            </div>
+
+            <p class="text-sm text-gray-400 mb-12">
+                ✓ No credit card required • ✓ Free 7-day trial • ✓ Cancel anytime
+            </p>
+        </div>
+    </section>
+
+    <!-- Pain Point Section -->
+    <section id="pain-point" class="bg-[#111827] py-24 px-6 lg:px-12">
+        <div class="max-w-6xl mx-auto">
+            <div class="text-center mb-16 fade-in">
+                <h2 class="text-5xl font-black mb-6">You're losing <span class="text-[#00E5CC]">$1,750</span> every day</h2>
+                <p class="text-xl text-gray-400">Every missed call is money left on the table.</p>
+            </div>
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="stat-card glass p-8 rounded-xl text-center fade-in">
+                    <div class="text-5xl font-black text-[#00E5CC] mb-4">62%</div>
+                    <p class="text-gray-300">of calls to service businesses go unanswered</p>
+                </div>
+
+                <div class="stat-card glass p-8 rounded-xl text-center fade-in">
+                    <div class="text-5xl font-black text-[#00E5CC] mb-4">$350</div>
+                    <p class="text-gray-300">average ticket lost per missed call</p>
+                </div>
+
+                <div class="stat-card glass p-8 rounded-xl text-center fade-in">
+                    <div class="text-5xl font-black text-[#00E5CC] mb-4">5</div>
+                    <p class="text-gray-300">calls missed daily = $1,750/day lost</p>
+                </div>
+
+                <div class="stat-card glass p-8 rounded-xl text-center fade-in">
+                    <div class="text-4xl font-black text-[#2E75B6] mb-4">⏱️</div>
+                    <p class="text-gray-300">Your competitor answers in the time you don't</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section id="how-it-works" class="py-24 px-6 lg:px-12 bg-[#0A0F1C]">
+        <div class="max-w-6xl mx-auto">
+            <h2 class="text-5xl font-black text-center mb-4 fade-in">How It Works</h2>
+            <p class="text-center text-gray-400 text-lg mb-16 fade-in">From missed call to booked appointment in seconds</p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                <!-- Step 1 -->
+                <div class="text-center fade-in">
+                    <div class="step-number mx-auto mb-6">1</div>
+                    <h3 class="text-xl font-bold mb-3">Customer Calls</h3>
+                    <p class="text-gray-400">AI answers in 600ms</p>
+                    <p class="text-sm text-[#00E5CC] mt-4 font-semibold">📞</p>
+                </div>
+
+                <div class="hidden lg:flex items-center justify-center">
+                    <div class="text-3xl text-gray-600">→</div>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="text-center fade-in">
+                    <div class="step-number mx-auto mb-6">2</div>
+                    <h3 class="text-xl font-bold mb-3">Missed Call</h3>
+                    <p class="text-gray-400">Text-back in 5 seconds</p>
+                    <p class="text-sm text-[#00E5CC] mt-4 font-semibold">💬</p>
+                </div>
+
+                <div class="hidden lg:flex items-center justify-center">
+                    <div class="text-3xl text-gray-600">→</div>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="text-center fade-in">
+                    <div class="step-number mx-auto mb-6">3</div>
+                    <h3 class="text-xl font-bold mb-3">Lead Qualified</h3>
+                    <p class="text-gray-400">AI callback in 60 seconds</p>
+                    <p class="text-sm text-[#00E5CC] mt-4 font-semibold">✅</p>
+                </div>
+
+                <div class="hidden lg:flex items-center justify-center">
+                    <div class="text-3xl text-gray-600">→</div>
+                </div>
+
+                <!-- Step 4 -->
+                <div class="text-center fade-in">
+                    <div class="step-number mx-auto mb-6">4</div>
+                    <h3 class="text-xl font-bold mb-3">You Get Notified</h3>
+                    <p class="text-gray-400">Appointment booked, ready to go</p>
+                    <p class="text-sm text-[#00E5CC] mt-4 font-semibold">🔔</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="bg-[#111827] py-24 px-6 lg:px-12">
+        <div class="max-w-6xl mx-auto">
+            <h2 class="text-5xl font-black text-center mb-4 fade-in">Powerful Features</h2>
+            <p class="text-center text-gray-400 text-lg mb-16 fade-in">Everything you need to capture every lead</p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Feature 1 -->
+                <div class="feature-card glass p-8 rounded-xl fade-in">
+                    <div class="feature-icon">📞</div>
+                    <h3 class="text-2xl font-bold mb-3">AI Call Answering</h3>
+                    <p class="text-gray-400 mb-4">Trained on your business knowledge. Scores every lead in real-time. Transfers hot prospects to your phone.</p>
+                    <p class="text-sm text-[#00E5CC]">Custom knowledge base • Lead scoring • Live transfer</p>
+                </div>
+
+                <!-- Feature 2 -->
+                <div class="feature-card glass p-8 rounded-xl fade-in">
+                    <div class="feature-icon">💬</div>
+                    <h3 class="text-2xl font-bold mb-3">SMS Auto-Reply</h3>
+                    <p class="text-gray-400 mb-4">Claude-powered responses that sound like you. Contextual, helpful, and human. Replies in 5 seconds.</p>
+                    <p class="text-sm text-[#00E5CC]">Context-aware • Fast replies • Brand voice</p>
+                </div>
+
+                <!-- Feature 3 -->
+                <div class="feature-card glass p-8 rounded-xl fade-in">
+                    <div class="feature-icon">⚡</div>
+                    <h3 class="text-2xl font-bold mb-3">Speed-to-Lead</h3>
+                    <p class="text-gray-400 mb-4">Triple-touch strategy: SMS → callback → follow-up. Capture leads when they're hot.</p>
+                    <p class="text-sm text-[#00E5CC]">Multi-channel • Automated follow-up • Hot leads first</p>
+                </div>
+
+                <!-- Feature 4 -->
+                <div class="feature-card glass p-8 rounded-xl fade-in">
+                    <div class="feature-icon">🧠</div>
+                    <h3 class="text-2xl font-bold mb-3">Cross-Channel Brain</h3>
+                    <p class="text-gray-400 mb-4">AI sees all history—calls, texts, web forms. Makes smarter decisions on every interaction.</p>
+                    <p class="text-sm text-[#00E5CC]">Full history • Smart routing • Context aware</p>
+                </div>
+
+                <!-- Feature 5 -->
+                <div class="feature-card glass p-8 rounded-xl fade-in">
+                    <div class="feature-icon">📅</div>
+                    <h3 class="text-2xl font-bold mb-3">Appointment Booking</h3>
+                    <p class="text-gray-400 mb-4">Cal.com integration. Customers book directly from SMS or call. Syncs with your calendar automatically.</p>
+                    <p class="text-sm text-[#00E5CC]">Calendar sync • Direct booking • Reminders</p>
+                </div>
+
+                <!-- Feature 6 -->
+                <div class="feature-card glass p-8 rounded-xl fade-in">
+                    <div class="feature-icon">🚀</div>
+                    <h3 class="text-2xl font-bold mb-3">Self-Marketing Engine</h3>
+                    <p class="text-gray-400 mb-4">Scrapes local prospects, sends cold emails, classifies replies. New leads without lifting a finger.</p>
+                    <p class="text-sm text-[#00E5CC]">Prospect mining • Email campaigns • Reply classification</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Live Demo Section -->
+    <section id="demo" class="py-24 px-6 lg:px-12 bg-[#0A0F1C]">
+        <div class="max-w-2xl mx-auto">
+            <h2 class="text-4xl font-black text-center mb-4 fade-in">Try It Yourself</h2>
+            <p class="text-center text-gray-400 text-lg mb-12 fade-in">Enter your phone number. Experience elyvn in real-time.</p>
+
+            <div class="glass p-12 rounded-xl fade-in">
+                <form id="demoForm" onsubmit="handleDemoSubmit(event)">
+                    <div class="mb-6">
+                        <label class="block text-sm font-semibold mb-3">Your Name</label>
+                        <input type="text" placeholder="John Smith" required class="w-full px-4 py-3 bg-[#111827] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[#00E5CC] transition" />
+                    </div>
+
+                    <div class="mb-8">
+                        <label class="block text-sm font-semibold mb-3">Phone Number</label>
+                        <input type="tel" id="phoneInput" placeholder="+1 (555) 123-4567" required class="w-full px-4 py-3 bg-[#111827] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[#00E5CC] transition" />
+                    </div>
+
+                    <button type="submit" class="btn-primary w-full text-lg py-4">
+                        <span id="submitText">Send Me A Demo</span>
+                    </button>
+                </form>
+
+                <div id="successMessage" class="hidden success-message mt-6 p-6 bg-[#00E5CC] bg-opacity-10 border border-[#00E5CC] rounded-lg text-center">
+                    <p class="text-[#00E5CC] font-semibold text-lg">✓ Check your phone!</p>
+                    <p class="text-gray-300 mt-2">You just experienced elyvn. We've sent you a demo call and text.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ROI Calculator Section -->
+    <section id="roi" class="bg-[#111827] py-24 px-6 lg:px-12">
+        <div class="max-w-3xl mx-auto">
+            <h2 class="text-4xl font-black text-center mb-4 fade-in">Calculate Your ROI</h2>
+            <p class="text-center text-gray-400 text-lg mb-16 fade-in">See how much you can recover every month</p>
+
+            <div class="glass p-12 rounded-xl fade-in">
+                <div class="mb-8">
+                    <div class="flex justify-between items-center mb-4">
+                        <label class="text-lg font-semibold">Calls missed per day</label>
+                        <span id="callsValue" class="text-3xl font-black text-[#00E5CC]">5</span>
+                    </div>
+                    <input type="range" id="callsSlider" class="slider" min="1" max="20" value="5" oninput="updateROI()">
+                    <div class="flex justify-between text-xs text-gray-500 mt-2">
+                        <span>1</span>
+                        <span>20</span>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-700 my-8"></div>
+
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-300">Calls missed daily</span>
+                        <span id="roiCalls" class="font-bold text-white">5</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-300">× Average lost ticket</span>
+                        <span class="font-bold text-white">$350</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-300">× Working days/month</span>
+                        <span class="font-bold text-white">22</span>
+                    </div>
+                    <div class="flex justify-between items-center py-4 border-t border-gray-700">
+                        <span class="font-semibold text-gray-300">Revenue at risk</span>
+                        <span id="revenueAtRisk" class="text-2xl font-black text-red-400">$38,500</span>
+                    </div>
+                </div>
+
+                <div class="bg-[#0A0F1C] p-6 rounded-lg mt-8">
+                    <p class="text-gray-400 mb-4">With elyvn, recover <span class="text-[#00E5CC] font-bold">60%</span> of missed opportunities:</p>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-300">Monthly recovery</span>
+                        <span id="monthlyRecovery" class="text-3xl font-black text-[#00E5CC]">$23,100</span>
+                    </div>
+                    <div class="flex justify-between items-center mt-4">
+                        <span class="text-gray-300">Annual recovery</span>
+                        <span id="annualRecovery" class="text-3xl font-black text-[#00E5CC]">$277,200</span>
+                    </div>
+                </div>
+
+                <p class="text-center text-sm text-gray-500 mt-8">
+                    At $297/month, you pay for elyvn in <span id="paybackMonths" class="text-[#00E5CC] font-bold">0.1</span> months
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="py-24 px-6 lg:px-12 bg-[#0A0F1C]">
+        <div class="max-w-5xl mx-auto">
+            <h2 class="text-4xl font-black text-center mb-4 fade-in">Simple, Transparent Pricing</h2>
+            <p class="text-center text-gray-400 text-lg mb-16 fade-in">Pay for what you use. Cancel anytime.</p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Starter Plan -->
+                <div class="pricing-card fade-in">
+                    <h3 class="text-2xl font-bold mb-2">Starter</h3>
+                    <div class="mb-6">
+                        <span class="text-5xl font-black text-[#00E5CC]">$297</span>
+                        <span class="text-gray-400 ml-2">/month</span>
+                    </div>
+                    <p class="text-gray-400 mb-8">Perfect for getting started</p>
+
+                    <ul class="space-y-4 mb-8">
+                        <li class="flex items-center gap-3">
+                            <span class="text-[#00E5CC] font-bold">✓</span>
+                            <span>AI call answering</span>
+                        </li>
+                        <li class="flex items-center gap-3">
+                            <span class="text-[#00E5CC] font-bold">✓</span>
+                            <span>SMS auto-reply</span>
+                        </li>
+                        <li class="flex items-center gap-3">
+                            <span class="text-[#00E5CC] font-bold">✓</span>
+                            <span>Speed-to-lead (SMS → callback → follow-up)</span>
+                        </li>
+                        <li class="flex items-center gap-3">
+                            <span class="text-[#00E5CC] font-bold">✓</span>
+                            <span>Telegram alerts</span>
+                        </li>
+                        <li class="flex items-center gap-3">
+                            <span class="text-[#00E5CC] font-bold">✓</span>
+                            <span>Dashboard & analytics</span>
+                        </li>
+                    </ul>
+
+                    <button class="btn-primary w-full text-lg py-3">Start Free Trial</button>
+                </div>
+
+                <!-- Growth Plan -->
+                <div class="pricing-card featured fade-in">
+                    <div class="badge-popular">MOST POPULAR</div>
+                    <h3 class="text-2xl font-bold mb-2">Growth</h3>
+                    <div class="mb-6">
+                        <span class="text-5xl font-black text-[#00E5CC]">$497</span>
+                        <span class="text-gray-400 ml-2">/month</span>
+                    </div>
+                    <p class="text-gray-400 mb-8">For scaling businesses</p>
+
+                    <ul class="space-y-4 mb-8">
+                        <li class="flex items-center gap-3">
+                            <span class="text-[#00E5CC] font-bold">✓</span>
+                            <span>Everything in Starter</span>
+                        </li>
+                        <li class="flex items-center gap-3">
+                            <span class="text-[#00E5CC] font-bold">✓</span>
+                            <span>Self-marketing engine</span>
+                        </li>
+                        <li class="flex items-center gap-3">
+                            <span class="text-[#00E5CC] font-bold">✓</span>
+                            <span>Cold email campaigns</span>
+                        </li>
+                        <li class="flex items-center gap-3">
+                            <span class="text-[#00E5CC] font-bold">✓</span>
+                            <span>Review automation</span>
+                        </li>
+                        <li class="flex items-center gap-3">
+                            <span class="text-[#00E5CC] font-bold">✓</span>
+                            <span>Priority support</span>
+                        </li>
+                    </ul>
+
+                    <button class="btn-primary w-full text-lg py-3">Start Free Trial</button>
+                </div>
+            </div>
+
+            <p class="text-center text-gray-400 mt-12">
+                All plans include 7-day free trial. No credit card required.
+            </p>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section id="faq" class="bg-[#111827] py-24 px-6 lg:px-12">
+        <div class="max-w-3xl mx-auto">
+            <h2 class="text-4xl font-black text-center mb-4 fade-in">Frequently Asked Questions</h2>
+            <p class="text-center text-gray-400 text-lg mb-16 fade-in">Got questions? We've got answers.</p>
+
+            <div class="space-y-4">
+                <!-- FAQ 1 -->
+                <div class="fade-in">
+                    <button class="accordion-button w-full" onclick="toggleAccordion(0)">
+                        <span>How does the AI know about my business?</span>
+                        <span id="arrow-0">▼</span>
+                    </button>
+                    <div class="accordion-content" id="content-0">
+                        We train the AI on your business info—services, pricing, hours, service areas. You provide this during setup, and the AI learns from every interaction. It gets smarter over time.
+                    </div>
+                </div>
+
+                <!-- FAQ 2 -->
+                <div class="fade-in">
+                    <button class="accordion-button w-full" onclick="toggleAccordion(1)">
+                        <span>Can I listen to the calls?</span>
+                        <span id="arrow-1">▼</span>
+                    </button>
+                    <div class="accordion-content" id="content-1">
+                        Yes. Every call is recorded and transcribed. You can review them in your dashboard anytime. You'll see what the AI said, what the customer said, and the lead score.
+                    </div>
+                </div>
+
+                <!-- FAQ 3 -->
+                <div class="fade-in">
+                    <button class="accordion-button w-full" onclick="toggleAccordion(2)">
+                        <span>What if the AI can't answer a question?</span>
+                        <span id="arrow-2">▼</span>
+                    </button>
+                    <div class="accordion-content" id="content-2">
+                        The AI will ask for the customer's info and schedule a callback. You'll get a high-priority alert so you can call them back immediately. The lead is never lost.
+                    </div>
+                </div>
+
+                <!-- FAQ 4 -->
+                <div class="fade-in">
+                    <button class="accordion-button w-full" onclick="toggleAccordion(3)">
+                        <span>How long does setup take?</span>
+                        <span id="arrow-3">▼</span>
+                    </button>
+                    <div class="accordion-content" id="content-3">
+                        About 10 minutes. We'll ask you some questions about your business, set up your phone number, and configure your knowledge base. You're live immediately after.
+                    </div>
+                </div>
+
+                <!-- FAQ 5 -->
+                <div class="fade-in">
+                    <button class="accordion-button w-full" onclick="toggleAccordion(4)">
+                        <span>Can I pause the AI?</span>
+                        <span id="arrow-4">▼</span>
+                    </button>
+                    <div class="accordion-content" id="content-4">
+                        Yes. Pause anytime from your dashboard. Calls will go to your voicemail. Resume in seconds when you're ready. Perfect for when you're on a job.
+                    </div>
+                </div>
+
+                <!-- FAQ 6 -->
+                <div class="fade-in">
+                    <button class="accordion-button w-full" onclick="toggleAccordion(5)">
+                        <span>What happens after the free trial?</span>
+                        <span id="arrow-5">▼</span>
+                    </button>
+                    <div class="accordion-content" id="content-5">
+                        Your plan starts automatically at the end of day 7. We'll remind you before the trial ends. No surprises. You can cancel anytime—no penalties, no lock-in.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <section class="bg-[#0A0F1C] border-t border-gray-800 py-16 px-6 lg:px-12">
+        <div class="max-w-6xl mx-auto">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
+                <div>
+                    <div class="logo mb-4">elyvn</div>
+                    <p class="text-gray-400 text-sm">
+                        AI operations platform for service businesses.
+                    </p>
+                    <p class="text-gray-500 text-xs mt-4">
+                        Built by Sohan Gowda in Bangalore
+                    </p>
+                </div>
+
+                <div>
+                    <h4 class="font-semibold mb-4">Product</h4>
+                    <ul class="space-y-2 text-sm text-gray-400">
+                        <li><a href="#" class="hover:text-white transition">How it works</a></li>
+                        <li><a href="#" class="hover:text-white transition">Features</a></li>
+                        <li><a href="#" class="hover:text-white transition">Pricing</a></li>
+                        <li><a href="#" class="hover:text-white transition">Security</a></li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h4 class="font-semibold mb-4">Company</h4>
+                    <ul class="space-y-2 text-sm text-gray-400">
+                        <li><a href="#" class="hover:text-white transition">About</a></li>
+                        <li><a href="#" class="hover:text-white transition">Blog</a></li>
+                        <li><a href="#" class="hover:text-white transition">Contact</a></li>
+                        <li><a href="#" class="hover:text-white transition">Status</a></li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h4 class="font-semibold mb-4">Legal</h4>
+                    <ul class="space-y-2 text-sm text-gray-400">
+                        <li><a href="#" class="hover:text-white transition">Privacy</a></li>
+                        <li><a href="#" class="hover:text-white transition">Terms</a></li>
+                        <li><a href="#" class="hover:text-white transition">Cookies</a></li>
+                        <li><a href="#" class="hover:text-white transition">Compliance</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="border-t border-gray-800 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
+                <p class="text-gray-500 text-sm">
+                    © 2026 elyvn. All rights reserved.
+                </p>
+                <div class="flex gap-6">
+                    <a href="#" class="text-gray-400 hover:text-white transition text-sm">Twitter</a>
+                    <a href="#" class="text-gray-400 hover:text-white transition text-sm">LinkedIn</a>
+                    <a href="#" class="text-gray-400 hover:text-white transition text-sm">GitHub</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        // Particle generation
+        function generateParticles() {
+            const container = document.getElementById('particlesContainer');
+            if (!container) return;
+
+            for (let i = 0; i < 30; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle animate';
+                particle.style.left = Math.random() * 100 + '%';
+                particle.style.top = Math.random() * 100 + '%';
+                particle.style.animationDelay = Math.random() * 20 + 's';
+                container.appendChild(particle);
+            }
+        }
+
+        // Intersection Observer for fade-in animations
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver(function(entries) {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+        // Mobile menu toggle
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobileMenu');
+            menu.classList.toggle('hidden');
+        }
+
+        // Close mobile menu when link is clicked
+        document.querySelectorAll('#mobileMenu a').forEach(link => {
+            link.addEventListener('click', () => {
+                document.getElementById('mobileMenu').classList.add('hidden');
+            });
+        });
+
+        // ROI Calculator
+        function updateROI() {
+            const calls = parseInt(document.getElementById('callsSlider').value);
+            const lostPerCall = 350;
+            const workingDays = 22;
+            const recoveryRate = 0.6;
+
+            const revenueAtRisk = calls * lostPerCall * workingDays;
+            const monthlyRecovery = revenueAtRisk * recoveryRate;
+            const annualRecovery = monthlyRecovery * 12;
+            const starterPrice = 297;
+            const paybackMonths = starterPrice / (monthlyRecovery / 22 / lostPerCall / calls);
+
+            document.getElementById('callsValue').textContent = calls;
+            document.getElementById('roiCalls').textContent = calls;
+            document.getElementById('revenueAtRisk').textContent = '$' + revenueAtRisk.toLocaleString();
+            document.getElementById('monthlyRecovery').textContent = '$' + Math.round(monthlyRecovery).toLocaleString();
+            document.getElementById('annualRecovery').textContent = '$' + Math.round(annualRecovery).toLocaleString();
+            document.getElementById('paybackMonths').textContent = (starterPrice / (monthlyRecovery / 22)).toFixed(2);
+        }
+
+        // Accordion functionality
+        function toggleAccordion(index) {
+            const content = document.getElementById('content-' + index);
+            const button = document.querySelectorAll('.accordion-button')[index];
+            const arrow = document.getElementById('arrow-' + index);
+
+            const isActive = content.classList.contains('active');
+
+            // Close all
+            document.querySelectorAll('.accordion-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.accordion-button').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('[id^="arrow-"]').forEach(el => el.textContent = '▼');
+
+            // Open clicked
+            if (!isActive) {
+                content.classList.add('active');
+                button.classList.add('active');
+                arrow.textContent = '▲';
+            }
+        }
+
+        // Demo form submission
+        function handleDemoSubmit(event) {
+            event.preventDefault();
+
+            const nameInput = event.target.querySelector('input[type="text"]');
+            const phoneInput = document.getElementById('phoneInput');
+            const submitBtn = event.target.querySelector('button[type="submit"]');
+
+            // Disable button and show loading
+            submitBtn.disabled = true;
+            const originalText = document.getElementById('submitText').textContent;
+            document.getElementById('submitText').textContent = 'Sending...';
+
+            // Simulate API call
+            setTimeout(() => {
+                // Hide form
+                event.target.style.display = 'none';
+
+                // Show success message
+                document.getElementById('successMessage').classList.remove('hidden');
+
+                // Reset form after 5 seconds
+                setTimeout(() => {
+                    event.target.reset();
+                    event.target.style.display = 'block';
+                    document.getElementById('successMessage').classList.add('hidden');
+                    submitBtn.disabled = false;
+                    document.getElementById('submitText').textContent = originalText;
+                }, 5000);
+            }, 1500);
+        }
+
+        // Initialize
+        window.addEventListener('load', () => {
+            generateParticles();
+            updateROI();
+        });
+    </script>
+</body>
+</html>

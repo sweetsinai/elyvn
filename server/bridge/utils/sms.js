@@ -21,14 +21,30 @@ const MIN_GAP_MS = 5 * 60 * 1000; // 5 minutes
  * @param {string} to - Recipient phone number
  * @param {string} body - Message body
  * @param {string} [from] - Sender phone number (defaults to TWILIO_PHONE_NUMBER)
+ * @param {object} [db] - better-sqlite3 instance for opt-out checking
+ * @param {string} [clientId] - Client ID for opt-out checking
  * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
  */
-async function sendSMS(to, body, from) {
+async function sendSMS(to, body, from, db, clientId) {
   const fromNumber = from || TWILIO_PHONE;
 
   if (!fromNumber) {
     console.error('[sms] No from number configured');
     return { success: false, error: 'No from number configured' };
+  }
+
+  // Check opt-out (if db and clientId provided)
+  if (db && clientId) {
+    try {
+      const { isOptedOut } = require('./optOut');
+      if (isOptedOut(db, to, clientId)) {
+        console.log(`[sms] Number ${to} is opted out — skipping send`);
+        return { success: false, reason: 'opted_out' };
+      }
+    } catch (err) {
+      console.warn('[sms] Opt-out check error:', err.message);
+      // Continue with send if opt-out check fails
+    }
   }
 
   const twilioClient = getClient();
@@ -45,34 +61,62 @@ async function sendSMS(to, body, from) {
     return { success: false, error: `Rate limited. Retry in ${waitSec}s` };
   }
 
+  // Add TCPA compliance footer if not already present
+  let bodyWithFooter = body;
+  if (!body.toUpperCase().includes('REPLY STOP') && body.length < 155) {
+    bodyWithFooter = body + ' Reply STOP to opt out.';
+  }
+
   try {
     const message = await twilioClient.messages.create({
       to,
       from: fromNumber,
-      body
+      body: bodyWithFooter
     });
 
     lastSendTime.set(to, Date.now());
     console.log(`[sms] Sent to ${to}: ${message.sid}`);
+
+    // Record metrics
+    try {
+      const { recordMetric } = require('./metrics');
+      recordMetric('total_sms_sent', 1, 'counter');
+    } catch (_) {}
+
     return { success: true, messageId: message.sid };
   } catch (err) {
     console.error(`[sms] Failed to send to ${to}:`, err.message);
 
-    // Schedule retry after 5 minutes
-    setTimeout(async () => {
-      try {
-        console.log(`[sms] Retrying send to ${to}...`);
-        const retryMsg = await twilioClient.messages.create({
-          to,
-          from: fromNumber,
-          body
-        });
-        lastSendTime.set(to, Date.now());
-        console.log(`[sms] Retry succeeded: ${to} ${retryMsg.sid}`);
-      } catch (retryErr) {
-        console.error(`[sms] Retry failed for ${to}:`, retryErr.message);
+    // Record failed metric
+    try {
+      const { recordMetric } = require('./metrics');
+      recordMetric('total_sms_failed', 1, 'counter');
+    } catch (_) {}
+
+    // Schedule retry after 5 minutes (via job queue if available)
+    try {
+      if (db) {
+        const { enqueueJob } = require('./jobQueue');
+        const retryTime = new Date(Date.now() + MIN_GAP_MS).toISOString();
+        enqueueJob(db, 'followup_sms', { to, message: body, from: fromNumber }, retryTime);
       }
-    }, MIN_GAP_MS);
+    } catch (_) {
+      // Fallback to setTimeout if job queue not available
+      setTimeout(async () => {
+        try {
+          console.log(`[sms] Retrying send to ${to}...`);
+          const retryMsg = await twilioClient.messages.create({
+            to,
+            from: fromNumber,
+            body: bodyWithFooter
+          });
+          lastSendTime.set(to, Date.now());
+          console.log(`[sms] Retry succeeded: ${to} ${retryMsg.sid}`);
+        } catch (retryErr) {
+          console.error(`[sms] Retry failed for ${to}:`, retryErr.message);
+        }
+      }, MIN_GAP_MS);
+    }
 
     return { success: false, error: err.message };
   }

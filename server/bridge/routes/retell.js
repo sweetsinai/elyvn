@@ -238,11 +238,17 @@ async function handleCallEnded(db, call) {
       disconnectionReason === 'transfer_to_human'
     ) {
       outcome = 'transferred';
-    } else if (duration < 10) {
-      outcome = 'missed';
     } else if (callAnalysis.voicemail_detected || disconnectionReason === 'voicemail_reached') {
       outcome = 'voicemail';
+    } else if (duration < 10) {
+      outcome = 'missed';
     }
+
+    // Record metrics
+    try {
+      const { recordMetric } = require('../utils/metrics');
+      recordMetric('total_calls', 1, 'counter');
+    } catch (_) {}
 
     const sentiment = callAnalysis.user_sentiment || 'neutral';
 
@@ -299,8 +305,49 @@ async function handleCallEnded(db, call) {
         scheduleFollowUp(db, clientId, callerPhone, outcome);
       }
 
-      // 9b. Missed/voicemail call — instant text-back + speed-to-lead + brain
-      if (outcome === 'missed' || outcome === 'voicemail' || duration === 0) {
+      // 9a. Voicemail handling — different from missed call
+      if (outcome === 'voicemail') {
+        try {
+          const voicemailLead = db.prepare('SELECT id FROM leads WHERE phone = ? AND client_id = ?').get(callerPhone, clientId);
+          const voicemailLeadId = voicemailLead?.id || randomUUID();
+          if (!voicemailLead) {
+            db.prepare(`
+              INSERT INTO leads (id, client_id, phone, source, score, stage, last_contact, created_at, updated_at)
+              VALUES (?, ?, ?, 'voicemail', 3, 'new', datetime('now'), datetime('now'), datetime('now'))
+            `).run(voicemailLeadId, clientId, callerPhone);
+          }
+
+          const voicemailClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+          if (voicemailClient) {
+            const voicemailMsg = `Hi, we noticed you called ${voicemailClient.business_name}. Sorry we missed you! Book an appointment: ${voicemailClient.calcom_booking_link || '(booking link not set)'} or we'll call you back during business hours.`;
+            sendSMS(callerPhone, voicemailMsg, voicemailClient.twilio_phone)
+              .catch(err => console.error('[retell] Voicemail SMS failed:', err.message));
+
+            db.prepare(`
+              INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at)
+              VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'voicemail_textback', datetime('now'))
+            `).run(randomUUID(), clientId, voicemailLeadId, callerPhone, voicemailMsg);
+
+            // Schedule one followup call during next business hours (not immediate)
+            const { isWithinBusinessHours, getNextBusinessHour } = require('../utils/businessHours');
+            if (!isWithinBusinessHours(voicemailClient)) {
+              const nextOpen = getNextBusinessHour(voicemailClient);
+              const nextOpenTime = new Date(nextOpen);
+              const callbackTime = new Date(nextOpenTime.getTime() + 30 * 60 * 1000); // 30min after opening
+
+              db.prepare(`
+                INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+                VALUES (?, ?, ?, 99, 'voicemail_callback', ?, 'template', ?, 'scheduled')
+              `).run(randomUUID(), voicemailLeadId, clientId, 'Voicemail callback', callbackTime.toISOString());
+            }
+          }
+        } catch (vmErr) {
+          console.error('[retell] Voicemail handler error:', vmErr.message);
+        }
+      }
+
+      // 9b. Missed call (but not voicemail) — instant text-back + speed-to-lead + brain
+      if (outcome === 'missed' || duration === 0) {
         try {
           const missedClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
           if (missedClient) {

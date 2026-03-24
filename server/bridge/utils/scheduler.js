@@ -157,6 +157,12 @@ function initScheduler(db) {
   }, 5 * 60 * 1000);
   console.log('[Scheduler] Follow-up processor running every 5 minutes');
 
+  // Appointment reminder processor — every 2 minutes
+  setInterval(() => {
+    processAppointmentReminders(db).catch(err => console.error('[Scheduler] appointment reminder error:', err));
+  }, 2 * 60 * 1000);
+  console.log('[Scheduler] Appointment reminder processor running every 2 minutes');
+
   // Daily lead review — 9 AM
   const review = new Date(now);
   review.setHours(9, 0, 0, 0);
@@ -515,4 +521,30 @@ async function checkReplies(db) {
   }
 }
 
-module.exports = { initScheduler, sendDailySummaries, sendWeeklyReports, processFollowups, dailyLeadReview, createAppointmentReminders, dailyOutreach, checkReplies };
+/**
+ * Process due appointment reminders and send them
+ */
+async function processAppointmentReminders(db) {
+  try {
+    const { processDueReminders } = require('./appointmentReminders');
+    const { sendSMS } = require('./sms');
+
+    await processDueReminders(db, async (phone, message, from) => {
+      return sendSMS(phone, message, from, db);
+    });
+  } catch (err) {
+    console.error('[Scheduler] processAppointmentReminders error:', err.message);
+  }
+}
+
+module.exports = {
+  initScheduler,
+  sendDailySummaries,
+  sendWeeklyReports,
+  processFollowups,
+  dailyLeadReview,
+  createAppointmentReminders,
+  processAppointmentReminders,
+  dailyOutreach,
+  checkReplies
+};

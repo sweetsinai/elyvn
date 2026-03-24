@@ -205,7 +205,7 @@ async function handleCommand(db, message) {
         break;
       }
 
-      // Mark appointments as completed + schedule review (in transaction)
+      // Mark appointments as completed + cancel reminders + schedule review (in transaction)
       try {
         const { randomUUID } = require('crypto');
         const reviewLink = client.google_review_link || '';
@@ -221,6 +221,11 @@ async function handleCommand(db, message) {
 
           const lead = db.prepare('SELECT id, name FROM leads WHERE phone = ? AND client_id = ?').get(phone, client.id);
           if (lead) {
+            // Cancel any pending appointment reminders for this lead
+            db.prepare(
+              "UPDATE followups SET status = 'cancelled' WHERE lead_id = ? AND type = 'reminder' AND status = 'scheduled'"
+            ).run(lead.id);
+
             const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
             db.prepare(`
               INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
@@ -230,7 +235,7 @@ async function handleCommand(db, message) {
         })();
 
         await telegram.sendMessage(chatId,
-          `&#9989; Job marked complete for ${phone}.\n\nReview request scheduled for 2h.${reviewLink ? '' : '\n\n&#9888;&#65039; Set a Google review link via /reviewlink to include it.'}`
+          `&#9989; Job marked complete for ${phone}.\n\nReminders cancelled. Review request scheduled for 2h.${reviewLink ? '' : '\n\n&#9888;&#65039; Set a Google review link via /reviewlink to include it.'}`
         );
       } catch (completeErr) {
         console.error('[telegram] /complete error:', completeErr.message);

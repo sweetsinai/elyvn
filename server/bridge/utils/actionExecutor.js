@@ -30,10 +30,34 @@ async function executeOne(db, action, lead, client) {
       const to = action.to || lead?.phone;
       if (!to) return { sent: false, reason: 'no phone' };
 
-      const result = await sendSMS(to, action.message, client?.twilio_phone);
+      // Check business hours and delay if necessary
+      const { shouldDelayUntilBusinessHours } = require('./businessHours');
+      const delay = shouldDelayUntilBusinessHours(client);
+
+      let result;
+      if (delay > 0) {
+        // Queue for later
+        try {
+          const { enqueueJob } = require('./jobQueue');
+          const scheduledAt = new Date(Date.now() + delay).toISOString();
+          enqueueJob(db, 'followup_sms', {
+            phone: to,
+            message: action.message,
+            from: client?.twilio_phone,
+            clientId: client?.id,
+            leadId: lead?.id,
+          }, scheduledAt);
+          result = { success: true, scheduled: true, scheduledAt };
+        } catch (err) {
+          console.error('[Executor] Job queue error:', err.message);
+          result = { success: false, error: 'Failed to queue SMS' };
+        }
+      } else {
+        result = await sendSMS(to, action.message, client?.twilio_phone, db, client?.id);
+      }
 
       // Log in messages table
-      if (lead?.id) {
+      if (lead?.id && result.success && !result.scheduled) {
         db.prepare(`
           INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, reply_source, status, created_at)
           VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'brain', 'sent', datetime('now'))
@@ -41,13 +65,13 @@ async function executeOne(db, action, lead, client) {
       }
 
       // Notify owner about brain-initiated SMS
-      if (client?.telegram_chat_id) {
+      if (client?.telegram_chat_id && result.success) {
         telegram.sendMessage(client.telegram_chat_id,
-          `&#129504; <b>Brain auto-sent SMS</b>\n\nTo: ${to}\n"${(action.message || '').substring(0, 200)}"`
+          `&#129504; <b>Brain auto-sent SMS</b>\n\nTo: ${to}\n"${(action.message || '').substring(0, 200)}"${result.scheduled ? '\n\n⏱️ Scheduled for next business hours' : ''}`
         ).catch(() => {});
       }
 
-      return { sent: result.success, sid: result.messageId };
+      return { sent: result.success, sid: result.messageId, scheduled: result.scheduled };
     }
 
     case 'schedule_followup': {
@@ -95,6 +119,11 @@ async function executeOne(db, action, lead, client) {
 
       let text = `${emoji} <b>Brain Alert</b>\n\n${action.message}`;
       if (lead?.phone) text += `\n\nLead: ${lead.name || lead.phone}`;
+
+      try {
+        const { recordMetric } = require('./metrics');
+        recordMetric('total_brain_decisions', 1, 'counter');
+      } catch (_) {}
 
       await telegram.sendMessage(client.telegram_chat_id, text);
       return { notified: true };

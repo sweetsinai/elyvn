@@ -64,7 +64,13 @@ async function handleInboundSMS(db, { from, to, body, messageSid }) {
 
     const trimmed = (body || '').toUpperCase().trim();
 
-    if (trimmed === 'CANCEL') {
+    // Handle opt-out keywords (STOP, UNSUBSCRIBE, CANCEL, QUIT, END)
+    if (/^(STOP|UNSUBSCRIBE|QUIT|END)$/.test(trimmed)) {
+      await handleOptOut(db, client, from, to, trimmed);
+    } else if (/^(START|SUBSCRIBE|YES)$/.test(trimmed) && trimmed !== 'YES') {
+      // Handle re-opt-in (but not YES which is for booking)
+      await handleOptIn(db, client, from, to);
+    } else if (trimmed === 'CANCEL') {
       await handleCancel(db, client, from, to);
     } else if (trimmed === 'YES') {
       await handleYes(db, client, from, to);
@@ -73,6 +79,33 @@ async function handleInboundSMS(db, { from, to, body, messageSid }) {
     }
   } catch (err) {
     console.error('[twilio] handleInboundSMS error:', err);
+  }
+}
+
+async function handleOptOut(db, client, from, to, keyword) {
+  try {
+    const { recordOptOut } = require('../utils/optOut');
+    recordOptOut(db, from, client.id, keyword);
+
+    // Send confirmation and re-opt-in instructions
+    await sendSMS(from, `You've been unsubscribed from ${client.business_name || 'our'} messages. Reply START to resubscribe.`, to);
+
+    console.log(`[twilio] Recorded opt-out for ${from} (${keyword})`);
+  } catch (err) {
+    console.error('[twilio] handleOptOut error:', err);
+  }
+}
+
+async function handleOptIn(db, client, from, to) {
+  try {
+    const { recordOptIn } = require('../utils/optOut');
+    recordOptIn(db, from, client.id);
+
+    await sendSMS(from, `Welcome back! You're now subscribed to ${client.business_name || 'our'} messages.`, to);
+
+    console.log(`[twilio] Recorded opt-in for ${from}`);
+  } catch (err) {
+    console.error('[twilio] handleOptIn error:', err);
   }
 }
 

@@ -71,6 +71,41 @@ try {
     )
   `);
 
+  // SMS opt-out tracking
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sms_opt_outs (
+      id TEXT PRIMARY KEY,
+      phone TEXT NOT NULL,
+      client_id TEXT NOT NULL,
+      opted_out_at TEXT DEFAULT (datetime('now')),
+      reason TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(phone, client_id)
+    )
+  `);
+
+  // Job queue for persistent scheduling
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS job_queue (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      payload TEXT,
+      scheduled_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      failed_at TEXT,
+      error TEXT,
+      attempts INTEGER DEFAULT 0,
+      max_attempts INTEGER DEFAULT 3,
+      status TEXT DEFAULT 'pending',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Business hours configuration
+  try { db.exec('ALTER TABLE clients ADD COLUMN business_hours TEXT'); } catch (_) {}
+
   // Ensure google_review_link column on clients
   try { db.exec('ALTER TABLE clients ADD COLUMN google_review_link TEXT'); } catch (_) {}
 
@@ -195,11 +230,14 @@ const retellRouter = require('./routes/retell');
 const twilioRouter = require('./routes/twilio');
 const apiRouter = require('./routes/api');
 const outreachRouter = require('./routes/outreach');
+const onboardRouter = require('./routes/onboard');
 
 app.use('/webhooks/retell', retellRouter);
 app.use('/retell-webhook', retellRouter);
 app.use('/webhooks/twilio', twilioRouter);
 app.use('/api/outreach', apiAuth, outreachRouter);
+// Mount onboard routes (before general /api to allow public access)
+app.use('/api', onboardRouter);
 app.use('/api', apiAuth, apiRouter);
 
 // Telegram bot webhook
@@ -212,6 +250,18 @@ app.use('/webhooks/form', formRoutes);
 
 // Static files (production dashboard build)
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Metrics endpoint (internal, behind API auth)
+app.get('/metrics', apiAuth, (req, res) => {
+  try {
+    const { getMetrics } = require('./utils/metrics');
+    const metrics = getMetrics();
+    res.json(metrics);
+  } catch (err) {
+    console.error('[metrics] Error:', err.message);
+    res.status(500).json({ error: 'Failed to get metrics' });
+  }
+});
 
 // Health check
 app.get('/health', async (req, res) => {
@@ -227,6 +277,7 @@ app.get('/health', async (req, res) => {
       leads: db.prepare('SELECT COUNT(*) as c FROM leads').get().c,
       messages: db.prepare('SELECT COUNT(*) as c FROM messages').get().c,
       followups: db.prepare('SELECT COUNT(*) as c FROM followups').get().c,
+      pending_jobs: db.prepare('SELECT COUNT(*) as c FROM job_queue WHERE status = ?').get('pending').c,
     };
   } catch (_) {}
 
@@ -287,6 +338,42 @@ app.listen(PORT, () => {
   // Initialize Telegram scheduler
   const { initScheduler } = require('./utils/scheduler');
   if (db) initScheduler(db);
+
+  // Start backup scheduler
+  if (db) {
+    const { scheduleBackups } = require('./utils/backup');
+    scheduleBackups(DB_PATH, 24); // Daily backups
+  }
+
+  // Start job queue processor
+  if (db) {
+    const { processJobs } = require('./utils/jobQueue');
+    const { sendSMS } = require('./utils/sms');
+    const { triggerSpeedSequence } = require('./utils/speed-to-lead');
+
+    const jobHandlers = {
+      'speed_to_lead_sms': async (payload) => {
+        await sendSMS(payload.phone, payload.message, payload.from);
+      },
+      'speed_to_lead_callback': async (payload) => {
+        const { scheduleCallback } = require('./utils/speed-to-lead');
+        const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(payload.clientId);
+        scheduleCallback(db, { ...payload, client });
+      },
+      'followup_sms': async (payload) => {
+        await sendSMS(payload.phone, payload.message, payload.from);
+      },
+      'appointment_reminder': async (payload) => {
+        await sendSMS(payload.phone, payload.message, payload.from);
+      },
+    };
+
+    setInterval(() => {
+      processJobs(db, jobHandlers).catch(err =>
+        console.error('[jobQueue] Processing error:', err.message)
+      );
+    }, 15000); // Every 15 seconds
+  }
 
   // Set Telegram webhook on startup
   if (process.env.TELEGRAM_BOT_TOKEN) {
