@@ -10,6 +10,9 @@ const path = require('path');
 
 const anthropic = new Anthropic();
 
+// Per-lead lock to prevent concurrent brain decisions on the same lead
+const leadLocks = new Map();
+
 /**
  * @param {string} eventType - call_ended | sms_received | form_submitted | followup_due | no_response_timeout | daily_review
  * @param {object} eventData - Raw event payload
@@ -18,6 +21,28 @@ const anthropic = new Anthropic();
  * @returns {Promise<{reasoning: string, actions: object[]}>}
  */
 async function think(eventType, eventData, leadMemory, db) {
+  const { lead, client, timeline, insights } = leadMemory;
+
+  // Per-lead lock: serialize brain decisions for the same lead
+  const lockKey = lead?.id;
+  if (lockKey) {
+    while (leadLocks.has(lockKey)) {
+      await leadLocks.get(lockKey);
+    }
+    let unlock;
+    const lockPromise = new Promise(resolve => { unlock = resolve; });
+    leadLocks.set(lockKey, lockPromise);
+    try {
+      return await _think(eventType, eventData, leadMemory, db);
+    } finally {
+      leadLocks.delete(lockKey);
+      unlock();
+    }
+  }
+  return _think(eventType, eventData, leadMemory, db);
+}
+
+async function _think(eventType, eventData, leadMemory, db) {
   const { lead, client, timeline, insights } = leadMemory;
 
   // Load knowledge base (capped at 5000 chars to avoid Claude token overflow)

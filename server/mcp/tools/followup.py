@@ -111,7 +111,7 @@ async def _generate_content(
     # Template fallback
     template = get_template(client_cfg.get("id", ""), f"{touch_type}.txt")
     if template:
-        content = template.replace("{business_name}", business_name).replace("{name}", lead_name)
+        content = template.replace("{business_name}", str(business_name or '')).replace("{name}", str(lead_name or ''))
         return content, "template"
 
     # Hardcoded fallback

@@ -43,6 +43,15 @@ async function handleInboundSMS(db, { from, to, body, messageSid }) {
   try {
     console.log(`[twilio] SMS from ${from} to ${to} (${(body || '').length} chars)`);
 
+    // Idempotency: skip if this MessageSid was already processed (webhook retry)
+    if (messageSid) {
+      const dup = db.prepare('SELECT id FROM messages WHERE message_sid = ?').get(messageSid);
+      if (dup) {
+        console.log(`[twilio] Duplicate MessageSid ${messageSid}, skipping`);
+        return;
+      }
+    }
+
     // Identify client by matching To number
     const client = db.prepare(
       'SELECT * FROM clients WHERE twilio_phone = ? OR retell_phone = ?'
@@ -236,11 +245,14 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
       `).run(leadId, client.id, from, new Date().toISOString(), new Date().toISOString(), new Date().toISOString());
     }
 
-    // Insert message record
+    // Insert inbound + outbound messages in a transaction
+    const inboundId = randomUUID();
+    const outboundId = randomUUID();
+
     db.prepare(`
       INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, confidence, created_at)
       VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, datetime('now'))
-    `).run(randomUUID(), client.id, leadId, from, body, messageSid || null, confidence);
+    `).run(inboundId, client.id, leadId, from, body, messageSid || null, confidence);
 
     // Send reply via Twilio REST API
     await sendSMS(from, reply, to);
@@ -249,7 +261,7 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
     db.prepare(`
       INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, confidence, created_at)
       VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'auto_replied', ?, datetime('now'))
-    `).run(randomUUID(), client.id, leadId, from, reply, confidence);
+    `).run(outboundId, client.id, leadId, from, reply, confidence);
 
     // Schedule follow-up touch for brand-new SMS contacts
     if (!existingLead) {

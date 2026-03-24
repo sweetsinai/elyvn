@@ -28,7 +28,7 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASS = os.environ.get("SMTP_PASS", "")
 FROM_EMAIL = os.environ.get("FROM_EMAIL", SMTP_USER)
-CALCOM_BOOKING_LINK = os.environ.get("MY_CALCOM_LINK", "https://cal.com/elyvn/demo")
+CALCOM_BOOKING_LINK = os.environ.get("CALCOM_BOOKING_LINK", os.environ.get("MY_CALCOM_LINK", "https://cal.com/sohan/discovery"))
 
 MAX_DAILY_SENDS = 30
 MAX_PER_MINUTE = 2

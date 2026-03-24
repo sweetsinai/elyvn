@@ -105,6 +105,15 @@ async function handleCallEnded(db, call) {
     const callId = call.call_id;
     console.log(`[retell] call_ended: ${callId}`);
 
+    // Idempotency: skip if this call_ended was already processed (webhook retry)
+    const alreadyProcessed = db.prepare(
+      "SELECT id FROM calls WHERE call_id = ? AND summary IS NOT NULL"
+    ).get(callId);
+    if (alreadyProcessed) {
+      console.log(`[retell] call_ended: ${callId} already processed, skipping (idempotent)`);
+      return;
+    }
+
     // 1. Fetch full call data from Retell (fall back to webhook payload on failure)
     let callData = {};
     if (RETELL_API_KEY) {

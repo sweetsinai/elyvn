@@ -319,7 +319,7 @@ router.get('/reports/:clientId', (req, res) => {
 router.get('/clients', (req, res) => {
   try {
     const db = req.app.locals.db;
-    const clients = db.prepare('SELECT * FROM clients ORDER BY created_at DESC').all();
+    const clients = db.prepare('SELECT * FROM clients ORDER BY created_at DESC LIMIT 100').all();
     res.json({ clients });
   } catch (err) {
     console.error('[api] clients error:', err);

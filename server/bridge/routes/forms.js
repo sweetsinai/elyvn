@@ -115,8 +115,8 @@ router.post('/:clientId', async (req, res) => {
     const email = body.email || body.Email || body['your-email']
       || body.email_address || body.emailAddress || null;
 
-    const message = body.message || body.Message || body['your-message']
-      || body.comments || body.inquiry || body.details || body.notes || '';
+    const message = (body.message || body.Message || body['your-message']
+      || body.comments || body.inquiry || body.details || body.notes || '').substring(0, 2000);
 
     const service = body.service || body.Service || body.service_type
       || body.serviceType || body['service-type'] || null;
