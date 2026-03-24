@@ -1,3 +1,9 @@
+require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
+
+// Initialize file-based logging (must be before any console.log calls)
+const { setupLogger, closeLogger } = require('./utils/logger');
+setupLogger();
+
 // Catch unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   console.error('[CRASH] UNHANDLED REJECTION:', reason);
@@ -7,8 +13,6 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('uncaughtException', (error) => {
   console.error('[CRASH] UNCAUGHT EXCEPTION:', error);
 });
-
-require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 
 const express = require('express');
 const cors = require('cors');
@@ -44,136 +48,9 @@ try {
   db.pragma('busy_timeout = 5000');
   db.pragma('foreign_keys = ON');
 
-  // Ensure indexes on frequently queried columns
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id);
-    CREATE INDEX IF NOT EXISTS idx_calls_caller_phone ON calls(caller_phone);
-    CREATE INDEX IF NOT EXISTS idx_calls_client_id ON calls(client_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone);
-    CREATE INDEX IF NOT EXISTS idx_messages_client_phone ON messages(client_id, phone);
-    CREATE INDEX IF NOT EXISTS idx_followups_lead_id ON followups(lead_id);
-  `);
-
-  // Ensure appointments table exists
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS appointments (
-      id TEXT PRIMARY KEY,
-      client_id TEXT NOT NULL,
-      lead_id TEXT,
-      phone TEXT,
-      name TEXT,
-      service TEXT,
-      datetime TEXT,
-      status TEXT DEFAULT 'confirmed',
-      calcom_booking_id TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
-
-  // SMS opt-out tracking
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sms_opt_outs (
-      id TEXT PRIMARY KEY,
-      phone TEXT NOT NULL,
-      client_id TEXT NOT NULL,
-      opted_out_at TEXT DEFAULT (datetime('now')),
-      reason TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(phone, client_id)
-    )
-  `);
-
-  // Job queue for persistent scheduling
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS job_queue (
-      id TEXT PRIMARY KEY,
-      type TEXT NOT NULL,
-      payload TEXT,
-      scheduled_at TEXT NOT NULL,
-      started_at TEXT,
-      completed_at TEXT,
-      failed_at TEXT,
-      error TEXT,
-      attempts INTEGER DEFAULT 0,
-      max_attempts INTEGER DEFAULT 3,
-      status TEXT DEFAULT 'pending',
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
-
-  // Business hours configuration
-  try { db.exec('ALTER TABLE clients ADD COLUMN business_hours TEXT'); } catch (_) {}
-
-  // Ensure google_review_link column on clients
-  try { db.exec('ALTER TABLE clients ADD COLUMN google_review_link TEXT'); } catch (_) {}
-
-  // Engine 2: Ensure outreach tables exist
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS prospects (
-      id TEXT PRIMARY KEY,
-      business_name TEXT,
-      phone TEXT,
-      email TEXT,
-      website TEXT,
-      address TEXT,
-      industry TEXT,
-      city TEXT,
-      state TEXT,
-      country TEXT DEFAULT 'US',
-      rating REAL,
-      review_count INTEGER,
-      hours TEXT,
-      status TEXT DEFAULT 'scraped',
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS campaigns (
-      id TEXT PRIMARY KEY,
-      name TEXT,
-      industry TEXT,
-      city TEXT,
-      total_prospects INTEGER DEFAULT 0,
-      total_sent INTEGER DEFAULT 0,
-      total_replied INTEGER DEFAULT 0,
-      total_positive INTEGER DEFAULT 0,
-      total_booked INTEGER DEFAULT 0,
-      status TEXT DEFAULT 'draft',
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS campaign_prospects (
-      id TEXT PRIMARY KEY,
-      campaign_id TEXT,
-      prospect_id TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS emails_sent (
-      id TEXT PRIMARY KEY,
-      campaign_id TEXT,
-      prospect_id TEXT,
-      to_email TEXT,
-      from_email TEXT,
-      subject TEXT,
-      body TEXT,
-      sent_at TEXT,
-      status TEXT DEFAULT 'draft',
-      reply_text TEXT,
-      reply_classification TEXT,
-      reply_at TEXT,
-      auto_response_sent INTEGER DEFAULT 0,
-      error TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
+  // Run all database migrations
+  const { runMigrations } = require('./utils/migrations');
+  runMigrations(db);
 
   console.log('[server] SQLite connected:', DB_PATH);
 } catch (err) {
@@ -247,6 +124,10 @@ app.use('/webhooks/telegram', telegramRoutes);
 // Form webhook (any web form → speed-to-lead)
 const formRoutes = require('./routes/forms');
 app.use('/webhooks/form', formRoutes);
+
+// Cal.com webhook (booking created/cancelled/rescheduled)
+const calcomWebhook = require('./routes/calcom-webhook');
+app.use('/webhooks/calcom', calcomWebhook);
 
 // Static files (production dashboard build)
 app.use(express.static(path.join(__dirname, 'public')));
@@ -361,10 +242,99 @@ app.listen(PORT, () => {
         scheduleCallback(db, { ...payload, client });
       },
       'followup_sms': async (payload) => {
-        await sendSMS(payload.phone, payload.message, payload.from);
+        await sendSMS(payload.phone || payload.to, payload.message || payload.body, payload.from);
       },
       'appointment_reminder': async (payload) => {
         await sendSMS(payload.phone, payload.message, payload.from);
+      },
+      'interested_followup_email': async (payload) => {
+        // 24h follow-up for INTERESTED prospects who haven't booked yet
+        const prospect = db.prepare('SELECT * FROM prospects WHERE id = ?').get(payload.prospect_id);
+        if (!prospect || prospect.status === 'booked') {
+          console.log(`[jobQueue] Skipping follow-up — prospect ${payload.prospect_id} already booked or gone`);
+          return;
+        }
+        // Check if they booked an appointment since we enqueued
+        const hasBooking = db.prepare(
+          "SELECT 1 FROM appointments WHERE phone = ? OR lead_id = ? LIMIT 1"
+        ).get(prospect.phone, payload.prospect_id);
+        if (hasBooking) {
+          console.log(`[jobQueue] Skipping follow-up — prospect ${payload.prospect_id} has a booking`);
+          return;
+        }
+        const nodemailer = require('nodemailer');
+        const transport = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || '587'),
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        });
+        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
+        const SENDER = payload.sender_name || process.env.OUTREACH_SENDER_NAME || 'Sohan';
+        const body = `Hi${prospect.business_name ? ' ' + prospect.business_name.split(' ')[0] : ''},\n\nJust following up — I know things get busy! The demo is only 10 minutes and I'll show you exactly how ELYVN handles calls for businesses like yours.\n\nHere's the link again: ${BOOKING_LINK}\n\nNo pressure at all — happy to answer any questions too.\n\n${SENDER}\nELYVN`;
+        await transport.sendMail({
+          from: payload.from_email,
+          to: payload.to_email,
+          subject: `Re: ${payload.subject}`,
+          text: body,
+          html: body.replace(/\n/g, '<br>'),
+        });
+        console.log(`[jobQueue] Sent 24h interested follow-up to ${payload.to_email}`);
+      },
+      'noreply_followup': async (payload) => {
+        // Follow-up for prospects who never replied (Day 3 or Day 7)
+        const prospect = db.prepare('SELECT * FROM prospects WHERE id = ?').get(payload.prospect_id);
+        if (!prospect || ['bounced', 'unsubscribed', 'booked', 'interested'].includes(prospect.status)) {
+          console.log(`[jobQueue] Skipping no-reply follow-up — prospect ${payload.prospect_id} status: ${prospect?.status}`);
+          return;
+        }
+        // Check if they replied since we enqueued
+        const hasReply = db.prepare(
+          "SELECT 1 FROM emails_sent WHERE prospect_id = ? AND reply_text IS NOT NULL LIMIT 1"
+        ).get(payload.prospect_id);
+        if (hasReply) {
+          console.log(`[jobQueue] Skipping no-reply follow-up — prospect replied`);
+          return;
+        }
+        const nodemailer = require('nodemailer');
+        const transport = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || '587'),
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        });
+        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
+        const SENDER = payload.sender_name || process.env.OUTREACH_SENDER_NAME || 'Sohan';
+        const dayNum = payload.day || 3;
+        let body;
+        if (dayNum <= 3) {
+          body = `Hi${prospect.business_name ? ' ' + prospect.business_name.split(' ')[0] : ''},\n\nQuick follow-up on my earlier email. I work with ${prospect.industry || 'service'} businesses in ${prospect.city || 'your area'} and thought ELYVN could help you catch calls you might be missing.\n\nWould a 10-minute demo be worth your time? ${BOOKING_LINK}\n\n${SENDER}\nELYVN`;
+        } else {
+          body = `Hi${prospect.business_name ? ' ' + prospect.business_name.split(' ')[0] : ''},\n\nLast note from me — I don't want to be a pest! If now's not the right time, no worries.\n\nBut if you're curious how an AI receptionist could help ${prospect.business_name || 'your business'} handle after-hours calls and book more appointments, the link below takes 10 minutes:\n\n${BOOKING_LINK}\n\nEither way, I wish you all the best.\n\n${SENDER}\nELYVN`;
+        }
+        await transport.sendMail({
+          from: payload.from_email,
+          to: payload.to_email,
+          subject: `Re: ${payload.original_subject}`,
+          text: body,
+          html: body.replace(/\n/g, '<br>'),
+        });
+        // Record in emails_sent
+        const { randomUUID } = require('crypto');
+        const now = new Date().toISOString();
+        db.prepare(`
+          INSERT INTO emails_sent (id, campaign_id, prospect_id, to_email, from_email, subject, body, status, sent_at, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?)
+        `).run(randomUUID(), payload.campaign_id || null, payload.prospect_id, payload.to_email, payload.from_email, `Re: ${payload.original_subject}`, body, now, now, now);
+        console.log(`[jobQueue] Sent Day ${dayNum} no-reply follow-up to ${payload.to_email}`);
+        // If this was Day 3, schedule Day 7
+        if (dayNum <= 3) {
+          const { enqueueJob } = require('./utils/jobQueue');
+          enqueueJob(db, 'noreply_followup', {
+            ...payload,
+            day: 7,
+          }, new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString());
+        }
       },
     };
 
@@ -374,6 +344,34 @@ app.listen(PORT, () => {
       );
     }, 15000); // Every 15 seconds
   }
+
+  // Auto-classify replies every 5 minutes
+  setInterval(async () => {
+    try {
+      const unclassified = db.prepare(`
+        SELECT COUNT(*) as c FROM emails_sent
+        WHERE reply_text IS NOT NULL AND reply_classification IS NULL
+      `).get();
+      if (unclassified.c > 0) {
+        console.log(`[auto-classify] Found ${unclassified.c} unclassified replies, triggering...`);
+        // Use internal HTTP call to reuse route logic
+        const http = require('http');
+        const req = http.request({
+          hostname: 'localhost',
+          port: PORT,
+          path: '/api/outreach/auto-classify',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+          },
+        });
+        req.end();
+      }
+    } catch (err) {
+      console.error('[auto-classify] Periodic check error:', err.message);
+    }
+  }, 5 * 60 * 1000); // Every 5 minutes
 
   // Set Telegram webhook on startup
   if (process.env.TELEGRAM_BOT_TOKEN) {
@@ -389,11 +387,14 @@ app.listen(PORT, () => {
 process.on('SIGINT', () => {
   console.log('[server] Shutting down...');
   if (db) db.close();
+  closeLogger();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
+  console.log('[server] SIGTERM received, shutting down...');
   if (db) db.close();
+  closeLogger();
   process.exit(0);
 });
 

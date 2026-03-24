@@ -1,7 +1,7 @@
 const nodemailer = require('nodemailer');
 const { randomUUID } = require('crypto');
 
-const DAILY_LIMIT = 30;
+const DAILY_LIMIT = parseInt(process.env.EMAIL_DAILY_LIMIT || '300', 10);
 
 function createTransport() {
   const host = process.env.SMTP_HOST || 'smtp.gmail.com';
@@ -52,6 +52,10 @@ async function sendColdEmail(db, prospect, subject, body) {
       to: prospect.email,
       subject,
       text: body,
+      headers: {
+        'List-Unsubscribe': `<mailto:${fromEmail}?subject=unsubscribe>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
     });
 
     const now = new Date().toISOString();
@@ -72,12 +76,24 @@ async function sendColdEmail(db, prospect, subject, body) {
 
     const now = new Date().toISOString();
 
+    // Detect bounces — mark prospect as bounced so we never email them again
+    const isBounce = err.responseCode >= 550 || err.message.includes('rejected') ||
+      err.message.includes('not exist') || err.message.includes('invalid') ||
+      err.message.includes('undeliverable');
+
+    const status = isBounce ? 'bounced' : 'failed';
+
     db.prepare(`
       INSERT INTO emails_sent (id, prospect_id, to_email, from_email, subject, body, status, error, sent_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?, ?)
-    `).run(randomUUID(), prospect.id, prospect.email, fromEmail, subject, body, err.message, now, now, now);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(randomUUID(), prospect.id, prospect.email, fromEmail, subject, body, status, err.message, now, now, now);
 
-    return { success: false, error: err.message };
+    if (isBounce) {
+      db.prepare("UPDATE prospects SET status = 'bounced', updated_at = ? WHERE id = ?").run(now, prospect.id);
+      console.log(`[EmailSender] Bounced: ${prospect.email} — marked as bounced, will not re-email`);
+    }
+
+    return { success: false, error: err.message, bounced: isBounce };
   }
 }
 

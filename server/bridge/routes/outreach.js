@@ -5,9 +5,36 @@ const Anthropic = require('@anthropic-ai/sdk');
 const nodemailer = require('nodemailer');
 
 const anthropic = new Anthropic();
+const { wrapWithCTA, wrapInTemplate } = require('../utils/emailTemplates');
 
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
-const DAILY_SEND_LIMIT = 30;
+const DAILY_SEND_LIMIT = parseInt(process.env.EMAIL_DAILY_LIMIT || '300', 10);
+
+/**
+ * Normalize a phone number to E.164 format.
+ * Handles US numbers: (555) 123-4567 → +15551234567
+ */
+function normalizePhoneE164(raw, defaultCountryCode = '1') {
+  if (!raw) return null;
+  // Strip everything except digits and leading +
+  let digits = raw.replace(/[^\d+]/g, '');
+  if (digits.startsWith('+')) {
+    digits = digits.slice(1);
+  }
+  // If 10 digits, assume US/CA and prepend country code
+  if (digits.length === 10) {
+    digits = defaultCountryCode + digits;
+  }
+  // If 11 digits starting with 1, it's already US format
+  if (digits.length === 11 && digits.startsWith('1')) {
+    // good
+  }
+  // Validate: must be 10-15 digits
+  if (digits.length < 10 || digits.length > 15) {
+    return null; // Invalid
+  }
+  return '+' + digits;
+}
 
 // SMTP transporter (lazy init)
 let transporter = null;
@@ -67,30 +94,61 @@ router.post('/scrape', async (req, res) => {
 
     for (const place of places) {
       const name = place.displayName?.text || '';
-      const phone = place.nationalPhoneNumber || place.internationalPhoneNumber || null;
+      const rawPhone = place.nationalPhoneNumber || place.internationalPhoneNumber || null;
+      const phone = normalizePhoneE164(rawPhone);
       const website = place.websiteUri || null;
       const address = place.formattedAddress || null;
       const rating = place.rating || null;
       const reviewCount = place.userRatingCount || 0;
 
-      // Try to find email from website
+      // Try to find email from website — check homepage AND /contact page
       let email = null;
       if (website) {
-        try {
-          const siteResp = await fetch(website, {
-            signal: AbortSignal.timeout(5000),
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ELYVN/1.0)' }
-          });
-          if (siteResp.ok) {
-            const html = await siteResp.text();
-            const emailMatch = html.match(/mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i);
-            if (emailMatch) {
-              email = emailMatch[1];
-              withEmails++;
+        const emailRegexes = [
+          /mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/gi,
+          /\b([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.(?:com|net|org|io|co|biz|info|us|ca|uk))\b/gi,
+        ];
+        const excludePatterns = /\.(png|jpg|jpeg|gif|svg|css|js|woff|ico)$/i;
+
+        const pagesToCheck = [website];
+        // Add common contact page URLs
+        const baseUrl = website.replace(/\/+$/, '');
+        pagesToCheck.push(`${baseUrl}/contact`, `${baseUrl}/contact-us`, `${baseUrl}/about`);
+
+        for (const pageUrl of pagesToCheck) {
+          if (email) break;
+          try {
+            const siteResp = await fetch(pageUrl, {
+              signal: AbortSignal.timeout(5000),
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+              redirect: 'follow',
+            });
+            if (siteResp.ok) {
+              const html = await siteResp.text();
+              for (const regex of emailRegexes) {
+                regex.lastIndex = 0;
+                let match;
+                while ((match = regex.exec(html)) !== null) {
+                  const candidate = match[1].toLowerCase();
+                  // Filter out image/asset emails and noreply addresses
+                  if (!excludePatterns.test(candidate) &&
+                      !candidate.includes('noreply') &&
+                      !candidate.includes('no-reply') &&
+                      !candidate.includes('example.com') &&
+                      !candidate.includes('sentry.io') &&
+                      !candidate.includes('wixpress.com') &&
+                      candidate.length < 80) {
+                    email = candidate;
+                    withEmails++;
+                    break;
+                  }
+                }
+                if (email) break;
+              }
             }
+          } catch (_) {
+            // Timeout or fetch error, try next page
           }
-        } catch (_) {
-          // Timeout or fetch error, skip email extraction
         }
       }
 
@@ -181,30 +239,36 @@ router.post('/campaign/:campaignId/generate', async (req, res) => {
     }
 
     const emails = [];
-    const senderName = process.env.OUTREACH_SENDER_NAME || 'ELYVN';
+    const senderName = process.env.OUTREACH_SENDER_NAME || 'Sohan';
     const senderEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+    const bookingLink = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
+    const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
 
     for (const prospect of prospects) {
       if (!prospect.email) continue;
 
+      // Skip bounced/unsubscribed prospects
+      if (['bounced', 'unsubscribed'].includes(prospect.status)) continue;
+
       try {
         const resp = await anthropic.messages.create({
-          model: 'claude-sonnet-4-20250514',
+          model: MODEL,
           max_tokens: 500,
           messages: [{
             role: 'user',
             content: `Write a cold email to ${prospect.business_name} (${prospect.industry || campaign.industry} business in ${prospect.city || campaign.city}).
 They have ${prospect.review_count || 'some'} reviews and a ${prospect.rating || 'good'} rating.
 
-The email is from ${senderName}, an AI-powered phone answering service that handles calls, books appointments, and qualifies leads 24/7.
+The email is from ${senderName} at ELYVN, an AI-powered phone answering service that handles calls, books appointments, and qualifies leads 24/7.
 
 Rules:
 - Subject line first, then blank line, then body
 - Keep it under 150 words
 - Personalize to their business
-- One clear CTA
-- Professional but warm tone
+- MUST end with this exact CTA: "Book a 10-min demo: ${bookingLink}"
+- Professional but warm tone, written from ${senderName}
 - No false claims
+- Sign off: ${senderName}, ELYVN
 
 Format:
 Subject: [subject line]
@@ -216,7 +280,12 @@ Subject: [subject line]
         const content = resp.content[0]?.text || '';
         const subjectMatch = content.match(/^Subject:\s*(.+)/m);
         const subject = subjectMatch ? subjectMatch[1].trim() : `AI receptionist for ${prospect.business_name}`;
-        const body = content.replace(/^Subject:\s*.+\n\n?/m, '').trim();
+        let body = content.replace(/^Subject:\s*.+\n\n?/m, '').trim();
+
+        // Safety net: ensure booking link is always in the body
+        if (!body.includes(bookingLink)) {
+          body += `\n\nBook a 10-min demo: ${bookingLink}`;
+        }
 
         const emailId = randomUUID();
         const now = new Date().toISOString();
@@ -277,7 +346,7 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
 
     const remaining = DAILY_SEND_LIMIT - sentToday;
     if (remaining <= 0) {
-      return res.status(429).json({ error: 'Daily send limit reached (30/day)', sent_today: sentToday });
+      return res.status(429).json({ error: `Daily send limit reached (${DAILY_SEND_LIMIT}/day)`, sent_today: sentToday });
     }
 
     // Get draft emails for this campaign
@@ -298,24 +367,69 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
     for (const email of drafts) {
       try {
         await transport.sendMail({
-          from: sanitizeHeader(email.from_email),
+          from: `"${process.env.OUTREACH_SENDER_NAME || 'Sohan'}" <${sanitizeHeader(email.from_email)}>`,
           to: sanitizeHeader(email.to_email),
           subject: sanitizeHeader(email.subject),
           text: email.body,
-          html: email.body.replace(/\n/g, '<br>')
+          html: wrapWithCTA(
+            email.body.replace(/Book a 10-min demo:.*$/m, '').trim(),
+            'Book a 10-min Demo',
+            process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
+            '',
+            { unsubscribeEmail: email.from_email }
+          ),
+          headers: {
+            'List-Unsubscribe': `<mailto:${email.from_email}?subject=unsubscribe>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          },
         });
 
+        const sentNow = new Date().toISOString();
         db.prepare(
           "UPDATE emails_sent SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?"
-        ).run(new Date().toISOString(), new Date().toISOString(), email.id);
+        ).run(sentNow, sentNow, email.id);
+
+        // Schedule Day 3 no-reply follow-up
+        try {
+          const { enqueueJob } = require('../utils/jobQueue');
+          enqueueJob(db, 'noreply_followup', {
+            prospect_id: email.prospect_id,
+            to_email: email.to_email,
+            from_email: email.from_email,
+            original_subject: email.subject,
+            campaign_id: campaignId,
+            booking_link: process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
+            sender_name: process.env.OUTREACH_SENDER_NAME || 'Sohan',
+            day: 3,
+          }, new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString());
+        } catch (err) {
+          console.error('[outreach] Failed to schedule follow-up:', err.message);
+        }
 
         sent++;
+
+        // 2-second delay between sends to avoid spam triggers
+        if (sent < drafts.length) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       } catch (err) {
         console.error(`[outreach] Failed to send to ${email.to_email}:`, err.message);
 
+        // Detect bounces
+        const isBounce = err.responseCode >= 550 || err.message.includes('rejected') ||
+          err.message.includes('not exist') || err.message.includes('undeliverable');
+
+        const status = isBounce ? 'bounced' : 'failed';
+        const now = new Date().toISOString();
+
         db.prepare(
-          "UPDATE emails_sent SET status = 'failed', error = ?, updated_at = ? WHERE id = ?"
-        ).run(err.message, new Date().toISOString(), email.id);
+          "UPDATE emails_sent SET status = ?, error = ?, updated_at = ? WHERE id = ?"
+        ).run(status, err.message, now, email.id);
+
+        // Mark bounced prospects so we never email them again
+        if (isBounce) {
+          db.prepare("UPDATE prospects SET status = 'bounced', updated_at = ? WHERE id = ?").run(now, email.prospect_id);
+        }
 
         failed++;
       }
@@ -408,27 +522,113 @@ Reply: ${email.reply_text}`
       'UNSUBSCRIBE': 'unsubscribed'
     };
 
+    const now = new Date().toISOString();
+    const prospect = db.prepare('SELECT * FROM prospects WHERE id = ?').get(email.prospect_id);
+
     db.prepare(
       'UPDATE prospects SET status = ?, updated_at = ? WHERE id = ?'
-    ).run(statusMap[classification] || 'engaged', new Date().toISOString(), email.prospect_id);
+    ).run(statusMap[classification] || 'engaged', now, email.prospect_id);
 
-    // Auto-respond for certain classifications
-    if (classification === 'UNSUBSCRIBE') {
-      suggestedResponse = 'Thank you for letting us know. You have been removed from our list. We wish you all the best.';
-    }
+    const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
+    const SENDER_NAME = process.env.OUTREACH_SENDER_NAME || 'Sohan';
 
-    if (suggestedResponse && email.to_email && (classification === 'INTERESTED' || classification === 'UNSUBSCRIBE')) {
+    // === INTERESTED: Full conversion sequence ===
+    if (classification === 'INTERESTED') {
+      // 1. Send email with booking link immediately
+      const interestedReply = `Hi${prospect?.business_name ? ' ' + prospect.business_name.split(' ')[0] : ''},\n\nGreat to hear from you! I'd love to show you how ELYVN can help you catch every call and book more appointments.\n\nHere's my calendar — pick any time that works for you:\n${BOOKING_LINK}\n\nIf you'd prefer, you can also call us directly and our AI will walk you through a live demo.\n\nLooking forward to chatting!\n\n${SENDER_NAME}\nELYVN`;
+
       try {
         const transport = getTransporter();
         await transport.sendMail({
           from: email.from_email,
           to: email.to_email,
           subject: `Re: ${email.subject}`,
-          text: suggestedResponse
+          text: interestedReply,
         });
-        console.log(`[outreach] Auto-responded to ${email.to_email} (${classification})`);
+        console.log(`[outreach] INTERESTED auto-reply sent to ${email.to_email} with booking link`);
+
+        db.prepare(
+          'UPDATE emails_sent SET auto_response_sent = 1, updated_at = ? WHERE id = ?'
+        ).run(now, emailId);
       } catch (err) {
-        console.error('[outreach] Auto-response failed:', err.message);
+        console.error('[outreach] INTERESTED auto-reply failed:', err.message);
+      }
+
+      // 2. Send SMS with booking link if prospect has phone
+      if (prospect?.phone) {
+        try {
+          const { sendSMS } = require('../utils/sms');
+          const smsText = `Hi! This is ${SENDER_NAME} from ELYVN. Thanks for your interest! Book a quick 10-min demo here: ${BOOKING_LINK}`;
+          await sendSMS(db, prospect.phone, smsText, null);
+          console.log(`[outreach] INTERESTED SMS sent to ${prospect.phone}`);
+        } catch (err) {
+          console.error('[outreach] INTERESTED SMS failed:', err.message);
+        }
+      }
+
+      // 3. Notify owner via Telegram
+      try {
+        const { sendTelegramNotification } = require('../utils/telegram');
+        const alertMsg = `🔥 *HOT LEAD* from cold outreach!\n\n*${prospect?.business_name || 'Unknown'}*\n📧 ${email.to_email}\n📱 ${prospect?.phone || 'No phone'}\n\nThey replied INTERESTED to: "${email.subject}"\n\nBooking link sent automatically. Reply: "${email.reply_text?.substring(0, 200) || ''}"`;
+        await sendTelegramNotification(alertMsg);
+      } catch (err) {
+        console.error('[outreach] Telegram notification failed:', err.message);
+      }
+
+      // 4. Schedule follow-up email in 24h if no booking
+      try {
+        const { enqueueJob } = require('../utils/jobQueue');
+        enqueueJob(db, 'interested_followup_email', {
+          prospect_id: email.prospect_id,
+          email_id: emailId,
+          to_email: email.to_email,
+          from_email: email.from_email,
+          subject: email.subject,
+          booking_link: BOOKING_LINK,
+          sender_name: SENDER_NAME,
+        }, new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString());
+        console.log(`[outreach] Scheduled 24h follow-up for ${email.to_email}`);
+      } catch (err) {
+        console.error('[outreach] Failed to schedule follow-up:', err.message);
+      }
+
+      suggestedResponse = interestedReply;
+    }
+
+    // === QUESTION: Send helpful response with booking link ===
+    if (classification === 'QUESTION' && suggestedResponse) {
+      // Append booking link to questions too
+      suggestedResponse += `\n\nIf you'd like to see it in action, here's a quick demo link: ${BOOKING_LINK}`;
+
+      try {
+        const transport = getTransporter();
+        await transport.sendMail({
+          from: email.from_email,
+          to: email.to_email,
+          subject: `Re: ${email.subject}`,
+          text: suggestedResponse,
+        });
+        console.log(`[outreach] QUESTION auto-reply sent to ${email.to_email}`);
+      } catch (err) {
+        console.error('[outreach] QUESTION auto-reply failed:', err.message);
+      }
+    }
+
+    // === UNSUBSCRIBE: Confirm removal ===
+    if (classification === 'UNSUBSCRIBE') {
+      suggestedResponse = 'Thank you for letting us know. You have been removed from our list. We wish you all the best.';
+
+      try {
+        const transport = getTransporter();
+        await transport.sendMail({
+          from: email.from_email,
+          to: email.to_email,
+          subject: `Re: ${email.subject}`,
+          text: suggestedResponse,
+        });
+        console.log(`[outreach] UNSUBSCRIBE confirmed to ${email.to_email}`);
+      } catch (err) {
+        console.error('[outreach] UNSUBSCRIBE auto-reply failed:', err.message);
       }
     }
 
@@ -436,6 +636,153 @@ Reply: ${email.reply_text}`
   } catch (err) {
     console.error('[outreach] classify error:', err);
     res.status(500).json({ error: 'Failed to classify reply' });
+  }
+});
+
+// POST /auto-classify — automatically classify all unclassified replies
+// Call this on a cron (every 5 min) or after IMAP fetch
+router.post('/auto-classify', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+
+    const unclassified = db.prepare(`
+      SELECT * FROM emails_sent
+      WHERE reply_text IS NOT NULL AND reply_classification IS NULL
+      ORDER BY reply_at ASC
+      LIMIT 20
+    `).all();
+
+    if (!unclassified.length) {
+      return res.json({ classified: 0, message: 'No unclassified replies' });
+    }
+
+    const results = [];
+    for (const email of unclassified) {
+      try {
+        // Re-use the classify endpoint logic inline
+        const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
+        const resp = await anthropic.messages.create({
+          model: MODEL,
+          max_tokens: 200,
+          messages: [{
+            role: 'user',
+            content: `Classify this email reply into exactly one category. Reply with JSON only: {"classification": "INTERESTED" | "QUESTION" | "NOT_INTERESTED" | "UNSUBSCRIBE", "suggested_response": "brief response text"}
+
+Original email subject: ${email.subject}
+Original email: ${email.body}
+
+Reply: ${email.reply_text}`
+          }]
+        });
+
+        let classification = 'QUESTION';
+        let suggestedResponse = '';
+
+        try {
+          const parsed = JSON.parse(resp.content[0]?.text || '{}');
+          classification = parsed.classification || 'QUESTION';
+          suggestedResponse = parsed.suggested_response || '';
+        } catch (_) {
+          const text = resp.content[0]?.text || '';
+          if (text.includes('INTERESTED')) classification = 'INTERESTED';
+          else if (text.includes('NOT_INTERESTED')) classification = 'NOT_INTERESTED';
+          else if (text.includes('UNSUBSCRIBE')) classification = 'UNSUBSCRIBE';
+        }
+
+        const now = new Date().toISOString();
+
+        // Update classification
+        db.prepare(
+          'UPDATE emails_sent SET reply_classification = ?, updated_at = ? WHERE id = ?'
+        ).run(classification, now, email.id);
+
+        // Update prospect status
+        const statusMap = {
+          'INTERESTED': 'interested',
+          'QUESTION': 'engaged',
+          'NOT_INTERESTED': 'not_interested',
+          'UNSUBSCRIBE': 'unsubscribed'
+        };
+        db.prepare(
+          'UPDATE prospects SET status = ?, updated_at = ? WHERE id = ?'
+        ).run(statusMap[classification] || 'engaged', now, email.prospect_id);
+
+        const prospect = db.prepare('SELECT * FROM prospects WHERE id = ?').get(email.prospect_id);
+        const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
+        const SENDER_NAME = process.env.OUTREACH_SENDER_NAME || 'Sohan';
+
+        // Auto-respond based on classification
+        if (classification === 'INTERESTED' && !email.auto_response_sent) {
+          const interestedReply = `Hi${prospect?.business_name ? ' ' + prospect.business_name.split(' ')[0] : ''},\n\nGreat to hear from you! I'd love to show you how ELYVN can help.\n\nPick any time: ${BOOKING_LINK}\n\nLooking forward to chatting!\n\n${SENDER_NAME}\nELYVN`;
+          try {
+            const transport = getTransporter();
+            await transport.sendMail({
+              from: email.from_email,
+              to: email.to_email,
+              subject: `Re: ${email.subject}`,
+              text: interestedReply,
+            });
+            db.prepare('UPDATE emails_sent SET auto_response_sent = 1, updated_at = ? WHERE id = ?').run(now, email.id);
+
+            // SMS if phone available
+            if (prospect?.phone) {
+              try {
+                const { sendSMS } = require('../utils/sms');
+                await sendSMS(prospect.phone, `Hi! This is ${SENDER_NAME} from ELYVN. Thanks for your interest! Book a demo: ${BOOKING_LINK}`, null);
+              } catch (_) {}
+            }
+
+            // Telegram alert
+            try {
+              const { sendTelegramNotification } = require('../utils/telegram');
+              await sendTelegramNotification(`🔥 *HOT LEAD* (auto-classified)\n*${prospect?.business_name || 'Unknown'}* — ${email.to_email}\nReplied INTERESTED. Auto-response sent.`);
+            } catch (_) {}
+
+            // 24h follow-up job
+            try {
+              const { enqueueJob } = require('../utils/jobQueue');
+              enqueueJob(db, 'interested_followup_email', {
+                prospect_id: email.prospect_id,
+                email_id: email.id,
+                to_email: email.to_email,
+                from_email: email.from_email,
+                subject: email.subject,
+                booking_link: BOOKING_LINK,
+                sender_name: SENDER_NAME,
+              }, new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString());
+            } catch (_) {}
+          } catch (err) {
+            console.error('[auto-classify] INTERESTED auto-reply failed:', err.message);
+          }
+        }
+
+        if (classification === 'UNSUBSCRIBE') {
+          try {
+            const transport = getTransporter();
+            await transport.sendMail({
+              from: email.from_email,
+              to: email.to_email,
+              subject: `Re: ${email.subject}`,
+              text: 'You have been removed from our list. We wish you all the best.',
+            });
+          } catch (_) {}
+        }
+
+        results.push({ id: email.id, to: email.to_email, classification });
+        console.log(`[auto-classify] ${email.to_email} → ${classification}`);
+
+        // Small delay between API calls
+        await new Promise(r => setTimeout(r, 500));
+      } catch (err) {
+        console.error(`[auto-classify] Failed for ${email.id}:`, err.message);
+        results.push({ id: email.id, error: err.message });
+      }
+    }
+
+    res.json({ classified: results.filter(r => !r.error).length, results });
+  } catch (err) {
+    console.error('[outreach] auto-classify error:', err);
+    res.status(500).json({ error: 'Failed to auto-classify replies' });
   }
 });
 
