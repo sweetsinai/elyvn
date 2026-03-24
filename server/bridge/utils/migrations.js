@@ -263,6 +263,14 @@ const migrations = [
       db.exec('CREATE INDEX IF NOT EXISTS idx_emails_sent_reply ON emails_sent(reply_text, reply_classification)');
     },
   },
+  {
+    id: '010_fix_leads_unique_index',
+    description: 'Recreate leads unique index (drop old non-unique if exists)',
+    up(db) {
+      db.exec('DROP INDEX IF EXISTS idx_leads_client_phone');
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone)');
+    },
+  },
 ];
 
 /**

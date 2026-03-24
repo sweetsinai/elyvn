@@ -77,9 +77,12 @@ function handleCallStarted(db, call) {
       return;
     }
     const callId = call.call_id;
-    const toNumber = call.to_number;
-    const callerPhone = normalizePhone(call.from_number);
     const direction = call.direction || 'inbound';
+    // For outbound calls, the customer is to_number; for inbound, it's from_number
+    const callerPhone = direction === 'outbound'
+      ? normalizePhone(call.to_number)
+      : normalizePhone(call.from_number);
+    const toNumber = call.to_number;
 
     // Match client by retell phone number; fall back to agent ID for web calls
     let client = db.prepare(
@@ -157,7 +160,11 @@ async function handleCallEnded(db, call) {
     if (!callRecord) {
       console.warn(`[retell] No call record for ${callId} — inserting from call_ended payload`);
       const toNumber = callData.to_number || call.to_number;
-      const fromNumber = normalizePhone(callData.from_number || call.from_number);
+      const callDirection = callData.direction || call.direction || 'inbound';
+      // For outbound calls, customer is to_number; for inbound, it's from_number
+      const fromNumber = callDirection === 'outbound'
+        ? normalizePhone(toNumber)
+        : normalizePhone(callData.from_number || call.from_number);
       const agentId = callData.agent_id || call.agent_id;
 
       let client = null;
