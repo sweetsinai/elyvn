@@ -14,6 +14,7 @@
 [![SQLite](https://img.shields.io/badge/SQLite-WAL-003B57?style=for-the-badge&logo=sqlite&logoColor=white)]()
 [![Claude](https://img.shields.io/badge/Claude-Brain-D97706?style=for-the-badge&logo=anthropic&logoColor=white)]()
 [![Tests](https://img.shields.io/badge/Hypergrade-71%2F71-00E5CC?style=for-the-badge)]()
+[![Security](https://img.shields.io/badge/Code_Review-29%2F33_Fixed-059669?style=for-the-badge)]()
 
 <br/>
 
@@ -31,7 +32,7 @@ Answers every call. Replies to every text. Books every appointment. Markets itse
 
 <br/>
 
-[Live Dashboard](https://joyful-trust-production.up.railway.app) · [Health Check](https://joyful-trust-production.up.railway.app/health) · [API Docs](#api-endpoints)
+[Live Dashboard](https://joyful-trust-production.up.railway.app) · [Health Check](https://joyful-trust-production.up.railway.app/health) · [API Docs](#api-endpoints) · [Onboarding API](ONBOARDING_API.md) · [Quick Start](QUICK_START.md)
 
 </div>
 
@@ -43,53 +44,68 @@ Answers every call. Replies to every text. Books every appointment. Markets itse
 
 ```mermaid
 graph TB
-    subgraph INBOUND["📞 INBOUND CHANNELS"]
-        CALL["☎️ Phone Call"]
-        SMS["💬 SMS/Text"]
-        FORM["📋 Web Form"]
+    subgraph INBOUND["INBOUND CHANNELS"]
+        CALL["Phone Call"]
+        SMS["SMS/Text"]
+        FORM["Web Form"]
+        ONBOARD["Onboard API"]
     end
 
-    subgraph ENGINE["⚡ ELYVN ENGINE (Railway)"]
+    subgraph ENGINE["ELYVN ENGINE (Railway)"]
         RETELL["Retell Webhook"]
         TWILIO["Twilio Webhook"]
         FORMWH["Form Webhook"]
-        BRAIN["🧠 BRAIN\n(Claude Orchestrator)"]
-        STL["⚡ Speed-to-Lead\n(< 60 seconds)"]
-        SCHED["⏰ Scheduler\n(Follow-ups, Summaries)"]
-        DB[("💾 SQLite\n(WAL Mode)")]
+        BRAIN["BRAIN\n(Claude + Lead Lock)"]
+        STL["Speed-to-Lead\n(Job Queue)"]
+        SCHED["Scheduler\n(Followups, Summaries)"]
+        JOBQ["Job Queue\n(Persistent, 3 retries)"]
+        DB[("SQLite\n(WAL + 12 tables)")]
     end
 
-    subgraph OUTBOUND["📤 OUTBOUND"]
-        SMSO["📱 Auto-SMS Reply"]
-        CALLBACK["📞 AI Callback"]
-        TGNOTIFY["📢 Telegram Alert"]
-        REVIEW["⭐ Review Request"]
+    subgraph OUTBOUND["OUTBOUND"]
+        SMSO["Auto-SMS Reply"]
+        CALLBACK["AI Callback"]
+        TGNOTIFY["Telegram Alert"]
+        REVIEW["Review Request"]
+        REMIND["Appt Reminder"]
     end
 
-    subgraph MARKETING["🚀 ENGINE 2 (OpenClaw Agents)"]
-        SCOUT["🔍 Scout\n(Google Maps Scraper)"]
-        WRITER["✍️ Writer\n(Email Personalizer)"]
-        SENDER["📤 Sender\n(Email Dispatcher)"]
-        CLASSIFIER["📊 Classifier\n(Reply Handler)"]
+    subgraph MARKETING["ENGINE 2 (OpenClaw Agents)"]
+        SCOUT["Scout\n(Google Maps)"]
+        WRITER["Writer\n(Email Drafter)"]
+        SENDER["Sender\n(Email SMTP)"]
+        CLASSIFIER["Classifier\n(Reply Handler)"]
+    end
+
+    subgraph SAFETY["SAFETY LAYER"]
+        OPTOUT["Opt-Out\n(STOP/UNSUBSCRIBE)"]
+        BIZHRS["Business Hours"]
+        METRICS["Metrics"]
+        BACKUP["Daily Backup"]
     end
 
     CALL --> RETELL
     SMS --> TWILIO
     FORM --> FORMWH
+    ONBOARD --> DB
 
     RETELL --> BRAIN
     TWILIO --> BRAIN
     FORMWH --> STL
 
-    BRAIN --> DB
-    STL --> DB
-    SCHED --> DB
+    BRAIN --> JOBQ
+    STL --> JOBQ
+    SCHED --> JOBQ
+    JOBQ --> DB
 
-    BRAIN --> SMSO
+    JOBQ --> SMSO
+    JOBQ --> CALLBACK
     BRAIN --> TGNOTIFY
-    STL --> SMSO
-    STL --> CALLBACK
-    SCHED --> REVIEW
+    JOBQ --> REVIEW
+    JOBQ --> REMIND
+
+    OPTOUT -.-> SMSO
+    BIZHRS -.-> JOBQ
 
     SCOUT --> WRITER
     WRITER --> SENDER
@@ -98,11 +114,14 @@ graph TB
 
     style BRAIN fill:#D97706,stroke:#F59E0B,color:#fff
     style STL fill:#059669,stroke:#10B981,color:#fff
+    style JOBQ fill:#0891B2,stroke:#06B6D4,color:#fff
     style DB fill:#1E40AF,stroke:#3B82F6,color:#fff
     style SCOUT fill:#7C3AED,stroke:#8B5CF6,color:#fff
     style WRITER fill:#7C3AED,stroke:#8B5CF6,color:#fff
     style SENDER fill:#7C3AED,stroke:#8B5CF6,color:#fff
     style CLASSIFIER fill:#7C3AED,stroke:#8B5CF6,color:#fff
+    style OPTOUT fill:#DC2626,stroke:#EF4444,color:#fff
+    style BIZHRS fill:#CA8A04,stroke:#EAB308,color:#fff
 ```
 
 </div>
@@ -120,13 +139,15 @@ graph TB
 <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=14&pause=1000&color=00E5CC&vCenter=true&random=false&width=400&height=25&lines=Inbound+call+%E2%86%92+answered+in+600ms;SMS+received+%E2%86%92+replied+in+30s;Form+submitted+%E2%86%92+called+back+in+60s;Missed+call+%E2%86%92+text-back+in+5s" />
 
 - **AI Call Answering** — Retell handles calls with custom knowledge base, scores leads 1-10, summarizes every call
-- **SMS Auto-Reply** — Claude generates contextual replies using business knowledge base, with confidence scoring and escalation
-- **Speed-to-Lead** — Triple-touch: instant SMS (0s) → AI callback (60s) → follow-up SMS (5min) → 24h/72h nurture
-- **Missed Call Text-Back** — Instant SMS when a call is missed, voicemail, or abandoned
-- **Web Form Capture** — Universal webhook accepts any form builder (WordPress, Typeform, Wix, Squarespace, custom)
-- **Appointment Reminders** — Automated SMS reminders before booked appointments
-- **Review Automation** — `/complete` marks job done → review request SMS sent 2 hours later
-- **Cross-Channel Brain** — Sees call + SMS + form history for each lead, makes autonomous decisions
+- **SMS Auto-Reply** — Claude generates contextual replies with confidence scoring and escalation
+- **Speed-to-Lead** — Persistent job queue: instant SMS (0s) → AI callback (60s) → follow-up SMS (5min) → 24h/72h nurture
+- **Missed Call Text-Back** — Instant SMS when a call is missed or goes to voicemail
+- **Voicemail Handling** — Text-back + next-business-hour callback scheduling
+- **Web Form Capture** — Universal webhook (WordPress, Typeform, Wix, Squarespace, custom)
+- **Appointment Reminders** — Job queue integrated SMS reminders
+- **Review Automation** — `/complete` → cancels reminders → review request SMS in 2 hours
+- **Cross-Channel Brain** — Per-lead locking prevents conflicting decisions across concurrent events
+- **Client Onboarding** — Single API call creates client + generates knowledge base
 
 </td>
 <td width="50%">
@@ -135,12 +156,21 @@ graph TB
 
 <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=14&pause=1000&color=8B5CF6&vCenter=true&random=false&width=400&height=25&lines=50+prospects+scraped+daily;30+cold+emails+sent+daily;Replies+classified+in+real-time;%244+new+clients%2Fmonth+projected" />
 
-- **Scout Agent** — Scrapes Google Maps for service businesses (plumbers, HVAC, auto repair, dentists, electricians) across 20 US cities
-- **Writer Agent** — Generates personalized cold emails using business data (rating, reviews, industry miss rates)
-- **Sender Agent** — Dispatches 30 emails/day via Gmail SMTP with 2-min delays (anti-spam safe)
-- **Classifier Agent** — Monitors inbox every 30 min, classifies replies (INTERESTED/QUESTION/DECLINE/UNSUBSCRIBE), auto-responds
-- **Telegram Alerts** — Hot replies flagged instantly to owner's Telegram
-- **CAN-SPAM Compliant** — Real sender, unsubscribe in every email, bounced/unsubscribed contacts never re-emailed
+- **Scout Agent** — Google Maps scraper across 20 US cities (plumbers, HVAC, auto repair, dentists, electricians)
+- **Writer Agent** — Personalized cold emails using business data (rating, reviews, industry stats)
+- **Sender Agent** — 30 emails/day via Gmail SMTP with 2-min delays (anti-spam safe)
+- **Classifier Agent** — Inbox monitor every 30 min, classifies + auto-responds
+- **Telegram Alerts** — Hot replies flagged instantly
+- **CAN-SPAM Compliant** — Real sender, unsubscribe in every email, bounced/opted-out never re-emailed
+
+### Production Safety
+
+- **SMS Opt-Out** — STOP/UNSUBSCRIBE/QUIT/END compliance + re-opt-in
+- **Business Hours** — Delays sends until client's configured open hours
+- **Persistent Job Queue** — Survives restarts, 3 retries, 15s polling
+- **Daily Backups** — SQLite WAL checkpoint + file copy
+- **Metrics** — `recordMetric()` + `/metrics` endpoint
+- **Resilience** — Retry with backoff, circuit breaker pattern
 
 </td>
 </tr>
@@ -156,35 +186,38 @@ graph TB
 sequenceDiagram
     participant E as Event<br/>(Call/SMS/Form)
     participant P as Pipeline<br/>(Retell/Twilio/Form)
+    participant L as Lead Lock
     participant M as Lead Memory
-    participant B as 🧠 Brain<br/>(Claude)
+    participant B as Brain<br/>(Claude)
     participant A as Action Executor
     participant O as Outputs
 
     E->>P: Webhook arrives
-    P->>P: Process + respond 200
-    P->>M: getLeadMemory(phone)
+    P->>P: Idempotency check<br/>(skip duplicates)
+    P->>L: Acquire per-lead lock
+    L->>M: getLeadMemory(phone)
     M-->>B: Full timeline<br/>(calls + SMS + followups)
     B->>B: Analyze with guardrails
     B-->>A: Structured actions
-    A->>O: send_sms
+    A->>A: Check opt-out status
+    A->>O: send_sms (via job queue)
     A->>O: schedule_followup
     A->>O: update_lead_stage
     A->>O: notify_owner
     A->>O: cancel_pending
     A->>O: log_insight
+    L->>L: Release lock
 
-    Note over B: Max 3 brain SMS/24h<br/>Skip if transferred<br/>Skip if opt-out<br/>Never crashes webhooks
+    Note over L: Per-lead mutex<br/>prevents conflicting<br/>concurrent decisions
+    Note over B: Max 3 brain SMS/24h<br/>Skip if transferred<br/>Skip if opted out<br/>Never crashes webhooks
 ```
 
 </div>
 
-Every event (call, SMS, form) fires the brain. It sees the full lead history across all channels and decides what to do next. If a customer called yesterday and texts today, the brain recognizes the cross-channel pattern and responds accordingly.
-
 **Available Actions:**
 | Action | What it does |
 |--------|-------------|
-| `send_sms` | Send SMS via Twilio (logged as `reply_source: 'brain'`) |
+| `send_sms` | Send SMS via Twilio (checks opt-out first, logged as `reply_source: 'brain'`) |
 | `schedule_followup` | Insert into followups table with timing + content |
 | `cancel_pending_followups` | Cancel all pending followups for this lead |
 | `update_lead_stage` | Move lead through: `new → contacted → hot → booked → completed → lost` |
@@ -203,32 +236,31 @@ Every event (call, SMS, form) fires the brain. It sees the full lead history acr
 Customer submits form / misses call
          │
          ▼
-    ┌─────────┐
-    │  0 sec   │──→ 📱 Instant SMS with booking link
-    └────┬────┘
-         │
+    ┌─────────┐    ┌─────────────────────────────┐
+    │  0 sec   │──→ │ 📱 SMS with booking link     │──→ Job Queue
+    └────┬────┘    │    (business hours aware)     │
+         │         └─────────────────────────────┘
+         ▼
+    ┌─────────┐    ┌─────────────────────────────┐
+    │  60 sec  │──→ │ 📞 AI callback via Retell    │──→ Job Queue
+    └────┬────┘    │    (checks lead.stage first)  │
+         │         └─────────────────────────────┘
+         ▼
+    ┌─────────┐    ┌─────────────────────────────┐
+    │  5 min   │──→ │ 📱 Follow-up SMS             │──→ Job Queue
+    └────┬────┘    │    (if not booked)            │
+         │         └─────────────────────────────┘
          ▼
     ┌─────────┐
-    │  60 sec  │──→ 📞 AI callback via Retell (if not booked)
+    │  24 hr   │──→ 📱 Nurture SMS via brain (followups table)
     └────┬────┘
-         │
-         ▼
-    ┌─────────┐
-    │  5 min   │──→ 📱 Follow-up SMS (if not booked)
-    └────┬────┘
-         │
-         ▼
-    ┌─────────┐
-    │  24 hr   │──→ 📱 Nurture SMS via brain
-    └────┬────┘
-         │
          ▼
     ┌─────────┐
     │  72 hr   │──→ 📱 Final nudge via brain
     └─────────┘
 ```
 
-<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=14&pause=2000&color=059669&center=true&vCenter=true&random=false&width=500&height=25&lines=1-minute+response+%3D+391%25+higher+conversion;5-minute+delay+%3D+80%25+drop+in+conversion;ELYVN+responds+in+under+60+seconds" />
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=14&pause=2000&color=059669&center=true&vCenter=true&random=false&width=500&height=25&lines=All+touches+persist+in+job_queue+table;Survives+server+restarts+%E2%80%94+3+retries;Business+hours+aware+%E2%80%94+no+3+AM+texts" />
 
 </div>
 
@@ -239,72 +271,58 @@ Customer submits form / misses call
 <div align="center">
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        RAILWAY (Production)                          │
-│                                                                      │
-│  ┌─────────────────────────┐    ┌──────────────────────────────┐    │
-│  │    Bridge (Node.js)     │    │     MCP Server (Python)      │    │
-│  │    Port 3001            │    │     Port 8000                │    │
-│  │                         │    │                              │    │
-│  │  /webhooks/retell    ───┤    │  FastMCP 3.1.1               │    │
-│  │  /webhooks/twilio    ───┤    │  Tools: voice, messaging,    │    │
-│  │  /webhooks/telegram  ───┤    │  followup, booking,          │    │
-│  │  /webhooks/form      ───┤    │  intelligence, reporting,    │    │
-│  │  /api/*              ───┤    │  scraper, outreach,          │    │
-│  │                         │    │  reply_handler               │    │
-│  │  Utils:                 │    │                              │    │
-│  │  ├── brain.js           │    │  Knowledge Bases:            │    │
-│  │  ├── leadMemory.js      │    │  └── 2 loaded                │    │
-│  │  ├── actionExecutor.js  │    │                              │    │
-│  │  ├── speed-to-lead.js   │    └──────────────────────────────┘    │
-│  │  ├── scheduler.js       │                                        │
-│  │  ├── sms.js             │    ┌──────────────────────────────┐    │
-│  │  ├── telegram.js        │    │     SQLite (/data/elyvn.db)  │    │
-│  │  └── calcom.js          │    │     WAL mode | busy_timeout  │    │
-│  └─────────────────────────┘    │     10 tables | 6 indexes    │    │
-│                                  └──────────────────────────────┘    │
-│  ┌─────────────────────────┐                                        │
-│  │  Dashboard (React/Vite) │    Volume: /data (persistent)          │
-│  │  Served from /public    │    Health: GET /health                  │
-│  └─────────────────────────┘    Rate limit: 120 req/min/IP          │
-└──────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          RAILWAY (Production)                            │
+│                                                                          │
+│  ┌─────────────────────────────┐    ┌──────────────────────────────┐    │
+│  │    Bridge (Node.js 22)      │    │     MCP Server (Python)      │    │
+│  │    Port 3001                │    │     Port 8000                │    │
+│  │                             │    │                              │    │
+│  │  Webhooks:                  │    │  FastMCP 3.1.1               │    │
+│  │  ├── /webhooks/retell    ───┤    │  Tools: voice, messaging,    │    │
+│  │  ├── /webhooks/twilio    ───┤    │  followup, booking,          │    │
+│  │  ├── /webhooks/telegram  ───┤    │  intelligence, reporting,    │    │
+│  │  ├── /webhooks/form      ───┤    │  scraper, outreach,          │    │
+│  │  └── /api/*              ───┤    │  reply_handler               │    │
+│  │                             │    │                              │    │
+│  │  Core Utils:                │    │  Knowledge Bases:            │    │
+│  │  ├── brain.js (+ lead lock) │    │  └── Per-client JSON         │    │
+│  │  ├── leadMemory.js          │    └──────────────────────────────┘    │
+│  │  ├── actionExecutor.js      │                                        │
+│  │  ├── speed-to-lead.js       │    ┌──────────────────────────────┐    │
+│  │  ├── jobQueue.js            │    │     SQLite (/data/elyvn.db)  │    │
+│  │  ├── scheduler.js           │    │     WAL mode | busy_timeout  │    │
+│  │  ├── sms.js (+ opt-out)     │    │     12 tables | 6 indexes   │    │
+│  │  ├── telegram.js            │    │                              │    │
+│  │  └── phone.js (normalize)   │    │  New tables:                 │    │
+│  │                             │    │  ├── job_queue (persistent)   │    │
+│  │  Safety Utils:              │    │  ├── sms_opt_outs            │    │
+│  │  ├── optOut.js              │    │  └── (+ appointments, etc.)  │    │
+│  │  ├── businessHours.js       │    └──────────────────────────────┘    │
+│  │  ├── metrics.js             │                                        │
+│  │  ├── backup.js              │    Volume: /data (persistent)          │
+│  │  └── resilience.js          │    Health: GET /health                  │
+│  └─────────────────────────────┘    Rate limit: 120 req/min/IP          │
+│                                      Backups: Daily                      │
+│  ┌─────────────────────────────┐    Jobs: 15s poll, 3 retries           │
+│  │  Dashboard (React/Vite)     │                                        │
+│  │  Served from /public        │                                        │
+│  └─────────────────────────────┘                                        │
+└──────────────────────────────────────────────────────────────────────────┘
 
-┌──────────────────────────────────────────────────────────────────────┐
-│                     LOCAL MAC (OpenClaw Agents)                       │
-│                                                                      │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐    │
-│  │  Scout   │  │  Writer  │  │  Sender  │  │    Classifier    │    │
-│  │  8 AM    │  │  8:30 AM │  │  10 AM   │  │    Every 30 min  │    │
-│  │          │  │          │  │  Mon-Sat  │  │                  │    │
-│  │  Scrape  │→│  Draft   │→│  Send    │→│  Classify+Reply  │    │
-│  │  50/day  │  │  emails  │  │  30/day  │  │  Auto-respond    │    │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘    │
-│                                                                      │
-│  Shared: ~/elyvn-agents/shared/                                      │
-│  ├── prospects.json    (scraped businesses)                          │
-│  ├── emails-queue.json (drafted/sent emails)                         │
-│  ├── config.json       (industries, cities, limits)                  │
-│  └── send-email.js     (SMTP helper)                                 │
-└──────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                       LOCAL MAC (OpenClaw Agents)                         │
+│                                                                          │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐        │
+│  │  Scout   │  │  Writer  │  │  Sender  │  │    Classifier    │        │
+│  │  8 AM    │  │  8:30 AM │  │  10 AM   │  │    Every 30 min  │        │
+│  │  Scrape  │→ │  Draft   │→ │  Send    │→ │  Classify+Reply  │        │
+│  │  50/day  │  │  emails  │  │  30/day  │  │  Auto-respond    │        │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘        │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 </div>
-
-**Two processes on Railway (concurrent via `concurrently`):**
-
-| Process | Runtime | Port | Purpose |
-|---------|---------|------|---------|
-| Bridge | Node.js 22 (Express) | 3001 | Webhooks, API, Telegram, brain, scheduler |
-| MCP Server | Python 3.12 (FastMCP) | 8000 | AI tools, DB init, knowledge bases |
-
-**Four agents on local Mac (OpenClaw cron):**
-
-| Agent | Schedule (IST) | Purpose |
-|-------|---------------|---------|
-| Scout | 8:00 AM daily | Scrape Google Maps for prospects |
-| Writer | 8:30 AM daily | Draft personalized cold emails |
-| Sender | 10:00 AM Mon-Sat | Send 30 emails with 2-min gaps |
-| Classifier | Every 30 min | Check inbox, classify replies, auto-respond |
 
 ---
 
@@ -313,75 +331,70 @@ Customer submits form / misses call
 ```
 elyvn/
 ├── server/
-│   ├── bridge/                       # Node.js Express server
-│   │   ├── index.js                  # Entry, middleware, routes, DB migrations
+│   ├── bridge/                          # Node.js Express server
+│   │   ├── index.js                     # Entry, middleware, routes, DB migrations (12 tables)
 │   │   ├── routes/
-│   │   │   ├── retell.js             # call_started, call_ended, call_analyzed, transfer
-│   │   │   ├── twilio.js             # SMS auto-reply, CANCEL/YES keywords, brain
-│   │   │   ├── telegram.js           # 15 bot commands + callback buttons
-│   │   │   ├── forms.js              # Universal form webhook (CF7, Typeform, generic)
-│   │   │   ├── api.js                # REST API (clients, calls, leads, messages)
-│   │   │   └── outreach.js           # Engine 2 campaign management
+│   │   │   ├── retell.js                # call_started/ended/analyzed, voicemail, transfer, idempotency
+│   │   │   ├── twilio.js               # SMS reply, opt-out/opt-in, CANCEL/YES, idempotency
+│   │   │   ├── telegram.js             # 15 bot commands + callback buttons
+│   │   │   ├── forms.js                # Universal form webhook (CF7, Typeform, generic)
+│   │   │   ├── onboard.js              # POST /api/onboard — atomic client creation + KB generation
+│   │   │   ├── api.js                  # REST API (clients, calls, leads, messages, followups)
+│   │   │   └── outreach.js             # Engine 2 campaign management
 │   │   ├── utils/
-│   │   │   ├── brain.js              # Claude orchestrator (configurable model)
-│   │   │   ├── leadMemory.js         # Cross-channel lead timeline builder
-│   │   │   ├── actionExecutor.js     # Executes brain decisions
-│   │   │   ├── speed-to-lead.js      # Triple-touch sequence engine
-│   │   │   ├── sms.js                # Twilio SMS with rate limiting
-│   │   │   ├── telegram.js           # Bot API + notification formatters
-│   │   │   ├── scheduler.js          # Cron: summary, report, followups, outreach
-│   │   │   ├── calcom.js             # Cal.com booking integration
-│   │   │   ├── scraper.js            # Google Maps Places API scraper
-│   │   │   ├── emailGenerator.js     # Claude cold email generator
-│   │   │   ├── emailSender.js        # Nodemailer SMTP with daily limits
-│   │   │   └── replyClassifier.js    # Claude reply classifier
-│   │   └── public/                   # Built dashboard + embed.js
-│   ├── mcp/                          # Python FastMCP server
-│   │   ├── main.py                   # MCP entry, tool registration
-│   │   ├── db.py                     # SQLite schema (aiosqlite)
-│   │   ├── clients.py                # Knowledge base loader
-│   │   ├── knowledge_bases/          # Client KB files (JSON)
-│   │   └── tools/                    # 8 MCP tool modules
+│   │   │   ├── brain.js                # Claude orchestrator + per-lead mutex lock
+│   │   │   ├── leadMemory.js           # Cross-channel timeline (INSERT ON CONFLICT)
+│   │   │   ├── actionExecutor.js       # Execute brain decisions (opt-out aware)
+│   │   │   ├── speed-to-lead.js        # Job queue powered triple-touch + business hours
+│   │   │   ├── jobQueue.js             # Persistent job queue (job_queue table, 3 retries)
+│   │   │   ├── phone.js                # Centralized phone normalization
+│   │   │   ├── sms.js                  # Twilio SMS (opt-out check, retry with backoff)
+│   │   │   ├── telegram.js             # Bot API + notification formatters
+│   │   │   ├── scheduler.js            # Cron: summary, report, followups, outreach, jobs
+│   │   │   ├── calcom.js               # Cal.com booking integration
+│   │   │   ├── optOut.js               # STOP/UNSUBSCRIBE/QUIT/END compliance
+│   │   │   ├── businessHours.js        # Per-client business hours delay engine
+│   │   │   ├── appointmentReminders.js # Job queue integrated reminders
+│   │   │   ├── metrics.js              # recordMetric() + /metrics endpoint
+│   │   │   ├── backup.js               # Daily SQLite WAL checkpoint + file copy
+│   │   │   ├── resilience.js           # Retry with backoff, circuit breaker
+│   │   │   ├── scraper.js              # Google Maps Places API scraper
+│   │   │   ├── emailGenerator.js       # Claude cold email generator
+│   │   │   ├── emailSender.js          # Nodemailer SMTP with daily limits
+│   │   │   └── replyClassifier.js      # Claude reply classifier
+│   │   └── public/                     # Built dashboard + embed.js
+│   ├── mcp/                            # Python FastMCP server
+│   │   ├── main.py                     # MCP entry, tool registration
+│   │   ├── db.py                       # SQLite schema (aiosqlite)
+│   │   ├── knowledge_bases/            # Client KB files (JSON)
+│   │   └── tools/                      # 8 MCP tool modules
 │   └── requirements.txt
-├── dashboard/                        # React + Vite (builds to bridge/public/)
+├── dashboard/                          # React + Vite (builds to bridge/public/)
+├── landing/                            # Landing page (index.html)
 ├── tests/
-│   └── hypergrade.js                 # 71-test production suite
-├── Dockerfile                        # Python 3.12 + Node 22
-├── railway.toml                      # Railway deployment config
-└── package.json                      # Root scripts
-
-~/elyvn-agents/                       # OpenClaw agent workspace (local)
-├── agents/
-│   ├── scout/     (SOUL.md + run.sh)
-│   ├── writer/    (SOUL.md + run.sh)
-│   ├── sender/    (SOUL.md + run.sh)
-│   └── classifier/(SOUL.md + run.sh)
-├── shared/        (config, data, helpers)
-├── .env           (credentials)
-└── HEARTBEAT.md   (schedule + guardrails)
-
-~/elyvn-openclaw/                     # OpenClaw agent definitions
-├── scout/SOUL.md
-├── writer/SOUL.md
-├── sender/SOUL.md
-└── classifier/SOUL.md
+│   └── hypergrade.js                   # 71-test production suite
+├── ONBOARDING_API.md                   # Client onboarding API docs
+├── QUICK_START.md                      # Quick start guide
+├── Dockerfile                          # Python 3.12 + Node 22
+├── railway.toml                        # Railway deployment config
+└── package.json                        # Root scripts
 ```
 
 ---
 
 ## Database Schema
 
-SQLite with WAL mode, `busy_timeout = 5000`, `foreign_keys = ON`. Six indexes on hot columns.
+SQLite with WAL mode, `busy_timeout = 5000`, `foreign_keys = ON`. 12 tables, 6 indexes.
 
 ```mermaid
 erDiagram
     clients ||--o{ calls : "has"
     clients ||--o{ leads : "has"
     clients ||--o{ messages : "has"
+    clients ||--o{ sms_opt_outs : "tracks"
     leads ||--o{ followups : "has"
     leads ||--o{ messages : "has"
     campaigns ||--o{ campaign_prospects : "contains"
-    prospects ||--o{ campaign_prospects : "belongs to"
     prospects ||--o{ emails_sent : "receives"
 
     clients {
@@ -392,6 +405,7 @@ erDiagram
         text retell_agent_id
         text telegram_chat_id
         text google_review_link
+        text business_hours
         int is_active
         real avg_ticket
     }
@@ -404,62 +418,73 @@ erDiagram
         text outcome
         int score
         text summary
-        text transcript
     }
     leads {
         text id PK
         text client_id FK
-        text phone
+        text phone UK
         text name
         int score
         text stage
         text email
-        text calcom_booking_id
     }
     messages {
         text id PK
         text client_id FK
-        text lead_id FK
         text phone
-        text channel
         text direction
         text body
         text confidence
         text reply_source
+        text message_sid
     }
     followups {
         text id PK
         text lead_id FK
-        text client_id FK
         int touch_number
         text type
-        text content
         text scheduled_at
+        text status
+    }
+    job_queue {
+        text id PK
+        text type
+        text payload
+        text scheduled_at
+        text status
+        int attempts
+        int max_attempts
+    }
+    sms_opt_outs {
+        text id PK
+        text phone
+        text client_id
+        text reason
+        text opted_out_at
+    }
+    appointments {
+        text id PK
+        text client_id FK
+        text phone
+        text datetime
         text status
     }
     prospects {
         text id PK
         text business_name
-        text phone
         text email
         text industry
         text city
         real rating
-        int review_count
-        text status
     }
     campaigns {
         text id PK
         text name
-        text industry
-        text city
         text status
         int total_sent
-        int total_replied
     }
     emails_sent {
         text id PK
-        text campaign_id FK
         text prospect_id FK
         text to_email
         text subject
@@ -475,65 +500,65 @@ erDiagram
 ### Inbound Call
 
 ```
-☎️ Retell webhook → POST /webhooks/retell
+Retell webhook → POST /webhooks/retell
 │
-├─ call_started
-│  └─ Insert call record, match client by phone or agent_id
+├─ Idempotency: skip if call_id already processed
+│
+├─ call_started → Insert call record, match client
 │
 ├─ call_ended
-│  ├─ 1. Fetch transcript from Retell API (fallback: webhook payload)
-│  ├─ 2. Generate summary (from transcript or call_analysis.call_summary)
-│  ├─ 3. Score lead 1-10 via Claude
+│  ├─ 1. Fetch transcript (10s timeout, fallback to payload)
+│  ├─ 2. Generate summary (Claude, configurable model)
+│  ├─ 3. Score lead 1-10
 │  ├─ 4. Determine outcome (booked/transferred/missed/voicemail/info)
-│  ├─ 5. Upsert lead record
-│  ├─ 6. Schedule follow-up sequence
-│  ├─ 7. Missed → speed-to-lead (instant text-back + 60s AI callback)
-│  ├─ 8. Transfer/complaint → SMS to owner
-│  ├─ 9. Telegram notification (with transcript button)
-│  └─ 10. BRAIN fires → analyze history → execute actions
+│  ├─ 5. Upsert lead (INSERT ON CONFLICT)
+│  ├─ 6. Schedule follow-ups
+│  ├─ 7. Missed → speed-to-lead (job queue)
+│  ├─ 8. Voicemail → text-back + next-business-hour callback
+│  ├─ 9. Telegram notification
+│  └─ 10. BRAIN (per-lead lock → analyze → execute)
 │
-├─ call_analyzed
-│  └─ Backfill transcript + summary if missing
+├─ call_analyzed → Backfill transcript + summary
 │
-└─ agent_transfer / dtmf(*)
-   └─ Live transfer to owner's phone
+└─ agent_transfer / dtmf(*) → Live transfer
 ```
 
 ### Inbound SMS
 
 ```
-💬 Twilio webhook → POST /webhooks/twilio
+Twilio webhook → POST /webhooks/twilio
 │
-├─ "CANCEL" → Cancel Cal.com booking
-├─ "YES"    → Send booking link
+├─ Idempotency: skip duplicate MessageSid
+│
+├─ STOP/UNSUBSCRIBE/QUIT/END → Opt-out + confirmation
+├─ START/SUBSCRIBE → Re-opt-in + welcome
+├─ CANCEL → Cancel Cal.com booking
+├─ YES → Send booking link
 │
 └─ Normal message:
-   ├─ 1. Check is_active (paused → log only, notify owner)
-   ├─ 2. Rate limit (5-min cooldown per number)
-   ├─ 3. Load knowledge base for this client
-   ├─ 4. Claude generates reply {reply, confidence}
-   ├─ 5. Low confidence → generic reply + escalate to owner
-   ├─ 6. Upsert lead, log inbound + outbound
-   ├─ 7. New lead → schedule nudge followup
+   ├─ 1. Check opt-out status
+   ├─ 2. Check is_active (paused → log only)
+   ├─ 3. Rate limit (5-min cooldown)
+   ├─ 4. Load KB (capped at 5000 chars)
+   ├─ 5. Claude reply {reply, confidence}
+   ├─ 6. Low confidence → escalate
+   ├─ 7. Log inbound + outbound
    ├─ 8. Telegram notification
-   └─ 9. BRAIN fires → cross-channel analysis → actions
+   └─ 9. BRAIN (per-lead lock → actions)
 ```
 
-### Form Submission
+### Client Onboarding
 
 ```
-📋 POST /webhooks/form/:clientId
+POST /api/onboard
 │
-├─ Parse field names (CF7, Typeform, Wix, generic)
-├─ Normalize phone (10-digit → +1, 11-digit, parens, dashes)
-│
-├─ No phone → email-only lead + Telegram notify
-│
-└─ With phone:
-   ├─ Upsert lead
-   ├─ Log inbound message
-   ├─ Trigger speed-to-lead (0s SMS → 60s callback → 5min SMS)
-   └─ BRAIN fires → analyze → actions
+├─ Validate (business_name, owner_name, phone, email, industry, services)
+├─ Sanitize all strings (max 500 chars)
+├─ Generate UUID
+├─ Insert into clients table
+├─ Generate knowledge base JSON
+├─ Save to knowledge_bases/{client_id}.json
+└─ Return complete client record
 ```
 
 ---
@@ -542,22 +567,22 @@ erDiagram
 
 | Task | Interval | Description |
 |------|----------|-------------|
+| **Job Queue Processor** | Every 15 sec | Process pending jobs (SMS, callbacks, reminders) |
 | Follow-up Processor | Every 5 min | Process due followups through the brain |
-| Daily Summary | 7:00 PM IST | Telegram: today's calls, bookings, messages, revenue |
-| Weekly Report | Monday 8 AM | Telegram: weekly performance + persist to DB |
-| Daily Lead Review | 9:00 AM | Brain reviews stale leads (inactive 2+ days, score >= 5) |
-| Daily Outreach | 10:00 AM | Engine 2: send campaign emails via server-side pipeline |
+| Daily Summary | 7:00 PM IST | Telegram: calls, bookings, messages, revenue |
+| Weekly Report | Monday 8 AM | Telegram: weekly performance |
+| Daily Lead Review | 9:00 AM | Brain reviews stale leads (2+ days, score >= 5) |
+| Daily Outreach | 10:00 AM | Engine 2: send campaign emails |
 | Reply Checker | Every 30 min | IMAP inbox scan for cold email replies |
+| **Daily Backup** | Every 24h | SQLite WAL checkpoint + file copy |
 
 ---
 
 ## Telegram Commands
 
-<div align="center">
-
 | Command | Description |
 |---------|-------------|
-| `/start` | Connect account via onboarding link |
+| `/start` | Connect account via onboarding |
 | `/today` | Today's booked appointments |
 | `/stats` | Last 7 days: calls, bookings, missed, messages, revenue |
 | `/calls` | Last 5 calls with outcome, score, summary |
@@ -565,22 +590,16 @@ erDiagram
 | `/brain` | Last 10 autonomous brain decisions |
 | `/pause` | Pause AI (calls ring through, SMS logged only) |
 | `/resume` | Resume AI answering |
-| `/complete +phone` | Mark job done → review request in 2 hours |
-| `/setreview URL` | Set Google review link for the business |
+| `/complete +phone` | Mark job done → cancel reminders → review request in 2h |
+| `/setreview URL` | Set Google review link |
 | `/outreach` | Engine 2 campaign stats |
-| `/scrape industry city` | Manually trigger Google Maps scrape |
+| `/scrape industry city` | Trigger Google Maps scrape |
 | `/prospects` | View latest scraped prospects |
 | `/help` | Show all commands |
-
-</div>
-
-**Callback buttons:** Full transcript (call cards), Good reply / I'll handle this (SMS cards).
 
 ---
 
 ## Embed Widget
-
-Drop this on any website to capture leads:
 
 ```html
 <form id="elyvn-form">
@@ -593,8 +612,6 @@ Drop this on any website to capture leads:
         data-client-id="YOUR_CLIENT_ID"></script>
 ```
 
-Works with any HTML page. No dependencies. Auto-submits to the form webhook.
-
 ---
 
 ## Environment Variables
@@ -605,17 +622,38 @@ Works with any HTML page. No dependencies. Auto-submits to the form webhook.
 | `RETELL_API_KEY` | Yes | Retell API (call transcripts) |
 | `TWILIO_ACCOUNT_SID` | Yes | Twilio SID |
 | `TWILIO_AUTH_TOKEN` | Yes | Twilio auth |
-| `TWILIO_PHONE_NUMBER` | Yes | Twilio number (e.g. +13612139099) |
+| `TWILIO_PHONE_NUMBER` | Yes | Twilio number |
 | `TELEGRAM_BOT_TOKEN` | Yes | Telegram bot token |
 | `TELEGRAM_WEBHOOK_SECRET` | Yes | Webhook verification secret |
-| `DATABASE_PATH` | No | SQLite path (default: Railway `/data/elyvn.db`) |
-| `CLAUDE_MODEL` | No | Model override (default: `claude-sonnet-4-20250514`, switch to `claude-haiku-4-5-20251001` to cut costs 12x) |
+| `DATABASE_PATH` | No | SQLite path (default: `/data/elyvn.db`) |
+| `CLAUDE_MODEL` | No | Model override (default: `claude-sonnet-4-20250514`) |
 | `CALCOM_API_KEY` | No | Cal.com booking management |
+| `CALCOM_BOOKING_LINK` | No | Cal.com booking URL for outreach |
 | `GOOGLE_MAPS_API_KEY` | No | Google Maps scraping |
 | `SMTP_USER` | No | Gmail for outreach |
 | `SMTP_PASS` | No | Gmail app password |
 | `ELYVN_API_KEY` | No | API auth (open if unset) |
-| `PORT` | No | Server port (default: 3001) |
+
+---
+
+## API Endpoints
+
+All `/api` routes require `x-api-key` header when `ELYVN_API_KEY` is set.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | DB counts, env vars, memory, uptime, pending jobs |
+| `GET` | `/metrics` | Internal metrics (behind API auth) |
+| `POST` | `/api/onboard` | Atomic client onboarding (see [ONBOARDING_API.md](ONBOARDING_API.md)) |
+| `GET` | `/api/clients` | List all clients (max 100) |
+| `POST` | `/api/clients` | Create client |
+| `PUT` | `/api/clients/:id` | Update client (UUID validated) |
+| `GET` | `/api/calls/:clientId` | List calls (filter: outcome, dates, score) |
+| `GET` | `/api/leads/:clientId` | List leads |
+| `GET` | `/api/messages/:clientId` | List messages |
+| `GET` | `/api/followups/:clientId` | List followups |
+| `POST` | `/api/outreach/scrape` | Trigger Google Maps scrape |
+| `POST` | `/api/outreach/campaigns` | Create outreach campaign |
 
 ---
 
@@ -630,95 +668,55 @@ Works with any HTML page. No dependencies. Auto-submits to the form webhook.
 
 ---
 
-## API Endpoints
+## Security & Hardening
 
-All `/api` routes require `x-api-key` header when `ELYVN_API_KEY` is set.
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=14&pause=2000&color=DC2626&vCenter=true&random=false&width=500&height=25&lines=29%2F33+code+review+issues+fixed;Idempotent+webhooks+%E2%80%94+no+duplicates;Per-lead+brain+lock+%E2%80%94+no+conflicts;CAN-SPAM+compliant+opt-out" />
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/health` | DB counts, env vars, memory, uptime |
-| `GET` | `/api/clients` | List all clients |
-| `POST` | `/api/clients` | Create client |
-| `PUT` | `/api/clients/:id` | Update client |
-| `GET` | `/api/calls` | List calls (`client_id`, `limit`, `offset`) |
-| `GET` | `/api/leads` | List leads |
-| `GET` | `/api/messages` | List messages |
-| `GET` | `/api/followups` | List followups (`status` filter) |
-| `POST` | `/api/outreach/campaigns` | Create outreach campaign |
-| `POST` | `/api/outreach/scrape` | Trigger Google Maps scrape |
+| Category | Protection |
+|----------|-----------|
+| Process | `unhandledRejection` + `uncaughtException` handlers |
+| Routes | Every handler wrapped in try-catch |
+| JSON | Express error middleware returns 400, not 500 |
+| Database | WAL mode, 5s busy_timeout, UNIQUE indexes, transactions |
+| Rate limiting | 120 req/min/IP, 5-min SMS cooldown, 3 brain SMS/24h |
+| Auth | API key on `/api`, Telegram webhook secret |
+| Idempotency | Retell skips processed call_id, Twilio skips duplicate MessageSid |
+| Brain | Per-lead mutex lock prevents concurrent conflicting decisions |
+| SMS | Opt-out compliance (STOP/UNSUBSCRIBE/QUIT/END), checked before every send |
+| Data | PII stripped from logs, KB capped at 5000 chars |
+| Files | UUID validation on file paths, async I/O |
+| Network | 10s fetch timeout on external APIs |
+| Email | CRLF header sanitization |
+| Backups | Daily SQLite WAL checkpoint + file copy |
 
 ---
 
 ## Deployment
 
 ```bash
-# Local development
-npm run dev          # MCP + Bridge + Dashboard (Vite dev server)
-
-# Production build
+npm run dev          # MCP + Bridge + Dashboard (local)
 npm run build        # Dashboard → server/bridge/public/
-
-# Deploy
-git push origin main # Auto-deploy (if connected)
-railway up --detach  # Manual deploy
+railway up --detach  # Deploy to Railway
 ```
 
-**Dockerfile:** Python 3.12 base → Node 22 → npm install → Vite build → `npm start`
-
-**Railway:**
-- Health check: `GET /health`
-- Restart: on_failure (max 3)
-- Volume: `/data` (persistent SQLite)
-- Region: US West
+**Railway config:** Health check `GET /health`, restart on_failure (max 3), volume `/data`
 
 ---
 
 ## Testing
 
 ```bash
-# Full production test suite (71 tests)
 BASE_URL=https://joyful-trust-production.up.railway.app node tests/hypergrade.js
 ```
 
-Tests cover:
-- Server infrastructure (health, SPA routing, rate limiting, JSON errors)
-- Retell pipeline (call_started, call_ended, call_analyzed, unknown events)
-- Missed call text-back (duration 0, voicemail, no_answer)
-- SMS auto-reply + brain (normal, cross-channel, escalation, empty, missing fields)
-- Speed-to-lead (form → triple-touch)
-- Web form capture (standard, CF7, 10-digit normalize, email-only, empty, bad client, URL-encoded, body client_id)
-- Telegram commands (all 15 + photo + callback + auth)
-- Concurrency stress (10 calls, 15 SMS, 5 forms simultaneously)
-- Malformed input attacks (SQL injection, XSS, 50KB payload, emoji flood, null bytes, negative duration, array, deep nesting)
-- Full E2E flow (call → SMS → form → /complete → /brain)
-- Agent squad file verification
-- Embed script loading
-- API auth
-
----
-
-## Production Hardening
-
-- `unhandledRejection` + `uncaughtException` handlers (process stays alive)
-- Every route wrapped in try-catch
-- Express error middleware (400 for bad JSON, not 500)
-- SQLite WAL mode + 5s busy_timeout + 6 indexes
-- Rate limiting: 120 req/min/IP
-- SMS rate limiting: 5-min cooldown/number + max 3 brain SMS/24h
-- API key auth on `/api` routes
-- Telegram webhook secret verification
-- Brain errors never crash webhooks
-- `sendMessage` checks `res.ok` and logs failures
-- Graceful shutdown: `SIGINT`/`SIGTERM` close DB
+71 tests: infrastructure, Retell pipeline, missed call, SMS + brain, speed-to-lead, forms (7 variants), Telegram (15 commands), concurrency (10 calls + 15 SMS + 5 forms + multi-channel), malformed attacks (SQL injection, XSS, 50KB, emoji flood, null bytes, negative values), full E2E flow, agent files, embed, auth.
 
 ---
 
 ## Post-Max Survival
 
-When Claude Max expires, one env var change keeps everything running:
-
 ```bash
-# On Railway — switch model (12x cheaper)
+# One env var change — 12x cheaper
 CLAUDE_MODEL=claude-haiku-4-5-20251001
 ```
 
