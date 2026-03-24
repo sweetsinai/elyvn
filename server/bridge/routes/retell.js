@@ -118,8 +118,9 @@ async function handleCallEnded(db, call) {
     console.log(`[retell] call_ended: ${callId}`);
 
     // Idempotency: skip if this call_ended was already processed (webhook retry)
+    // Check outcome (not summary) because call_analyzed can set summary before call_ended arrives
     const alreadyProcessed = db.prepare(
-      "SELECT id FROM calls WHERE call_id = ? AND summary IS NOT NULL"
+      "SELECT id FROM calls WHERE call_id = ? AND outcome IS NOT NULL"
     ).get(callId);
     if (alreadyProcessed) {
       console.log(`[retell] call_ended: ${callId} already processed, skipping (idempotent)`);
