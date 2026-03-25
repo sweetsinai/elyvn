@@ -34,6 +34,15 @@ function enqueueJob(db, type, payload, scheduledAt = null) {
   }
 }
 
+const JOB_HANDLER_TIMEOUT = 30000;
+
+function executeWithTimeout(fn, timeoutMs = 30000) {
+  return Promise.race([
+    fn(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Job handler timeout')), timeoutMs))
+  ]);
+}
+
 /**
  * Process all due jobs
  * @param {object} db - better-sqlite3 instance
@@ -90,8 +99,8 @@ async function processJobs(db, handlers) {
           }
         }
 
-        // Execute the handler
-        await handler(payload, job.id, db);
+        // Execute the handler with timeout
+        await executeWithTimeout(() => handler(payload, job.id, db), JOB_HANDLER_TIMEOUT);
 
         // Mark as completed
         db.prepare(

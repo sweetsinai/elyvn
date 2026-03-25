@@ -7,8 +7,18 @@ const telegram = require('../utils/telegram');
 const { cancelBooking } = require('../utils/calcom');
 const fs = require('fs');
 const path = require('path');
+const { isValidUUID } = require('../utils/validate');
 
 const anthropic = new Anthropic();
+
+const ANTHROPIC_TIMEOUT = 30000;
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+  ]);
+}
 
 // Twilio webhook signature verification
 router.use((req, res, next) => {
@@ -117,7 +127,8 @@ async function handleOptOut(db, client, from, to, keyword) {
     recordOptOut(db, from, client.id, keyword);
 
     // Send confirmation and re-opt-in instructions
-    await sendSMS(from, `You've been unsubscribed from ${client.business_name || 'our'} messages. Reply START to resubscribe.`, to);
+    const msg = `You've been unsubscribed from ${client.business_name || 'our'} messages. Reply START to resubscribe.`;
+    await sendSMS(from, msg.slice(0, 1600), to);
 
     console.log(`[twilio] Recorded opt-out for ${from} (${keyword})`);
   } catch (err) {
@@ -130,7 +141,8 @@ async function handleOptIn(db, client, from, to) {
     const { recordOptIn } = require('../utils/optOut');
     recordOptIn(db, from, client.id);
 
-    await sendSMS(from, `Welcome back! You're now subscribed to ${client.business_name || 'our'} messages.`, to);
+    const msg = `Welcome back! You're now subscribed to ${client.business_name || 'our'} messages.`;
+    await sendSMS(from, msg.slice(0, 1600), to);
 
     console.log(`[twilio] Recorded opt-in for ${from}`);
   } catch (err) {
@@ -235,13 +247,17 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
 
     // Load client knowledge base
     let kb = '';
-    const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
-    try {
-      const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
-      kb = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
-      if (kb.length > 5000) kb = kb.substring(0, 5000) + '\n[...truncated]';
-    } catch (_) {
-      console.log(`[twilio] No KB found for client ${client.id}`);
+    if (!isValidUUID(client.id)) {
+      console.warn('[twilio] Invalid client UUID, skipping KB load');
+    } else {
+      const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
+      try {
+        const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
+        kb = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
+        if (kb.length > 5000) kb = kb.substring(0, 5000) + '\n[...truncated]';
+      } catch (_) {
+        console.log(`[twilio] No KB found for client ${client.id}`);
+      }
     }
 
     // Claude generates reply based on KB
@@ -249,7 +265,7 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
     let confidence = 'medium';
 
     try {
-      const resp = await anthropic.messages.create({
+      const respPromise = anthropic.messages.create({
         model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
         max_tokens: 300,
         system: `You are a helpful SMS assistant for ${client.business_name || 'our business'}. Answer the customer's question using ONLY the following knowledge base information. Do not make up information not found in the knowledge base.
@@ -261,6 +277,8 @@ Reply in JSON format: {"reply": "your reply text (keep under 160 chars for SMS)"
 If you cannot answer from the knowledge base, set confidence to "low".`,
         messages: [{ role: 'user', content: body }]
       });
+
+      const resp = await withTimeout(respPromise, ANTHROPIC_TIMEOUT, 'Claude SMS reply generation');
 
       const rawText = resp.content[0]?.text || '';
       try {
@@ -318,7 +336,9 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
     `).run(inboundId, client.id, leadId, from, body, messageSid || null, confidence);
 
     // Send reply via Twilio REST API
-    await sendSMS(from, reply, to);
+    // Truncate to Twilio max for concatenated SMS (1600 chars = 10 segments)
+    const truncatedReply = reply.slice(0, 1600);
+    await sendSMS(from, truncatedReply, to);
 
     // Record outbound message
     db.prepare(`

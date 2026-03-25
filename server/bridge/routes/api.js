@@ -12,6 +12,15 @@ const anthropic = new Anthropic();
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const ANTHROPIC_TIMEOUT = 30000;
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+  ]);
+}
+
 // GET /stats/:clientId
 router.get('/stats/:clientId', (req, res) => {
   try {
@@ -527,12 +536,14 @@ router.post('/chat', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const stream = anthropic.messages.stream({
+    const streamPromise = anthropic.messages.stream({
       model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
       max_tokens: 1024,
       system: systemPrompt,
       messages
     });
+
+    const stream = await withTimeout(streamPromise, ANTHROPIC_TIMEOUT, 'Anthropic streaming chat');
 
     stream.on('text', (text) => {
       res.write(`data: ${JSON.stringify({ type: 'text', text })}\n\n`);
