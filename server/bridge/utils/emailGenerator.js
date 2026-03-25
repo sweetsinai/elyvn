@@ -4,7 +4,7 @@ const anthropic = new Anthropic();
 async function generateColdEmail(prospect) {
   const { business_name, industry, city, state, rating, review_count, website } = prospect;
 
-  const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
+  const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick';
   const SENDER_NAME = process.env.OUTREACH_SENDER_NAME || 'Sohan';
   const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
 

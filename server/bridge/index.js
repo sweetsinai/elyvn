@@ -336,7 +336,7 @@ app.listen(PORT, () => {
           secure: process.env.SMTP_SECURE === 'true',
           auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
         });
-        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
+        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick';
         const SENDER = payload.sender_name || process.env.OUTREACH_SENDER_NAME || 'Sohan';
         const body = `Hi${prospect.business_name ? ' ' + prospect.business_name.split(' ')[0] : ''},\n\nJust following up — I know things get busy! The demo is only 10 minutes and I'll show you exactly how ELYVN handles calls for businesses like yours.\n\nHere's the link again: ${BOOKING_LINK}\n\nNo pressure at all — happy to answer any questions too.\n\n${SENDER}\nELYVN`;
         await transport.sendMail({
@@ -370,7 +370,7 @@ app.listen(PORT, () => {
           secure: process.env.SMTP_SECURE === 'true',
           auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
         });
-        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
+        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick';
         const SENDER = payload.sender_name || process.env.OUTREACH_SENDER_NAME || 'Sohan';
         const dayNum = payload.day || 3;
         let body;

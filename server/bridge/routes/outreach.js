@@ -248,7 +248,7 @@ router.post('/campaign/:campaignId/generate', async (req, res) => {
     const emails = [];
     const senderName = process.env.OUTREACH_SENDER_NAME || 'Sohan';
     const senderEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-    const bookingLink = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
+    const bookingLink = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick';
     const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
 
     for (const prospect of prospects) {
@@ -381,7 +381,7 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
           html: wrapWithCTA(
             email.body.replace(/Book a 10-min demo:.*$/m, '').trim(),
             'Book a 10-min Demo',
-            process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
+            process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick',
             '',
             { unsubscribeEmail: email.from_email }
           ),
@@ -405,7 +405,7 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
             from_email: email.from_email,
             original_subject: email.subject,
             campaign_id: campaignId,
-            booking_link: process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
+            booking_link: process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick',
             sender_name: process.env.OUTREACH_SENDER_NAME || 'Sohan',
             day: 3,
           }, new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString());
@@ -536,7 +536,7 @@ Reply: ${email.reply_text}`
       'UPDATE prospects SET status = ?, updated_at = ? WHERE id = ?'
     ).run(statusMap[classification] || 'engaged', now, email.prospect_id);
 
-    const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
+    const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick';
     const SENDER_NAME = process.env.OUTREACH_SENDER_NAME || 'Sohan';
 
     // === INTERESTED: Full conversion sequence ===
@@ -752,7 +752,7 @@ Reply: ${email.reply_text}`
         ).run(statusMap[classification] || 'engaged', now, email.prospect_id);
 
         const prospect = db.prepare('SELECT * FROM prospects WHERE id = ?').get(email.prospect_id);
-        const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
+        const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick';
         const SENDER_NAME = process.env.OUTREACH_SENDER_NAME || 'Sohan';
 
         // Auto-respond based on classification
