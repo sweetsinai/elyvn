@@ -371,7 +371,7 @@ const migrations = [
       if (!fuCols.includes('sent_at')) db.exec('ALTER TABLE followups ADD COLUMN sent_at TEXT');
       if (!fuCols.includes('updated_at')) db.exec("ALTER TABLE followups ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))");
 
-      // clients table: missing calcom_booking_link, twilio_phone, retell_phone, is_active, calcom_event_type_id
+      // clients table: missing calcom_booking_link, twilio_phone, retell_phone, is_active, calcom_event_type_id, avg_ticket
       const clientCols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
       if (!clientCols.includes('calcom_booking_link')) db.exec('ALTER TABLE clients ADD COLUMN calcom_booking_link TEXT');
       if (!clientCols.includes('business_name')) db.exec('ALTER TABLE clients ADD COLUMN business_name TEXT');
@@ -379,6 +379,7 @@ const migrations = [
       if (!clientCols.includes('retell_phone')) db.exec('ALTER TABLE clients ADD COLUMN retell_phone TEXT');
       if (!clientCols.includes('is_active')) db.exec('ALTER TABLE clients ADD COLUMN is_active INTEGER DEFAULT 1');
       if (!clientCols.includes('calcom_event_type_id')) db.exec('ALTER TABLE clients ADD COLUMN calcom_event_type_id TEXT');
+      if (!clientCols.includes('avg_ticket')) db.exec('ALTER TABLE clients ADD COLUMN avg_ticket REAL DEFAULT 0');
     },
   },
   {

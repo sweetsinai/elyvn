@@ -196,6 +196,41 @@ function initScheduler(db) {
     checkReplies(db).catch(err => console.error('[Scheduler] reply check error:', err));
   }, 30 * 60 * 1000);
   console.log('[Scheduler] Reply checker running every 30 minutes');
+
+  // Predictive lead scoring — rescore all leads daily at 6 AM
+  const scoreTime = new Date(now);
+  scoreTime.setHours(6, 0, 0, 0);
+  if (scoreTime <= now) scoreTime.setDate(scoreTime.getDate() + 1);
+  const scoreDelay = scoreTime.getTime() - now.getTime();
+
+  setTimeout(() => {
+    dailyLeadScoring(db).catch(err => console.error('[Scheduler] lead scoring error:', err));
+    setInterval(() => {
+      dailyLeadScoring(db).catch(err => console.error('[Scheduler] lead scoring error:', err));
+    }, 24 * 60 * 60 * 1000);
+  }, scoreDelay);
+  console.log(`[Scheduler] Daily lead scoring scheduled in ${Math.round(scoreDelay / 1000 / 60)} minutes (6 AM)`);
+
+  // Data retention cleanup — daily at 3 AM
+  const retentionTime = new Date(now);
+  retentionTime.setHours(3, 0, 0, 0);
+  if (retentionTime <= now) retentionTime.setDate(retentionTime.getDate() + 1);
+  const retentionDelay = retentionTime.getTime() - now.getTime();
+
+  setTimeout(() => {
+    try {
+      const { runRetention } = require('./dataRetention');
+      const result = runRetention(db);
+      console.log(`[Scheduler] Data retention completed: ${JSON.stringify(result)}`);
+    } catch (err) { console.error('[Scheduler] data retention error:', err); }
+    setInterval(() => {
+      try {
+        const { runRetention } = require('./dataRetention');
+        runRetention(db);
+      } catch (err) { console.error('[Scheduler] data retention error:', err); }
+    }, 24 * 60 * 60 * 1000);
+  }, retentionDelay);
+  console.log(`[Scheduler] Data retention scheduled in ${Math.round(retentionDelay / 1000 / 60)} minutes (3 AM)`);
 }
 
 // === BRAIN-POWERED: Process due follow-ups ===
@@ -575,6 +610,49 @@ async function processAppointmentReminders(db) {
   }
 }
 
+// === PREDICTIVE: Daily lead re-scoring ===
+async function dailyLeadScoring(db) {
+  try {
+    const { batchScoreLeads } = require('./leadScoring');
+    const clients = db.prepare('SELECT id, telegram_chat_id FROM clients WHERE is_active = 1').all();
+
+    for (const client of clients) {
+      try {
+        const scores = batchScoreLeads(db, client.id);
+        const hotLeads = scores.filter(s => s.predictive_score >= 75);
+
+        // Update lead scores in the DB based on predictive model
+        for (const s of scores) {
+          // Map 0-100 predictive score to 0-10 lead score
+          const newScore = Math.round(s.predictive_score / 10);
+          db.prepare('UPDATE leads SET score = ?, updated_at = datetime(\'now\') WHERE id = ?')
+            .run(newScore, s.leadId);
+        }
+
+        // Notify owner of hot leads
+        if (hotLeads.length > 0 && client.telegram_chat_id) {
+          const topLeads = hotLeads.slice(0, 5).map(l =>
+            `  • ${l.name || l.phone} — ${l.predictive_score}/100 — ${l.insight}`
+          ).join('\n');
+
+          telegram.sendMessage(client.telegram_chat_id,
+            `🎯 <b>Daily Lead Scoring Complete</b>\n\n` +
+            `Scored: ${scores.length} leads\n` +
+            `Hot leads (75+): ${hotLeads.length}\n\n` +
+            `<b>Top priorities:</b>\n${topLeads}`
+          ).catch(() => {});
+        }
+
+        console.log(`[Scheduler] Scored ${scores.length} leads for client ${client.id}, ${hotLeads.length} hot`);
+      } catch (err) {
+        console.error(`[Scheduler] Lead scoring failed for client ${client.id}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('[Scheduler] dailyLeadScoring error:', err);
+  }
+}
+
 module.exports = {
   initScheduler,
   sendDailySummaries,
@@ -584,5 +662,6 @@ module.exports = {
   createAppointmentReminders,
   processAppointmentReminders,
   dailyOutreach,
-  checkReplies
+  checkReplies,
+  dailyLeadScoring,
 };

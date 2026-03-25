@@ -512,4 +512,190 @@ router.post('/chat', async (req, res) => {
   }
 });
 
+// =============================================
+// INTELLIGENCE & ANALYTICS ENDPOINTS
+// =============================================
+
+// GET /intelligence/:clientId — Full conversation intelligence report
+router.get('/intelligence/:clientId', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId } = req.params;
+    const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 30));
+
+    const { getConversationIntelligence } = require('../utils/conversationIntelligence');
+    const report = getConversationIntelligence(db, clientId, days);
+    res.json(report);
+  } catch (err) {
+    console.error('[api] intelligence error:', err);
+    res.status(500).json({ error: 'Failed to generate intelligence report' });
+  }
+});
+
+// GET /intelligence/:clientId/peak-hours — Peak activity hours
+router.get('/intelligence/:clientId/peak-hours', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId } = req.params;
+
+    const { getPeakHours } = require('../utils/conversationIntelligence');
+    const peakHours = getPeakHours(db, clientId);
+    res.json({ peak_hours: peakHours });
+  } catch (err) {
+    console.error('[api] peak-hours error:', err);
+    res.status(500).json({ error: 'Failed to get peak hours' });
+  }
+});
+
+// GET /intelligence/:clientId/response-impact — Response time impact analysis
+router.get('/intelligence/:clientId/response-impact', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId } = req.params;
+
+    const { analyzeResponseTimeImpact } = require('../utils/conversationIntelligence');
+    const analysis = analyzeResponseTimeImpact(db, clientId);
+    res.json(analysis);
+  } catch (err) {
+    console.error('[api] response-impact error:', err);
+    res.status(500).json({ error: 'Failed to analyze response time impact' });
+  }
+});
+
+// GET /scoring/:clientId — Batch predictive scores for all active leads
+router.get('/scoring/:clientId', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId } = req.params;
+
+    const { batchScoreLeads } = require('../utils/leadScoring');
+    const scores = batchScoreLeads(db, clientId);
+    res.json({ leads: scores, total: scores.length });
+  } catch (err) {
+    console.error('[api] scoring error:', err);
+    res.status(500).json({ error: 'Failed to score leads' });
+  }
+});
+
+// GET /scoring/:clientId/:leadId — Individual lead predictive score
+router.get('/scoring/:clientId/:leadId', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId, leadId } = req.params;
+
+    const { predictLeadScore } = require('../utils/leadScoring');
+    const score = predictLeadScore(db, leadId, clientId);
+    res.json(score);
+  } catch (err) {
+    console.error('[api] lead score error:', err);
+    res.status(500).json({ error: 'Failed to score lead' });
+  }
+});
+
+// GET /scoring/:clientId/analytics/conversion — Conversion analytics
+router.get('/scoring/:clientId/analytics/conversion', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId } = req.params;
+
+    const { getConversionAnalytics } = require('../utils/leadScoring');
+    const analytics = getConversionAnalytics(db, clientId);
+    res.json(analytics);
+  } catch (err) {
+    console.error('[api] conversion analytics error:', err);
+    res.status(500).json({ error: 'Failed to get conversion analytics' });
+  }
+});
+
+// GET /revenue/:clientId — Revenue attribution & ROI
+router.get('/revenue/:clientId', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId } = req.params;
+    const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 30));
+
+    const { getROIMetrics } = require('../utils/revenueAttribution');
+    const metrics = getROIMetrics(db, clientId, days);
+    res.json(metrics);
+  } catch (err) {
+    console.error('[api] revenue error:', err);
+    res.status(500).json({ error: 'Failed to get revenue metrics' });
+  }
+});
+
+// GET /revenue/:clientId/:leadId — Single lead attribution chain
+router.get('/revenue/:clientId/:leadId', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId, leadId } = req.params;
+
+    const { getAttribution } = require('../utils/revenueAttribution');
+    const attribution = getAttribution(db, leadId, clientId);
+    res.json(attribution);
+  } catch (err) {
+    console.error('[api] attribution error:', err);
+    res.status(500).json({ error: 'Failed to get lead attribution' });
+  }
+});
+
+// GET /revenue/:clientId/channels/performance — Channel performance breakdown
+router.get('/revenue/:clientId/channels/performance', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId } = req.params;
+
+    const { getChannelPerformance } = require('../utils/revenueAttribution');
+    const channels = getChannelPerformance(db, clientId);
+    res.json(channels);
+  } catch (err) {
+    console.error('[api] channel performance error:', err);
+    res.status(500).json({ error: 'Failed to get channel performance' });
+  }
+});
+
+// GET /schedule/:clientId — AI-generated daily contact schedule
+router.get('/schedule/:clientId', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId } = req.params;
+
+    const { generateDailySchedule } = require('../utils/smartScheduler');
+    const schedule = generateDailySchedule(db, clientId);
+    res.json({ schedule, total: schedule.length });
+  } catch (err) {
+    console.error('[api] schedule error:', err);
+    res.status(500).json({ error: 'Failed to generate schedule' });
+  }
+});
+
+// GET /schedule/:clientId/time-slots — Optimal time slot analysis
+router.get('/schedule/:clientId/time-slots', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId } = req.params;
+
+    const { analyzeTimeSlotSuccess } = require('../utils/smartScheduler');
+    const analysis = analyzeTimeSlotSuccess(db, clientId);
+    res.json(analysis);
+  } catch (err) {
+    console.error('[api] time-slots error:', err);
+    res.status(500).json({ error: 'Failed to analyze time slots' });
+  }
+});
+
+// GET /health/detailed — Detailed health with metrics
+router.get('/health/detailed', (req, res) => {
+  try {
+    const { getMetrics } = require('../utils/metrics');
+    const metrics = getMetrics();
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      metrics,
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
 module.exports = router;
