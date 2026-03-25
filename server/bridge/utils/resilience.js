@@ -26,21 +26,29 @@ async function withFallback(asyncFn, fallbackFn, serviceName = 'service') {
 
 /**
  * Wrap an async function with timeout
- * @param {function} asyncFn - The async function
+ * @param {function} asyncFn - The async function (optionally receives AbortSignal)
  * @param {number} timeoutMs - Timeout in milliseconds
  * @param {string} serviceName - Name for logging
  * @returns {Promise} Result or timeout error
  */
 async function withTimeout(asyncFn, timeoutMs, serviceName = 'service') {
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`${serviceName} timeout after ${timeoutMs}ms`)), timeoutMs)
-  );
+  const controller = new AbortController();
+  let timeoutId;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`${serviceName} timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
 
   try {
-    return await Promise.race([asyncFn(), timeoutPromise]);
+    return await Promise.race([asyncFn(controller.signal), timeoutPromise]);
   } catch (err) {
     console.error(`[resilience] ${serviceName} timeout or error:`, err.message);
     throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
