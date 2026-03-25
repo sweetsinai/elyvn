@@ -352,13 +352,32 @@ router.post('/blast', async (req, res) => {
     }
 
     const transport = getTransporter();
+    const { verifyEmail } = require('../utils/emailVerifier');
     let sent = 0;
     let failed = 0;
+    let skippedInvalid = 0;
     const sanitizeHeader = s => String(s || '').replace(/[\r\n]/g, '');
 
     for (let i = 0; i < emails.length && i < remaining; i++) {
       const email = db.prepare('SELECT * FROM emails_sent WHERE id = ?').get(emails[i].id);
       if (!email) continue;
+
+      // Verify email before sending to prevent bounces
+      try {
+        const verification = await verifyEmail(email.to_email);
+        if (!verification.valid) {
+          console.log(`[blast] Skipping invalid email ${email.to_email}: ${verification.reason} (${verification.method})`);
+          db.prepare("UPDATE emails_sent SET status = 'invalid', error = ?, updated_at = ? WHERE id = ?")
+            .run(`verification_failed: ${verification.reason}`, new Date().toISOString(), email.id);
+          db.prepare("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?")
+            .run(new Date().toISOString(), email.prospect_id);
+          skippedInvalid++;
+          continue;
+        }
+      } catch (verifyErr) {
+        // Verification failed — send anyway rather than block
+        console.warn(`[blast] Email verification error for ${email.to_email}: ${verifyErr.message} — sending anyway`);
+      }
 
       try {
         await transport.sendMail({
@@ -433,7 +452,7 @@ router.post('/blast', async (req, res) => {
       "UPDATE campaigns SET status = 'active', updated_at = ? WHERE id = ?"
     ).run(new Date().toISOString(), campaignId);
 
-    console.log(`[blast] Campaign ${campaignId}: sent=${sent} failed=${failed}`);
+    console.log(`[blast] Campaign ${campaignId}: sent=${sent} failed=${failed} invalid=${skippedInvalid}`);
 
     res.json({
       campaign_id: campaignId,
@@ -442,6 +461,7 @@ router.post('/blast', async (req, res) => {
       emailed: emails.length,
       sent,
       failed,
+      skipped_invalid: skippedInvalid,
       remaining: remaining - sent,
       prospects: prospects.slice(0, 5)
     });
@@ -603,13 +623,31 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
     }
 
     const transport = getTransporter();
+    const { verifyEmail } = require('../utils/emailVerifier');
     let sent = 0;
     let failed = 0;
+    let skippedInvalid = 0;
 
     const sanitizeHeader = s => String(s || '').replace(/[\r\n]/g, '');
     const { generateTrackingPixel, wrapLinksWithTracking } = require('../utils/emailTracking');
 
     for (const email of drafts) {
+      // Verify email before sending
+      try {
+        const verification = await verifyEmail(email.to_email);
+        if (!verification.valid) {
+          console.log(`[outreach] Skipping invalid email ${email.to_email}: ${verification.reason}`);
+          db.prepare("UPDATE emails_sent SET status = 'invalid', error = ?, updated_at = ? WHERE id = ?")
+            .run(`verification_failed: ${verification.reason}`, new Date().toISOString(), email.id);
+          db.prepare("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?")
+            .run(new Date().toISOString(), email.prospect_id);
+          skippedInvalid++;
+          continue;
+        }
+      } catch (verifyErr) {
+        console.warn(`[outreach] Verification error for ${email.to_email}: ${verifyErr.message} — sending anyway`);
+      }
+
       try {
         // Generate HTML with tracking
         let htmlContent = wrapWithCTA(
@@ -691,8 +729,8 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
       "UPDATE campaigns SET status = 'active', updated_at = ? WHERE id = ?"
     ).run(new Date().toISOString(), campaignId);
 
-    console.log(`[outreach] Campaign ${campaignId}: sent=${sent} failed=${failed}`);
-    res.json({ sent, failed, remaining: remaining - sent });
+    console.log(`[outreach] Campaign ${campaignId}: sent=${sent} failed=${failed} invalid=${skippedInvalid}`);
+    res.json({ sent, failed, skipped_invalid: skippedInvalid, remaining: remaining - sent });
   } catch (err) {
     console.error('[outreach] send error:', err);
     res.status(500).json({ error: 'Failed to send emails' });

@@ -375,8 +375,19 @@ async function dailyOutreach(db) {
     console.log(`[Outreach] Starting daily outreach: ${prospects.length} prospects`);
     let sent = 0, failed = 0;
 
+    const { verifyEmail } = require('./emailVerifier');
+
     for (const prospect of prospects) {
       try {
+        // Verify email before generating + sending
+        const verification = await verifyEmail(prospect.email);
+        if (!verification.valid) {
+          console.log(`[Outreach] Skipping invalid email ${prospect.email}: ${verification.reason}`);
+          db.prepare("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?")
+            .run(new Date().toISOString(), prospect.id);
+          continue;
+        }
+
         const { subject, body } = await generateColdEmail(prospect);
         const result = await sendColdEmail(db, prospect, subject, body);
 
