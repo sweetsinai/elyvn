@@ -77,12 +77,9 @@ function handleCallStarted(db, call) {
       return;
     }
     const callId = call.call_id;
-    const direction = call.direction || 'inbound';
-    // For outbound calls, the customer is to_number; for inbound, it's from_number
-    const callerPhone = direction === 'outbound'
-      ? normalizePhone(call.to_number)
-      : normalizePhone(call.from_number);
     const toNumber = call.to_number;
+    const callerPhone = normalizePhone(call.from_number);
+    const direction = call.direction || 'inbound';
 
     // Match client by retell phone number; fall back to agent ID for web calls
     let client = db.prepare(
@@ -105,7 +102,7 @@ function handleCallStarted(db, call) {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(randomUUID(), callId, clientId, callerPhone, direction, new Date().toISOString());
 
-    console.log(`[retell] call_started: ${callId} client=${clientId} from=${callerPhone}`);
+    console.log(`[retell] call_started: ${callId} client=${clientId} from=${callerPhone ? callerPhone.replace(/\d(?=\d{4})/g, '*') : '?'}`);
   } catch (err) {
     console.error('[retell] call_started error:', err);
   }
@@ -160,11 +157,7 @@ async function handleCallEnded(db, call) {
     if (!callRecord) {
       console.warn(`[retell] No call record for ${callId} — inserting from call_ended payload`);
       const toNumber = callData.to_number || call.to_number;
-      const callDirection = callData.direction || call.direction || 'inbound';
-      // For outbound calls, customer is to_number; for inbound, it's from_number
-      const fromNumber = callDirection === 'outbound'
-        ? normalizePhone(toNumber)
-        : normalizePhone(callData.from_number || call.from_number);
+      const fromNumber = normalizePhone(callData.from_number || call.from_number);
       const agentId = callData.agent_id || call.agent_id;
 
       let client = null;
@@ -437,10 +430,12 @@ async function handleCallEnded(db, call) {
         if (processedCall) {
           if (outcome === 'transferred') {
             const { text } = telegram.formatTransferAlert(processedCall, summary, clientForNotify);
-            telegram.sendMessage(clientForNotify.telegram_chat_id, text);
+            telegram.sendMessage(clientForNotify.telegram_chat_id, text)
+              .catch(err => console.error('[retell] Telegram transfer notify failed:', err.message));
           } else {
             const { text, buttons } = telegram.formatCallNotification(processedCall, clientForNotify);
-            telegram.sendMessage(clientForNotify.telegram_chat_id, text, { reply_markup: { inline_keyboard: buttons } });
+            telegram.sendMessage(clientForNotify.telegram_chat_id, text, { reply_markup: { inline_keyboard: buttons } })
+              .catch(err => console.error('[retell] Telegram call notify failed:', err.message));
           }
         }
       }
@@ -528,9 +523,10 @@ async function handleTransfer(db, call) {
     const callerPhone = call.from_number;
     console.log(`[retell] transfer: ${callId}`);
 
-    // Fetch transcript
+    // Fetch transcript (with timeout)
     const retellResp = await fetch(`${RETELL_BASE}/get-call/${callId}`, {
-      headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` }
+      headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` },
+      signal: AbortSignal.timeout(10000),
     });
 
     let summary = 'Transfer requested';
@@ -550,7 +546,9 @@ async function handleTransfer(db, call) {
           messages: [{ role: 'user', content: `Summarize this call in 2 sentences for the business owner who is about to receive a transfer:\n\n${transcriptText}` }]
         });
         summary = summaryResp.content[0]?.text || summary;
-      } catch (_) {}
+      } catch (err) {
+        console.error('[retell] Transfer summary generation failed:', err.message);
+      }
     }
 
     // Update call outcome

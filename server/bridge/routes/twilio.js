@@ -41,7 +41,7 @@ router.post('/', (req, res) => {
 
 async function handleInboundSMS(db, { from, to, body, messageSid }) {
   try {
-    console.log(`[twilio] SMS from ${from} to ${to} (${(body || '').length} chars)`);
+    console.log(`[twilio] SMS from ${from ? from.replace(/\d(?=\d{4})/g, '*') : '?'} to ${to} (${(body || '').length} chars)`);
 
     // Idempotency: skip if this MessageSid was already processed (webhook retry)
     if (messageSid) {
@@ -282,6 +282,7 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
     const inboundId = randomUUID();
     const outboundId = randomUUID();
 
+    // Record inbound message
     db.prepare(`
       INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, confidence, created_at)
       VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, datetime('now'))
@@ -334,7 +335,7 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
       console.error('[twilio] Telegram notification failed:', tgErr.message);
     }
 
-    console.log(`[twilio] Replied to ${from}: ${reply.substring(0, 50)}...`);
+    console.log(`[twilio] Replied to ${from ? from.replace(/\d(?=\d{4})/g, '*') : '?'}: ${reply.substring(0, 50)}...`);
 
     // === BRAIN — autonomous post-SMS decisions ===
     try {

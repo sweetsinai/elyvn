@@ -733,7 +733,7 @@ router.post('/replies/:emailId/classify', async (req, res) => {
 
     // Classify with Claude
     const resp = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
       max_tokens: 200,
       messages: [{
         role: 'user',

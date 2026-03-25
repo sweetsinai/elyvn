@@ -359,7 +359,7 @@ router.post('/clients', async (req, res) => {
       avg_ticket || 0, now, now
     );
 
-    // Save knowledge base JSON if provided
+    // Save knowledge base JSON if provided (UUID validated — id is from randomUUID())
     if (knowledge_base) {
       const kbDir = path.join(__dirname, '../../mcp/knowledge_bases');
       try {
@@ -452,7 +452,7 @@ router.post('/chat', async (req, res) => {
     // Load client KB as system context
     let systemPrompt = 'You are an AI assistant for the ELYVN operations dashboard.';
 
-    if (clientId) {
+    if (clientId && UUID_RE.test(clientId)) {
       const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
       if (client) {
         systemPrompt += `\n\nYou are assisting with ${client.business_name}.`;
@@ -478,7 +478,7 @@ router.post('/chat', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     const stream = anthropic.messages.stream({
-      model: 'claude-sonnet-4-20250514',
+      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
       max_tokens: 1024,
       system: systemPrompt,
       messages

@@ -292,6 +292,14 @@ const migrations = [
       }
     },
   },
+  {
+    id: '011_unique_leads_client_phone',
+    description: 'Add unique index on leads(client_id, phone) to prevent duplicate leads',
+    up(db) {
+      // Use IF NOT EXISTS to be idempotent
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_client_phone_unique ON leads(client_id, phone)');
+    },
+  },
 ];
 
 /**
