@@ -1,7 +1,8 @@
 const { randomUUID } = require('crypto');
 const { getTransporter } = require('./mailer');
+const config = require('./config');
 
-const DAILY_LIMIT = parseInt(process.env.EMAIL_DAILY_LIMIT || '300', 10);
+const DAILY_LIMIT = config.outreach.dailySendLimit;
 
 async function sendColdEmail(db, prospect, subject, body) {
   const transport = getTransporter();

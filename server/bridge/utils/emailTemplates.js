@@ -3,6 +3,8 @@
  * Professional, mobile-responsive email templates for cold outreach & transactional emails.
  */
 
+const config = require('./config');
+
 const BRAND_COLOR = '#6C5CE7';
 const BRAND_LIGHT = '#A29BFE';
 
@@ -32,7 +34,7 @@ function wrapInTemplate(body, options = {}) {
     '<a href="$1" style="color: ' + BRAND_COLOR + '; text-decoration: underline;">$1</a>'
   );
 
-  const physicalAddress = process.env.BUSINESS_ADDRESS || '';
+  const physicalAddress = config.business.address;
   const unsubscribeBlock = unsubscribeEmail
     ? `<p style="margin: 0 0 8px 0; font-size: 12px; color: #999;">
         <a href="mailto:${escapeHtml(unsubscribeEmail)}?subject=unsubscribe" style="color: #999; text-decoration: underline;">Unsubscribe</a>
@@ -110,7 +112,7 @@ function wrapWithCTA(body, ctaText, ctaUrl, signoff = '', options = {}) {
     ? signoff.split('\n').map(l => escapeHtml(l)).join('<br>')
     : '';
 
-  const physicalAddress = process.env.BUSINESS_ADDRESS || '';
+  const physicalAddress = config.business.address;
   const unsubscribeBlock = unsubscribeEmail
     ? `<p style="margin: 0 0 8px 0; font-size: 12px; color: #999;">
         <a href="mailto:${escapeHtml(unsubscribeEmail)}?subject=unsubscribe" style="color: #999; text-decoration: underline;">Unsubscribe</a>

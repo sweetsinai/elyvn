@@ -5,6 +5,7 @@
 
 const { randomUUID } = require('crypto');
 const { getTransporter } = require('./mailer');
+const config = require('./config');
 
 // Create job handlers object
 function createJobHandlers(db, sendSMS, captureException) {
@@ -133,8 +134,8 @@ function createJobHandlers(db, sendSMS, captureException) {
           console.error('[jobQueue] SMTP not configured for interested_followup');
           return;
         }
-        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
-        const SENDER = payload.sender_name || process.env.OUTREACH_SENDER_NAME || 'Sohan';
+        const BOOKING_LINK = payload.booking_link || config.outreach.bookingLink;
+        const SENDER = payload.sender_name || config.outreach.senderName;
         const body = `Hi${prospect.business_name ? ' ' + prospect.business_name.split(' ')[0] : ''},\n\nJust following up — I know things get busy! The demo is only 10 minutes and I'll show you exactly how ELYVN handles calls for businesses like yours.\n\nHere's the link again: ${BOOKING_LINK}\n\nNo pressure at all — happy to answer any questions too.\n\n${SENDER}\nELYVN`;
         await transport.sendMail({
           from: payload.from_email,
@@ -172,8 +173,8 @@ function createJobHandlers(db, sendSMS, captureException) {
           console.error('[jobQueue] SMTP not configured for noreply_followup');
           return;
         }
-        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
-        const SENDER = payload.sender_name || process.env.OUTREACH_SENDER_NAME || 'Sohan';
+        const BOOKING_LINK = payload.booking_link || config.outreach.bookingLink;
+        const SENDER = payload.sender_name || config.outreach.senderName;
         const dayNum = payload.day || 3;
         let body;
         if (dayNum <= 3) {

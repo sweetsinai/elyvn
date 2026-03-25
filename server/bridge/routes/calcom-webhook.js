@@ -158,14 +158,18 @@ async function handleBookingCreated(db, payload) {
         db.prepare("UPDATE leads SET prospect_id = ?, source = COALESCE(source, 'outreach'), updated_at = ? WHERE id = ?")
           .run(prospect.id, now, lead.id);
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('[calcom-webhook] Failed to link prospect to lead:', err.message);
+    }
 
     // Cancel any pending follow-up jobs for this prospect
     try {
       const { cancelJobs } = require('../utils/jobQueue');
       cancelJobs(db, { payloadContains: `"prospect_id":"${prospect.id}"` });
       cancelJobs(db, { type: 'noreply_followup', payloadContains: prospect.id });
-    } catch (_) {}
+    } catch (err) {
+      console.error('[calcom-webhook] Failed to cancel jobs:', err.message);
+    }
   }
 
   // Send confirmation SMS if we have a phone number

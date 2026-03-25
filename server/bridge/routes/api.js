@@ -3,6 +3,7 @@ const router = express.Router();
 const { randomUUID } = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getBookings } = require('../utils/calcom');
+const config = require('../utils/config');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const path = require('path');
@@ -553,14 +554,18 @@ router.post('/chat', async (req, res) => {
       try {
         const kbData = fs.readFileSync(kbPath, 'utf8');
         systemPrompt += `\n\nBusiness Knowledge Base:\n${kbData}`;
-      } catch (_) {}
+      } catch (err) {
+        console.error('[api] Failed to load knowledge base:', err.message);
+      }
 
       // Add recent stats context
       try {
         const callCount = db.prepare('SELECT COUNT(*) as count FROM calls WHERE client_id = ?').get(clientId).count;
         const leadCount = db.prepare('SELECT COUNT(*) as count FROM leads WHERE client_id = ?').get(clientId).count;
         systemPrompt += `\n\nCurrent stats: ${callCount} total calls, ${leadCount} total leads.`;
-      } catch (_) {}
+      } catch (err) {
+        console.error('[api] Failed to load stats:', err.message);
+      }
     }
 
     // Stream response
@@ -569,7 +574,7 @@ router.post('/chat', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     const streamPromise = anthropic.messages.stream({
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+      model: config.ai.model,
       max_tokens: 1024,
       system: systemPrompt,
       messages

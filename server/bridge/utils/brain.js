@@ -5,6 +5,7 @@
  * Uses sync better-sqlite3 for guardrails checks.
  */
 const Anthropic = require('@anthropic-ai/sdk');
+const config = require('./config');
 const fs = require('fs');
 const path = require('path');
 const { CircuitBreaker } = require('./resilience');
@@ -149,7 +150,7 @@ What actions should ELYVN take?`;
 
   try {
     const response = await claudeBreaker.call({
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+      model: config.ai.model,
       max_tokens: 1000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],

@@ -4,6 +4,7 @@ const { randomUUID } = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
 const { sendSMS, sendSMSToOwner } = require('../utils/sms');
 const telegram = require('../utils/telegram');
+const config = require('../utils/config');
 
 const anthropic = new Anthropic();
 const { normalizePhone } = require('../utils/phone');
@@ -225,7 +226,7 @@ async function handleCallEnded(db, call) {
       // We have text to work with (transcript or call_summary from webhook)
       try {
         const summaryResp = await anthropic.messages.create({
-          model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+          model: config.ai.model,
           max_tokens: 150,
           messages: [{ role: 'user', content: hasTranscript
             ? `Summarize this phone call transcript in exactly 2 lines. Be specific about what was discussed and any outcomes:\n\n${transcriptText}`
@@ -240,7 +241,7 @@ async function handleCallEnded(db, call) {
       // 4. Score lead 1-10
       try {
         const scoreResp = await anthropic.messages.create({
-          model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+          model: config.ai.model,
           max_tokens: 10,
           messages: [{ role: 'user', content: `Score this lead 1-10 based on their interest, urgency, and qualification from this call ${hasTranscript ? 'transcript' : 'summary'}. Reply with ONLY a single number:\n\n${scoringText}` }]
         });
@@ -278,7 +279,9 @@ async function handleCallEnded(db, call) {
     try {
       const { recordMetric } = require('../utils/metrics');
       recordMetric('total_calls', 1, 'counter');
-    } catch (_) {}
+    } catch (err) {
+      console.error('[retell] Failed to record metric:', err.message);
+    }
 
     const sentiment = callAnalysis.user_sentiment || 'neutral';
 
@@ -573,7 +576,7 @@ async function handleTransfer(db, call) {
 
       try {
         const summaryResp = await anthropic.messages.create({
-          model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+          model: config.ai.model,
           max_tokens: 100,
           messages: [{ role: 'user', content: `Summarize this call in 2 sentences for the business owner who is about to receive a transfer:\n\n${transcriptText}` }]
         });

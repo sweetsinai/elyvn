@@ -5,6 +5,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { sendSMS } = require('../utils/sms');
 const telegram = require('../utils/telegram');
 const { cancelBooking } = require('../utils/calcom');
+const config = require('../utils/config');
 const fs = require('fs');
 const path = require('path');
 const { isValidUUID } = require('../utils/validate');
@@ -251,8 +252,8 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
         const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
         kb = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
         if (kb.length > 5000) kb = kb.substring(0, 5000) + '\n[...truncated]';
-      } catch (_) {
-        console.log(`[twilio] No KB found for client ${client.id}`);
+      } catch (err) {
+        console.error(`[twilio] KB load failed for client ${client.id}:`, err.message);
       }
     }
 
@@ -262,7 +263,7 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
 
     try {
       const respPromise = anthropic.messages.create({
-        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+        model: config.ai.model,
         max_tokens: 300,
         system: `You are a helpful SMS assistant for ${client.business_name || 'our business'}. Answer the customer's question using ONLY the following knowledge base information. Do not make up information not found in the knowledge base.
 

@@ -360,10 +360,10 @@ describe('Validators', () => {
     });
 
     describe('length limiting', () => {
-      it('should limit to default maxLen of 1000', () => {
+      it('should limit to default maxLen of 500', () => {
         const result = sanitizeString('a'.repeat(1000));
-        expect(result.length).toBe(1000);
-        expect(result).toBe('a'.repeat(1000));
+        expect(result.length).toBe(500);
+        expect(result).toBe('a'.repeat(500));
       });
 
       it('should truncate to provided maxLen', () => {

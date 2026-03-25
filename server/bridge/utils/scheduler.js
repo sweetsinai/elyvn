@@ -1,4 +1,5 @@
 const telegram = require('./telegram');
+const config = require('./config');
 
 function sendDailySummaries(db) {
   const clients = db.prepare(
@@ -470,8 +471,8 @@ async function checkReplies(db) {
     const imap = new Imap({
       user: process.env.IMAP_USER,
       password: process.env.IMAP_PASS,
-      host: process.env.IMAP_HOST || 'imap.gmail.com',
-      port: parseInt(process.env.IMAP_PORT || '993', 10),
+      host: config.imap.host,
+      port: config.imap.port,
       tls: true,
       tlsOptions: { rejectUnauthorized: false },
     });

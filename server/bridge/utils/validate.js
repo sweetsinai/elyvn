@@ -2,7 +2,7 @@
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PHONE_RE = /^\+?[1-9]\d{6,14}$/;
-const EMAIL_RE = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+const EMAIL_RE = /^[a-zA-Z0-9._+-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 const URL_RE = /^https?:\/\/[^\s<>"{}|\\^`\[\]]+$/;
 
 function isValidUUID(str) {
@@ -61,4 +61,4 @@ function isValidAction(str) {
   return VALID_ACTIONS.includes(str);
 }
 
-module.exports = { isValidUUID, isValidPhone, isValidEmail, isValidURL, sanitizeString, escapeLikePattern, validateNumericRange, isValidStage, isValidAction, VALID_STAGES, VALID_ACTIONS };
+module.exports = { isValidUUID, isValidPhone, isValidEmail, isValidURL, sanitizeString, escapeLikePattern, validateNumericRange, isValidStage, isValidAction, VALID_STAGES, VALID_ACTIONS, UUID_RE, PHONE_RE, EMAIL_RE };

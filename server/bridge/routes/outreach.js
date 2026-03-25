@@ -3,12 +3,13 @@ const router = express.Router();
 const { randomUUID } = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getTransporter } = require('../utils/mailer');
+const config = require('../utils/config');
 
 const anthropic = new Anthropic();
 const { wrapWithCTA, wrapInTemplate } = require('../utils/emailTemplates');
 
-const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
-const DAILY_SEND_LIMIT = parseInt(process.env.EMAIL_DAILY_LIMIT || '300', 10);
+const GOOGLE_PLACES_API_KEY = config.apis.googleMapsKey;
+const DAILY_SEND_LIMIT = config.outreach.dailySendLimit;
 
 /**
  * Normalize a phone number to E.164 format.
@@ -133,8 +134,8 @@ router.post('/scrape', async (req, res) => {
                 if (email) break;
               }
             }
-          } catch (_) {
-            // Timeout or fetch error, try next page
+          } catch (err) {
+            console.error('[outreach] Email discovery failed:', err.message);
           }
         }
       }
@@ -235,8 +236,8 @@ router.post('/blast', async (req, res) => {
                 if (email) break;
               }
             }
-          } catch (_) {
-            // Timeout or fetch error, try next page
+          } catch (err) {
+            console.error('[outreach] Email discovery failed:', err.message);
           }
         }
       }
@@ -364,14 +365,14 @@ router.post('/blast', async (req, res) => {
 
       try {
         await transport.sendMail({
-          from: `"${process.env.OUTREACH_SENDER_NAME || 'Sohan'}" <${sanitizeHeader(email.from_email)}>`,
+          from: `"${config.outreach.senderName}" <${sanitizeHeader(email.from_email)}>`,
           to: sanitizeHeader(email.to_email),
           subject: sanitizeHeader(email.subject),
           text: email.body,
           html: wrapWithCTA(
             email.body.replace(/Book a 10-min demo:.*$/m, '').trim(),
             'Book a 10-min Demo',
-            process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
+            config.outreach.bookingLink,
             '',
             { unsubscribeEmail: email.from_email }
           ),
@@ -395,8 +396,8 @@ router.post('/blast', async (req, res) => {
             from_email: email.from_email,
             original_subject: email.subject,
             campaign_id: campaignId,
-            booking_link: process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
-            sender_name: process.env.OUTREACH_SENDER_NAME || 'Sohan',
+            booking_link: config.outreach.bookingLink,
+            sender_name: config.outreach.senderName,
             day: 3,
           }, new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString());
         } catch (err) {
@@ -636,7 +637,7 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
         let htmlContent = wrapWithCTA(
           email.body.replace(/Book a 10-min demo:.*$/m, '').trim(),
           'Book a 10-min Demo',
-          process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
+          config.outreach.bookingLink,
           '',
           { unsubscribeEmail: email.from_email }
         );
@@ -645,7 +646,7 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
         htmlContent += generateTrackingPixel(email.id);
 
         await transport.sendMail({
-          from: `"${process.env.OUTREACH_SENDER_NAME || 'Sohan'}" <${sanitizeHeader(email.from_email)}>`,
+          from: `"${config.outreach.senderName}" <${sanitizeHeader(email.from_email)}>`,
           to: sanitizeHeader(email.to_email),
           subject: sanitizeHeader(email.subject),
           text: email.body,
@@ -670,8 +671,8 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
             from_email: email.from_email,
             original_subject: email.subject,
             campaign_id: campaignId,
-            booking_link: process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
-            sender_name: process.env.OUTREACH_SENDER_NAME || 'Sohan',
+            booking_link: config.outreach.bookingLink,
+            sender_name: config.outreach.senderName,
             day: 3,
           }, new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString());
         } catch (err) {
@@ -754,7 +755,7 @@ router.post('/replies/:emailId/classify', async (req, res) => {
 
     // Classify with Claude
     const resp = await anthropic.messages.create({
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+      model: config.ai.model,
       max_tokens: 200,
       messages: [{
         role: 'user',
@@ -774,7 +775,7 @@ Reply: ${email.reply_text}`
       const parsed = JSON.parse(resp.content[0]?.text || '{}');
       classification = parsed.classification || 'QUESTION';
       suggestedResponse = parsed.suggested_response || '';
-    } catch (_) {
+    } catch (err) {
       const text = resp.content[0]?.text || '';
       if (text.includes('INTERESTED')) classification = 'INTERESTED';
       else if (text.includes('NOT_INTERESTED')) classification = 'NOT_INTERESTED';
@@ -801,8 +802,8 @@ Reply: ${email.reply_text}`
       'UPDATE prospects SET status = ?, updated_at = ? WHERE id = ?'
     ).run(statusMap[classification] || 'engaged', now, email.prospect_id);
 
-    const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
-    const SENDER_NAME = process.env.OUTREACH_SENDER_NAME || 'Sohan';
+    const BOOKING_LINK = config.outreach.bookingLink;
+    const SENDER_NAME = config.outreach.senderName;
 
     // === INTERESTED: Full conversion sequence ===
     if (classification === 'INTERESTED') {
@@ -1031,7 +1032,7 @@ router.post('/auto-classify', async (req, res) => {
     for (const email of unclassified) {
       try {
         // Re-use the classify endpoint logic inline
-        const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
+        const MODEL = config.ai.model;
         const resp = await anthropic.messages.create({
           model: MODEL,
           max_tokens: 200,
@@ -1053,7 +1054,8 @@ Reply: ${email.reply_text}`
           const parsed = JSON.parse(resp.content[0]?.text || '{}');
           classification = parsed.classification || 'QUESTION';
           suggestedResponse = parsed.suggested_response || '';
-        } catch (_) {
+        } catch (err) {
+          console.error('[outreach] JSON parse failed, using fallback classification:', err.message);
           const text = resp.content[0]?.text || '';
           if (text.includes('INTERESTED')) classification = 'INTERESTED';
           else if (text.includes('NOT_INTERESTED')) classification = 'NOT_INTERESTED';
@@ -1079,8 +1081,8 @@ Reply: ${email.reply_text}`
         ).run(statusMap[classification] || 'engaged', now, email.prospect_id);
 
         const prospect = db.prepare('SELECT * FROM prospects WHERE id = ?').get(email.prospect_id);
-        const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
-        const SENDER_NAME = process.env.OUTREACH_SENDER_NAME || 'Sohan';
+        const BOOKING_LINK = config.outreach.bookingLink;
+        const SENDER_NAME = config.outreach.senderName;
 
         // Auto-respond based on classification
         if (classification === 'INTERESTED' && !email.auto_response_sent) {
@@ -1122,14 +1124,18 @@ Reply: ${email.reply_text}`
               try {
                 const { sendSMS } = require('../utils/sms');
                 await sendSMS(prospect.phone, `Hi! This is ${SENDER_NAME} from ELYVN. Thanks for your interest! Book a demo: ${BOOKING_LINK}`, null);
-              } catch (_) {}
+              } catch (err) {
+                console.error('[outreach] SMS send failed:', err.message);
+              }
             }
 
             // Telegram alert
             try {
               const { sendTelegramNotification } = require('../utils/telegram');
               await sendTelegramNotification(`🔥 *HOT LEAD* (auto-classified)\n*${prospect?.business_name || 'Unknown'}* — ${email.to_email}\nReplied INTERESTED. Auto-response sent.`);
-            } catch (_) {}
+            } catch (err) {
+              console.error('[outreach] Telegram notification failed:', err.message);
+            }
 
             // 24h follow-up job
             try {
@@ -1143,7 +1149,9 @@ Reply: ${email.reply_text}`
                 booking_link: BOOKING_LINK,
                 sender_name: SENDER_NAME,
               }, new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString());
-            } catch (_) {}
+            } catch (err) {
+              console.error('[outreach] Job enqueue failed:', err.message);
+            }
           } catch (err) {
             console.error('[auto-classify] INTERESTED auto-reply failed:', err.message);
           }
@@ -1158,7 +1166,9 @@ Reply: ${email.reply_text}`
               subject: `Re: ${email.subject}`,
               text: 'You have been removed from our list. We wish you all the best.',
             });
-          } catch (_) {}
+          } catch (err) {
+            console.error('[outreach] Unsubscribe confirmation email failed:', err.message);
+          }
         }
 
         results.push({ id: email.id, to: email.to_email, classification });

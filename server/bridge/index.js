@@ -241,8 +241,8 @@ app.get('/t/open/:emailId', (req, res) => {
       db.prepare("UPDATE emails_sent SET opened_at = COALESCE(opened_at, ?), open_count = COALESCE(open_count, 0) + 1, updated_at = ? WHERE id = ?")
         .run(new Date().toISOString(), new Date().toISOString(), emailId);
     }
-  } catch (_) {
-    // Silently fail if email not found or DB error
+  } catch (err) {
+    console.error('[server] Email open tracking failed:', err.message);
   }
   // Return 1x1 transparent GIF
   const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
@@ -269,8 +269,8 @@ app.get('/t/click/:emailId', (req, res) => {
       db.prepare("UPDATE emails_sent SET clicked_at = COALESCE(clicked_at, ?), click_count = COALESCE(click_count, 0) + 1, updated_at = ? WHERE id = ?")
         .run(new Date().toISOString(), new Date().toISOString(), emailId);
     }
-  } catch (_) {
-    // Silently fail if email not found or DB error
+  } catch (err) {
+    console.error('[server] Email click tracking failed:', err.message);
   }
 
   if (url) {
@@ -344,7 +344,9 @@ app.get('/health', async (req, res) => {
       followups: db.prepare('SELECT COUNT(*) as c FROM followups').get().c,
       pending_jobs: db.prepare('SELECT COUNT(*) as c FROM job_queue WHERE status = ?').get('pending').c,
     };
-  } catch (_) {}
+  } catch (err) {
+    console.error('[server] Failed to load database counts:', err.message);
+  }
 
   const mem = process.memoryUsage();
 
@@ -383,7 +385,8 @@ app.get('*', (req, res) => {
   const indexPath = path.join(__dirname, 'public', 'index.html');
   try {
     res.sendFile(indexPath);
-  } catch (_) {
+  } catch (err) {
+    console.error('[server] SPA index file not found:', err.message);
     res.status(404).json({ error: 'Not found' });
   }
 });
