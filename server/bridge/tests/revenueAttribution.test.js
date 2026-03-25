@@ -539,10 +539,17 @@ describe('Revenue Attribution Module', () => {
     });
 
     it('should return 0 estimated_value for non-booked lead', () => {
+      const now = new Date().toISOString();
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
-        VALUES ('lead_value_new', 'client1', '+12125551250', 3, 'new', 'New Lead', datetime('now'))
-      `).run();
+        VALUES ('lead_value_new', 'client1', '+12125551250', 3, 'new', 'New Lead', ?)
+      `).run(now);
+
+      // Add a touch
+      db.prepare(`
+        INSERT INTO calls (id, call_id, client_id, caller_phone, direction, duration, outcome, score, created_at)
+        VALUES (?, ?, 'client1', '+12125551250', 'inbound', 300, 'not_interested', 3, ?)
+      `).run('call_value_new', 'call_value_new_id', now);
 
       const result = getAttribution(db, 'lead_value_new', 'client1');
 
@@ -684,8 +691,8 @@ describe('Revenue Attribution Module', () => {
 
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
-        VALUES ('voice_lead', 'voice_cost', '+12125552300', 8, 'booked', 'Voice', now)
-      `).run();
+        VALUES ('voice_lead', 'voice_cost', '+12125552300', 8, 'booked', 'Voice', ?)
+      `).run(now);
 
       const result = getROIMetrics(db, 'voice_cost', 30);
 

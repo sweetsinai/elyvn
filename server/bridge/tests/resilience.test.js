@@ -246,7 +246,7 @@ describe('withRetry', () => {
     jest.advanceTimersByTime(500);
 
     await expect(promise).rejects.toThrow('final');
-  });
+  }, 15000);
 });
 
 describe('CircuitBreaker', () => {
