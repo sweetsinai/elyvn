@@ -1,8 +1,7 @@
 const { randomUUID } = require('crypto');
 
-const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
-
 async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
+  const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
   if (!GOOGLE_MAPS_API_KEY) {
     console.error('[Scraper] No GOOGLE_MAPS_API_KEY');
     return { success: false, error: 'No API key', found: 0, new: 0 };
