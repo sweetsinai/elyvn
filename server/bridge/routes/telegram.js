@@ -2,11 +2,14 @@ const express = require('express');
 const router = express.Router();
 const telegram = require('../utils/telegram');
 
-// Verify webhook secret
+// Verify webhook secret (skip if not configured)
 router.use((req, res, next) => {
-  const secret = req.headers['x-telegram-bot-api-secret-token'];
-  if (secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
-    return res.sendStatus(403);
+  const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (expectedSecret) {
+    const secret = req.headers['x-telegram-bot-api-secret-token'];
+    if (secret !== expectedSecret) {
+      return res.sendStatus(403);
+    }
   }
   next();
 });
