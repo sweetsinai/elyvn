@@ -55,16 +55,22 @@ function safeCompare(a, b) {
 }
 
 // Middleware — restrict CORS to known origins
-const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
+const corsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
-  : null; // null = allow all in dev, but warn
+  : (process.env.NODE_ENV === 'production'
+    ? ['https://joyful-trust-production.up.railway.app']
+    : '*');
 
-if (!ALLOWED_ORIGINS) {
-  console.warn('[WARN] CORS_ORIGINS not set — allowing all origins. Set CORS_ORIGINS for production!');
+if (!process.env.CORS_ORIGINS && process.env.NODE_ENV === 'production') {
+  console.warn('[WARN] CORS_ORIGINS not set — using Railway production domain. Override with CORS_ORIGINS for custom origins.');
+}
+
+if (corsOrigins === '*') {
+  console.warn('[WARN] CORS_ORIGINS not set in development — allowing all origins. Set CORS_ORIGINS for production!');
 }
 
 app.use(cors({
-  origin: ALLOWED_ORIGINS || true,
+  origin: corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-api-key', 'Authorization'],

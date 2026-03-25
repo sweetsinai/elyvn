@@ -165,7 +165,7 @@ What actions should ELYVN take?`;
 
     // Validate actions
     if (decision.actions && Array.isArray(decision.actions)) {
-      const { isValidAction, isValidStage, VALID_ACTIONS } = require('./validators');
+      const { isValidAction, isValidStage, VALID_ACTIONS } = require('./validate');
       decision.actions = decision.actions.filter(a => {
         if (!a.action || !isValidAction(a.action)) {
           console.warn(`[Brain] Filtered invalid action type: ${a.action}. Valid: ${VALID_ACTIONS.join(', ')}`);

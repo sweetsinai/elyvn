@@ -97,7 +97,7 @@ async function executeOne(db, action, lead, client) {
 
     case 'update_lead_stage': {
       if (!lead?.id) return { updated: false };
-      const { isValidStage } = require('./validators');
+      const { isValidStage } = require('./validate');
       if (!isValidStage(action.stage)) {
         console.warn(`[Executor] Invalid stage: ${action.stage}`);
         return { updated: false, error: 'invalid_stage' };
