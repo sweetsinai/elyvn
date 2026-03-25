@@ -428,6 +428,16 @@ const migrations = [
       `);
     },
   },
+  {
+    id: '017_emails_sent_unique_constraint',
+    description: 'Add UNIQUE index on emails_sent(prospect_id, campaign_id) to prevent duplicate sends',
+    up(db) {
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_emails_sent_prospect_campaign_unique
+          ON emails_sent(prospect_id, campaign_id)
+      `);
+    },
+  },
 ];
 
 /**

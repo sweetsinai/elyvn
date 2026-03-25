@@ -5,7 +5,24 @@
  */
 const express = require('express');
 const router = express.Router();
-const { randomUUID } = require('crypto');
+const { randomUUID, createHmac } = require('crypto');
+
+// Cal.com webhook signature verification
+router.use((req, res, next) => {
+  const secret = process.env.CALCOM_WEBHOOK_SECRET;
+  if (!secret) {
+    console.warn('[calcom-webhook] Webhook signature validation disabled - set CALCOM_WEBHOOK_SECRET');
+    return next();
+  }
+  const signature = req.headers['x-cal-signature-256'];
+  const payload = JSON.stringify(req.body);
+  const expected = createHmac('sha256', secret).update(payload).digest('hex');
+  if (signature !== expected) {
+    console.warn('[calcom-webhook] Invalid webhook signature');
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+  next();
+});
 
 // POST /webhooks/calcom
 router.post('/', async (req, res) => {
