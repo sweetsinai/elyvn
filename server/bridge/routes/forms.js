@@ -7,15 +7,15 @@ const { normalizePhone } = require('../utils/phone');
 const { isValidUUID, isValidPhone, isValidEmail, sanitizeString } = require('../utils/validate');
 
 // Simple in-memory rate limiter for form submissions
-const formRateLimit = new Map();
+const formRateLimitStore = new Map();
 const FORM_RATE_LIMIT = 10; // max requests
 const FORM_RATE_WINDOW = 60000; // per 60 seconds
 
 function checkFormRateLimit(ip) {
   const now = Date.now();
-  const entry = formRateLimit.get(ip);
+  const entry = formRateLimitStore.get(ip);
   if (!entry || now - entry.start > FORM_RATE_WINDOW) {
-    formRateLimit.set(ip, { start: now, count: 1 });
+    formRateLimitStore.set(ip, { start: now, count: 1 });
     return true;
   }
   entry.count++;
@@ -26,8 +26,8 @@ function checkFormRateLimit(ip) {
 // Cleanup every 5 minutes
 setInterval(() => {
   const now = Date.now();
-  for (const [ip, entry] of formRateLimit) {
-    if (now - entry.start > FORM_RATE_WINDOW * 2) formRateLimit.delete(ip);
+  for (const [ip, entry] of formRateLimitStore) {
+    if (now - entry.start > FORM_RATE_WINDOW * 2) formRateLimitStore.delete(ip);
   }
 }, 300000);
 
