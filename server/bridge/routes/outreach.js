@@ -42,18 +42,39 @@ function getTransporter() {
   if (!transporter) {
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '465'),
-      secure: parseInt(process.env.SMTP_PORT || '465') === 465,
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_SECURE === 'true',
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
+      }
     });
   }
   return transporter;
+}
+
+// Helper: extract shared prospect scraping logic
+async function scrapeSingleQuery(industry, city, state, country, maxResults) {
+  const query = `${industry} in ${city}${state ? ', ' + state : ''}${country ? ', ' + country : ''}`;
+
+  const placesResp = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+      'X-Goog-FieldMask': 'places.displayName,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.formattedAddress,places.rating,places.userRatingCount'
+    },
+    body: JSON.stringify({
+      textQuery: query,
+      maxResultCount: Math.min(parseInt(maxResults), 20)
+    })
+  });
+
+  if (!placesResp.ok) {
+    throw new Error('Google Places API error: ' + (await placesResp.text()));
+  }
+
+  return await placesResp.json();
 }
 
 // POST /scrape
@@ -69,44 +90,20 @@ router.post('/scrape', async (req, res) => {
     const query = `${industry} in ${city}${country ? ', ' + country : ''}`;
     console.log(`[outreach] Scraping: ${query}`);
 
-    // Google Places Text Search (legacy API — already enabled on project)
-    const placesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${GOOGLE_PLACES_API_KEY}`;
-    const placesResp = await fetch(placesUrl, { signal: AbortSignal.timeout(15000) });
-
-    if (!placesResp.ok) {
-      const errText = await placesResp.text();
-      console.error('[outreach] Places API error:', errText);
-      return res.status(502).json({ error: 'Google Places API error' });
-    }
-
-    const placesData = await placesResp.json();
-    if (placesData.status !== 'OK' && placesData.status !== 'ZERO_RESULTS') {
-      console.error('[outreach] Places API status:', placesData.status, placesData.error_message);
-      return res.status(502).json({ error: `Google Places: ${placesData.status}` });
-    }
-    const places = (placesData.results || []).slice(0, Math.min(parseInt(maxResults), 20));
+    const placesData = await scrapeSingleQuery(industry, city, country, null, maxResults);
+    const places = placesData.places || [];
 
     const prospects = [];
     let withEmails = 0;
 
     for (const place of places) {
-      const name = place.name || '';
-      // Fetch phone from Place Details API
-      let rawPhone = null;
-      let website = null;
-      try {
-        const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=formatted_phone_number,website&key=${GOOGLE_PLACES_API_KEY}`;
-        const detResp = await fetch(detailsUrl, { signal: AbortSignal.timeout(5000) });
-        if (detResp.ok) {
-          const det = await detResp.json();
-          rawPhone = det.result?.formatted_phone_number || null;
-          website = det.result?.website || null;
-        }
-      } catch (_) {}
+      const name = place.displayName?.text || '';
+      const rawPhone = place.nationalPhoneNumber || place.internationalPhoneNumber || null;
       const phone = normalizePhoneE164(rawPhone);
-      const address = place.formatted_address || null;
+      const website = place.websiteUri || null;
+      const address = place.formattedAddress || null;
       const rating = place.rating || null;
-      const reviewCount = place.user_ratings_total || 0;
+      const reviewCount = place.userRatingCount || 0;
 
       // Try to find email from website — check homepage AND /contact page
       let email = null;
@@ -186,6 +183,279 @@ router.post('/scrape', async (req, res) => {
   }
 });
 
+// POST /blast — scrape → generate → send in one call
+router.post('/blast', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { industry, city, state, maxResults = 20 } = req.body;
+
+    if (!industry || !city) {
+      return res.status(400).json({ error: 'industry and city are required' });
+    }
+
+    // ===== STEP 1: SCRAPE =====
+    console.log(`[blast] Scraping ${industry} in ${city}, ${state || 'US'}`);
+    const placesData = await scrapeSingleQuery(industry, city, state, 'US', maxResults);
+    const places = placesData.places || [];
+
+    const prospects = [];
+    let withEmails = 0;
+
+    for (const place of places) {
+      const name = place.displayName?.text || '';
+      const rawPhone = place.nationalPhoneNumber || place.internationalPhoneNumber || null;
+      const phone = normalizePhoneE164(rawPhone);
+      const website = place.websiteUri || null;
+      const address = place.formattedAddress || null;
+      const rating = place.rating || null;
+      const reviewCount = place.userRatingCount || 0;
+
+      let email = null;
+      if (website) {
+        const emailRegexes = [
+          /mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/gi,
+          /\b([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.(?:com|net|org|io|co|biz|info|us|ca|uk))\b/gi,
+        ];
+        const excludePatterns = /\.(png|jpg|jpeg|gif|svg|css|js|woff|ico)$/i;
+
+        const pagesToCheck = [website];
+        const baseUrl = website.replace(/\/+$/, '');
+        pagesToCheck.push(`${baseUrl}/contact`, `${baseUrl}/contact-us`, `${baseUrl}/about`);
+
+        for (const pageUrl of pagesToCheck) {
+          if (email) break;
+          try {
+            const siteResp = await fetch(pageUrl, {
+              signal: AbortSignal.timeout(5000),
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+              redirect: 'follow',
+            });
+            if (siteResp.ok) {
+              const html = await siteResp.text();
+              for (const regex of emailRegexes) {
+                regex.lastIndex = 0;
+                let match;
+                while ((match = regex.exec(html)) !== null) {
+                  const candidate = match[1].toLowerCase();
+                  if (!excludePatterns.test(candidate) &&
+                      !candidate.includes('noreply') &&
+                      !candidate.includes('no-reply') &&
+                      !candidate.includes('example.com') &&
+                      !candidate.includes('sentry.io') &&
+                      !candidate.includes('wixpress.com') &&
+                      candidate.length < 80) {
+                    email = candidate;
+                    withEmails++;
+                    break;
+                  }
+                }
+                if (email) break;
+              }
+            }
+          } catch (_) {
+            // Timeout or fetch error, try next page
+          }
+        }
+      }
+
+      const id = randomUUID();
+      const now = new Date().toISOString();
+
+      try {
+        db.prepare(`
+          INSERT INTO prospects (id, business_name, phone, email, website, address, industry, city, state, country, rating, review_count, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'US', ?, ?, 'scraped', ?, ?)
+        `).run(id, name, phone, email, website, address, industry, city, state || null, rating, reviewCount, now, now);
+      } catch (err) {
+        if (!err.message.includes('UNIQUE')) {
+          console.error('[blast] Insert prospect error:', err.message);
+        }
+        continue;
+      }
+
+      prospects.push({ id, business_name: name, phone, email, website, address, rating, review_count: reviewCount, industry, city, state });
+    }
+
+    console.log(`[blast] Scraped ${prospects.length}, ${withEmails} with emails`);
+
+    // ===== STEP 2: CREATE CAMPAIGN =====
+    const campaignName = `${industry} in ${city} - ${new Date().toLocaleDateString()}`;
+    const campaignId = randomUUID();
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO campaigns (id, name, industry, city, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'draft', ?, ?)
+    `).run(campaignId, campaignName, industry, city, now, now);
+
+    // Link prospects to campaign
+    const linkStmt = db.prepare(
+      'INSERT INTO campaign_prospects (id, campaign_id, prospect_id, created_at) VALUES (?, ?, ?, ?)'
+    );
+
+    const linkMany = db.transaction((ids) => {
+      for (const pid of ids) {
+        linkStmt.run(randomUUID(), campaignId, pid, now);
+      }
+    });
+    linkMany(prospects.map(p => p.id));
+
+    console.log(`[blast] Campaign created: ${campaignId}`);
+
+    // ===== STEP 3: GENERATE EMAILS =====
+    const { generateColdEmail, pickVariant } = require('../utils/emailGenerator');
+    const senderEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+    const emails = [];
+    let generateFailed = 0;
+
+    for (let idx = 0; idx < prospects.length; idx++) {
+      const prospect = prospects[idx];
+      if (!prospect.email) continue;
+
+      try {
+        const emailGen = await generateColdEmail(prospect);
+        const variant = pickVariant(idx);
+        const subject = variant === 'A' ? emailGen.subject_a : emailGen.subject_b;
+        const emailId = randomUUID();
+
+        db.prepare(`
+          INSERT INTO emails_sent (id, campaign_id, prospect_id, to_email, from_email, subject, body, subject_a, subject_b, variant, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
+        `).run(emailId, campaignId, prospect.id, prospect.email, senderEmail, subject, emailGen.body, emailGen.subject_a, emailGen.subject_b, variant, now, now);
+
+        emails.push({ id: emailId, prospect_id: prospect.id, to_email: prospect.email, subject, variant, status: 'draft' });
+      } catch (err) {
+        console.error(`[blast] Generate failed for ${prospect.business_name}:`, err.message);
+        generateFailed++;
+      }
+    }
+
+    console.log(`[blast] Generated ${emails.length} emails`);
+
+    // ===== STEP 4: SEND EMAILS =====
+    const today = new Date().toISOString().split('T')[0];
+    const sentToday = db.prepare(
+      "SELECT COUNT(*) as count FROM emails_sent WHERE status = 'sent' AND sent_at >= ?"
+    ).get(today + 'T00:00:00.000Z').count;
+
+    const remaining = DAILY_SEND_LIMIT - sentToday;
+    if (remaining <= 0) {
+      return res.status(429).json({
+        error: `Daily send limit reached (${DAILY_SEND_LIMIT}/day)`,
+        campaign_id: campaignId,
+        scraped: prospects.length,
+        generated: emails.length,
+        sent: 0,
+        failed: 0,
+        prospects: prospects.slice(0, 5)
+      });
+    }
+
+    const transport = getTransporter();
+    let sent = 0;
+    let failed = 0;
+    const sanitizeHeader = s => String(s || '').replace(/[\r\n]/g, '');
+
+    for (let i = 0; i < emails.length && i < remaining; i++) {
+      const email = db.prepare('SELECT * FROM emails_sent WHERE id = ?').get(emails[i].id);
+      if (!email) continue;
+
+      try {
+        await transport.sendMail({
+          from: `"${process.env.OUTREACH_SENDER_NAME || 'Sohan'}" <${sanitizeHeader(email.from_email)}>`,
+          to: sanitizeHeader(email.to_email),
+          subject: sanitizeHeader(email.subject),
+          text: email.body,
+          html: wrapWithCTA(
+            email.body.replace(/Book a 10-min demo:.*$/m, '').trim(),
+            'Book a 10-min Demo',
+            process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
+            '',
+            { unsubscribeEmail: email.from_email }
+          ),
+          headers: {
+            'List-Unsubscribe': `<mailto:${sanitizeHeader(email.from_email)}?subject=unsubscribe>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          },
+        });
+
+        const sentNow = new Date().toISOString();
+        db.prepare(
+          "UPDATE emails_sent SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?"
+        ).run(sentNow, sentNow, email.id);
+
+        // Schedule Day 3 follow-up
+        try {
+          const { enqueueJob } = require('../utils/jobQueue');
+          enqueueJob(db, 'noreply_followup', {
+            prospect_id: email.prospect_id,
+            to_email: email.to_email,
+            from_email: email.from_email,
+            original_subject: email.subject,
+            campaign_id: campaignId,
+            booking_link: process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
+            sender_name: process.env.OUTREACH_SENDER_NAME || 'Sohan',
+            day: 3,
+          }, new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString());
+        } catch (err) {
+          console.error('[blast] Failed to schedule follow-up:', err.message);
+        }
+
+        sent++;
+
+        // 2-second delay between sends
+        if (i < emails.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (err) {
+        console.error(`[blast] Failed to send to ${email.to_email}:`, err.message);
+
+        const isBounce = err.responseCode >= 550 || err.message.includes('rejected') ||
+          err.message.includes('not exist') || err.message.includes('undeliverable');
+
+        const status = isBounce ? 'bounced' : 'failed';
+        const nowTime = new Date().toISOString();
+
+        db.prepare(
+          "UPDATE emails_sent SET status = ?, error = ?, updated_at = ? WHERE id = ?"
+        ).run(status, err.message, nowTime, email.id);
+
+        if (isBounce) {
+          db.prepare("UPDATE prospects SET status = 'bounced', updated_at = ? WHERE id = ?").run(nowTime, email.prospect_id);
+        }
+
+        failed++;
+      }
+    }
+
+    // Mark campaign as active
+    db.prepare(
+      "UPDATE campaigns SET status = 'active', updated_at = ? WHERE id = ?"
+    ).run(new Date().toISOString(), campaignId);
+
+    console.log(`[blast] Campaign ${campaignId}: sent=${sent} failed=${failed}`);
+
+    res.json({
+      campaign_id: campaignId,
+      scraped: prospects.length,
+      generated: emails.length,
+      emailed: emails.length,
+      sent,
+      failed,
+      remaining: remaining - sent,
+      prospects: prospects.slice(0, 5)
+    });
+  } catch (err) {
+    console.error('[blast] error:', err);
+    // Include campaign_id if it was created before the error
+    const errorResponse = {
+      error: 'Failed to execute blast',
+      details: err.message
+    };
+    res.status(500).json(errorResponse);
+  }
+});
+
 // POST /campaign
 router.post('/campaign', (req, res) => {
   try {
@@ -245,64 +515,31 @@ router.post('/campaign/:campaignId/generate', async (req, res) => {
       return res.status(400).json({ error: 'No prospects in campaign' });
     }
 
+    const { generateColdEmail, pickVariant } = require('../utils/emailGenerator');
     const emails = [];
-    const senderName = process.env.OUTREACH_SENDER_NAME || 'Sohan';
     const senderEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-    const bookingLink = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick';
-    const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
 
-    for (const prospect of prospects) {
+    for (let idx = 0; idx < prospects.length; idx++) {
+      const prospect = prospects[idx];
       if (!prospect.email) continue;
 
       // Skip bounced/unsubscribed prospects
       if (['bounced', 'unsubscribed'].includes(prospect.status)) continue;
 
       try {
-        const resp = await anthropic.messages.create({
-          model: MODEL,
-          max_tokens: 500,
-          messages: [{
-            role: 'user',
-            content: `Write a cold email to ${prospect.business_name} (${prospect.industry || campaign.industry} business in ${prospect.city || campaign.city}).
-They have ${prospect.review_count || 'some'} reviews and a ${prospect.rating || 'good'} rating.
-
-The email is from ${senderName} at ELYVN, an AI-powered phone answering service that handles calls, books appointments, and qualifies leads 24/7.
-
-Rules:
-- Subject line first, then blank line, then body
-- Keep it under 150 words
-- Personalize to their business
-- MUST end with this exact CTA: "Book a 10-min demo: ${bookingLink}"
-- Professional but warm tone, written from ${senderName}
-- No false claims
-- Sign off: ${senderName}, ELYVN
-
-Format:
-Subject: [subject line]
-
-[email body]`
-          }]
-        });
-
-        const content = resp.content[0]?.text || '';
-        const subjectMatch = content.match(/^Subject:\s*(.+)/m);
-        const subject = subjectMatch ? subjectMatch[1].trim() : `AI receptionist for ${prospect.business_name}`;
-        let body = content.replace(/^Subject:\s*.+\n\n?/m, '').trim();
-
-        // Safety net: ensure booking link is always in the body
-        if (!body.includes(bookingLink)) {
-          body += `\n\nBook a 10-min demo: ${bookingLink}`;
-        }
+        const emailGen = await generateColdEmail(prospect);
+        const variant = pickVariant(idx);
+        const subject = variant === 'A' ? emailGen.subject_a : emailGen.subject_b;
 
         const emailId = randomUUID();
         const now = new Date().toISOString();
 
         db.prepare(`
-          INSERT INTO emails_sent (id, campaign_id, prospect_id, to_email, from_email, subject, body, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
-        `).run(emailId, campaignId, prospect.id, prospect.email, senderEmail, subject, body, now, now);
+          INSERT INTO emails_sent (id, campaign_id, prospect_id, to_email, from_email, subject, body, subject_a, subject_b, variant, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
+        `).run(emailId, campaignId, prospect.id, prospect.email, senderEmail, subject, emailGen.body, emailGen.subject_a, emailGen.subject_b, variant, now, now);
 
-        emails.push({ id: emailId, prospect_id: prospect.id, to_email: prospect.email, subject, body, status: 'draft' });
+        emails.push({ id: emailId, prospect_id: prospect.id, to_email: prospect.email, subject, body: emailGen.body, variant, status: 'draft' });
       } catch (err) {
         console.error(`[outreach] Failed to generate email for ${prospect.business_name}:`, err.message);
       }
@@ -370,23 +607,30 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
     let failed = 0;
 
     const sanitizeHeader = s => String(s || '').replace(/[\r\n]/g, '');
+    const { generateTrackingPixel, wrapLinksWithTracking } = require('../utils/emailTracking');
 
     for (const email of drafts) {
       try {
+        // Generate HTML with tracking
+        let htmlContent = wrapWithCTA(
+          email.body.replace(/Book a 10-min demo:.*$/m, '').trim(),
+          'Book a 10-min Demo',
+          process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
+          '',
+          { unsubscribeEmail: email.from_email }
+        );
+        // Add link tracking and open pixel
+        htmlContent = wrapLinksWithTracking(htmlContent, email.id);
+        htmlContent += generateTrackingPixel(email.id);
+
         await transport.sendMail({
           from: `"${process.env.OUTREACH_SENDER_NAME || 'Sohan'}" <${sanitizeHeader(email.from_email)}>`,
           to: sanitizeHeader(email.to_email),
           subject: sanitizeHeader(email.subject),
           text: email.body,
-          html: wrapWithCTA(
-            email.body.replace(/Book a 10-min demo:.*$/m, '').trim(),
-            'Book a 10-min Demo',
-            process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick',
-            '',
-            { unsubscribeEmail: email.from_email }
-          ),
+          html: htmlContent,
           headers: {
-            'List-Unsubscribe': `<mailto:${email.from_email}?subject=unsubscribe>`,
+            'List-Unsubscribe': `<mailto:${sanitizeHeader(email.from_email)}?subject=unsubscribe>`,
             'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
           },
         });
@@ -405,7 +649,7 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
             from_email: email.from_email,
             original_subject: email.subject,
             campaign_id: campaignId,
-            booking_link: process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick',
+            booking_link: process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo',
             sender_name: process.env.OUTREACH_SENDER_NAME || 'Sohan',
             day: 3,
           }, new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString());
@@ -536,7 +780,7 @@ Reply: ${email.reply_text}`
       'UPDATE prospects SET status = ?, updated_at = ? WHERE id = ?'
     ).run(statusMap[classification] || 'engaged', now, email.prospect_id);
 
-    const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick';
+    const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
     const SENDER_NAME = process.env.OUTREACH_SENDER_NAME || 'Sohan';
 
     // === INTERESTED: Full conversion sequence ===
@@ -669,17 +913,79 @@ Reply: ${email.reply_text}`
   }
 });
 
-// POST /campaign/:campaignId/retry — reset failed emails back to draft
-router.post('/campaign/:campaignId/retry', (req, res) => {
+// GET /campaign/:campaignId/ab-results
+router.get('/campaign/:campaignId/ab-results', (req, res) => {
   try {
     const db = req.app.locals.db;
     const { campaignId } = req.params;
-    const result = db.prepare(
-      "UPDATE emails_sent SET status = 'draft', error = NULL, updated_at = ? WHERE campaign_id = ? AND status = 'failed'"
-    ).run(new Date().toISOString(), campaignId);
-    res.json({ reset: result.changes });
+
+    // Get all emails in campaign grouped by variant
+    const variantA = db.prepare(`
+      SELECT
+        COUNT(*) as sent,
+        SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened,
+        SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked
+      FROM emails_sent
+      WHERE campaign_id = ? AND status IN ('sent', 'bounced', 'failed') AND variant = 'A'
+    `).get(campaignId);
+
+    const variantB = db.prepare(`
+      SELECT
+        COUNT(*) as sent,
+        SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened,
+        SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked
+      FROM emails_sent
+      WHERE campaign_id = ? AND status IN ('sent', 'bounced', 'failed') AND variant = 'B'
+    `).get(campaignId);
+
+    // Get top subject line for each variant
+    const topSubjectA = db.prepare(`
+      SELECT subject, COUNT(*) as count FROM emails_sent
+      WHERE campaign_id = ? AND variant = 'A'
+      GROUP BY subject
+      ORDER BY count DESC
+      LIMIT 1
+    `).get(campaignId);
+
+    const topSubjectB = db.prepare(`
+      SELECT subject, COUNT(*) as count FROM emails_sent
+      WHERE campaign_id = ? AND variant = 'B'
+      GROUP BY subject
+      ORDER BY count DESC
+      LIMIT 1
+    `).get(campaignId);
+
+    // Calculate rates
+    const aOpenRate = variantA.sent > 0 ? variantA.opened / variantA.sent : 0;
+    const aClickRate = variantA.sent > 0 ? variantA.clicked / variantA.sent : 0;
+    const bOpenRate = variantB.sent > 0 ? variantB.opened / variantB.sent : 0;
+    const bClickRate = variantB.sent > 0 ? variantB.clicked / variantB.sent : 0;
+
+    // Determine winner (highest open rate)
+    const winner = aOpenRate >= bOpenRate ? 'A' : 'B';
+
+    res.json({
+      variant_a: {
+        sent: variantA.sent || 0,
+        opened: variantA.opened || 0,
+        clicked: variantA.clicked || 0,
+        open_rate: Math.round(aOpenRate * 100) / 100,
+        click_rate: Math.round(aClickRate * 100) / 100,
+        top_subject: topSubjectA?.subject || 'N/A'
+      },
+      variant_b: {
+        sent: variantB.sent || 0,
+        opened: variantB.opened || 0,
+        clicked: variantB.clicked || 0,
+        open_rate: Math.round(bOpenRate * 100) / 100,
+        click_rate: Math.round(bClickRate * 100) / 100,
+        top_subject: topSubjectB?.subject || 'N/A'
+      },
+      winner
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[outreach] ab-results error:', err);
+    res.status(500).json({ error: 'Failed to get A/B results' });
   }
 });
 
@@ -752,7 +1058,7 @@ Reply: ${email.reply_text}`
         ).run(statusMap[classification] || 'engaged', now, email.prospect_id);
 
         const prospect = db.prepare('SELECT * FROM prospects WHERE id = ?').get(email.prospect_id);
-        const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick';
+        const BOOKING_LINK = process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
         const SENDER_NAME = process.env.OUTREACH_SENDER_NAME || 'Sohan';
 
         // Auto-respond based on classification

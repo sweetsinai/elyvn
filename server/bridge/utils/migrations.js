@@ -264,11 +264,32 @@ const migrations = [
     },
   },
   {
-    id: '010_fix_leads_unique_index',
-    description: 'Recreate leads unique index (drop old non-unique if exists)',
+    id: '010_email_tracking_columns',
+    description: 'Add email tracking columns (opens, clicks, variants)',
     up(db) {
-      db.exec('DROP INDEX IF EXISTS idx_leads_client_phone');
-      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone)');
+      const cols = db.prepare("PRAGMA table_info('emails_sent')").all().map(c => c.name);
+      if (!cols.includes('opened_at')) {
+        db.exec('ALTER TABLE emails_sent ADD COLUMN opened_at TEXT');
+      }
+      if (!cols.includes('open_count')) {
+        db.exec('ALTER TABLE emails_sent ADD COLUMN open_count INTEGER DEFAULT 0');
+      }
+      if (!cols.includes('clicked_at')) {
+        db.exec('ALTER TABLE emails_sent ADD COLUMN clicked_at TEXT');
+      }
+      if (!cols.includes('click_count')) {
+        db.exec('ALTER TABLE emails_sent ADD COLUMN click_count INTEGER DEFAULT 0');
+      }
+      if (!cols.includes('variant')) {
+        db.exec('ALTER TABLE emails_sent ADD COLUMN variant TEXT');
+      }
+      // Add column for tracking subject A/B
+      if (!cols.includes('subject_a')) {
+        db.exec('ALTER TABLE emails_sent ADD COLUMN subject_a TEXT');
+      }
+      if (!cols.includes('subject_b')) {
+        db.exec('ALTER TABLE emails_sent ADD COLUMN subject_b TEXT');
+      }
     },
   },
 ];

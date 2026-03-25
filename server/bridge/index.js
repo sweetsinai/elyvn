@@ -170,8 +170,91 @@ app.use('/webhooks/form', formRoutes);
 const calcomWebhook = require('./routes/calcom-webhook');
 app.use('/webhooks/calcom', calcomWebhook);
 
+// Email tracking routes (open pixel and click redirect)
+app.get('/t/open/:emailId', (req, res) => {
+  const { emailId } = req.params;
+
+  // Validate emailId format (UUID)
+  if (!emailId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(emailId)) {
+    // Return pixel anyway (don't expose invalid ID)
+    const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+    res.set({
+      'Content-Type': 'image/gif',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+    return res.send(pixel);
+  }
+
+  try {
+    if (db) {
+      db.prepare("UPDATE emails_sent SET opened_at = COALESCE(opened_at, ?), open_count = COALESCE(open_count, 0) + 1, updated_at = ? WHERE id = ?")
+        .run(new Date().toISOString(), new Date().toISOString(), emailId);
+    }
+  } catch (_) {
+    // Silently fail if email not found or DB error
+  }
+  // Return 1x1 transparent GIF
+  const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+  res.set({
+    'Content-Type': 'image/gif',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  res.send(pixel);
+});
+
+app.get('/t/click/:emailId', (req, res) => {
+  const { emailId } = req.params;
+  const url = req.query.url;
+
+  // Validate emailId format (UUID)
+  if (!emailId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(emailId)) {
+    return res.redirect('/');
+  }
+
+  try {
+    if (db) {
+      db.prepare("UPDATE emails_sent SET clicked_at = COALESCE(clicked_at, ?), click_count = COALESCE(click_count, 0) + 1, updated_at = ? WHERE id = ?")
+        .run(new Date().toISOString(), new Date().toISOString(), emailId);
+    }
+  } catch (_) {
+    // Silently fail if email not found or DB error
+  }
+
+  if (url) {
+    try {
+      const decodedUrl = decodeURIComponent(url);
+      // Only allow http/https URLs or relative paths (starting with /)
+      // This prevents open redirect attacks
+      if (decodedUrl.startsWith('http://') || decodedUrl.startsWith('https://') || decodedUrl.startsWith('/')) {
+        // For absolute URLs, do basic validation via URL constructor
+        if (decodedUrl.startsWith('http')) {
+          new URL(decodedUrl); // Throws if invalid
+        }
+        return res.redirect(decodedUrl);
+      }
+    } catch (err) {
+      // Invalid URL format or constructor error, redirect to home
+    }
+  }
+  res.redirect('/');
+});
+
 // Static files (production dashboard build)
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Landing page route
+app.get('/landing', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
+// Demo endpoint
+app.get('/demo', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'demo.html'));
+});
 
 // Metrics endpoint (internal, behind API auth)
 app.get('/metrics', apiAuth, (req, res) => {
@@ -336,7 +419,7 @@ app.listen(PORT, () => {
           secure: process.env.SMTP_SECURE === 'true',
           auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
         });
-        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick';
+        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
         const SENDER = payload.sender_name || process.env.OUTREACH_SENDER_NAME || 'Sohan';
         const body = `Hi${prospect.business_name ? ' ' + prospect.business_name.split(' ')[0] : ''},\n\nJust following up — I know things get busy! The demo is only 10 minutes and I'll show you exactly how ELYVN handles calls for businesses like yours.\n\nHere's the link again: ${BOOKING_LINK}\n\nNo pressure at all — happy to answer any questions too.\n\n${SENDER}\nELYVN`;
         await transport.sendMail({
@@ -370,7 +453,7 @@ app.listen(PORT, () => {
           secure: process.env.SMTP_SECURE === 'true',
           auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
         });
-        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/quick';
+        const BOOKING_LINK = payload.booking_link || process.env.CALCOM_BOOKING_LINK || 'https://cal.com/elyvn/demo';
         const SENDER = payload.sender_name || process.env.OUTREACH_SENDER_NAME || 'Sohan';
         const dayNum = payload.day || 3;
         let body;
@@ -432,6 +515,18 @@ app.listen(PORT, () => {
             'Content-Type': 'application/json',
             ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
           },
+        }, (res) => {
+          res.on('error', (err) => {
+            console.error('[auto-classify] Response error:', err.message);
+          });
+          res.on('data', () => {}); // drain response
+        });
+        req.on('error', (err) => {
+          console.error('[auto-classify] Request error:', err.message);
+        });
+        req.setTimeout(30000, () => {
+          req.destroy();
+          console.error('[auto-classify] Request timeout after 30s');
         });
         req.end();
       }

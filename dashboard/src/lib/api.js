@@ -31,7 +31,14 @@ async function apiFetch(url, options = {}) {
     window.location.reload();
     throw new Error('Unauthorized');
   }
-  return res.json();
+  // Check if response is JSON before parsing
+  const contentType = res.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    return res.json();
+  } else {
+    // Non-JSON response
+    throw new Error(`Expected JSON response, got ${contentType || 'unknown'}`);
+  }
 }
 
 // Health (no auth needed)

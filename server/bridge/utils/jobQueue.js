@@ -47,6 +47,20 @@ async function processJobs(db, handlers) {
   let failed = 0;
 
   try {
+    // Clean up old completed/failed/cancelled jobs (older than 7 days) to prevent table bloat
+    try {
+      const result = db.prepare(`
+        DELETE FROM job_queue
+        WHERE status IN ('completed', 'failed', 'cancelled')
+        AND updated_at < datetime('now', '-7 days')
+      `).run();
+      if (result.changes > 0) {
+        console.log(`[jobQueue] Cleaned up ${result.changes} old jobs`);
+      }
+    } catch (err) {
+      console.warn('[jobQueue] Cleanup error:', err.message);
+    }
+
     const due = db.prepare(`
       SELECT * FROM job_queue
       WHERE status = 'pending'
@@ -61,7 +75,7 @@ async function processJobs(db, handlers) {
         if (!handler) {
           console.warn(`[jobQueue] No handler for job type: ${job.type}`);
           db.prepare(
-            "UPDATE job_queue SET status = 'failed', error = ? WHERE id = ?"
+            "UPDATE job_queue SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?"
           ).run('Unknown job type', job.id);
           failed++;
           continue;
@@ -81,7 +95,7 @@ async function processJobs(db, handlers) {
 
         // Mark as completed
         db.prepare(
-          "UPDATE job_queue SET status = 'completed', completed_at = datetime('now') WHERE id = ?"
+          "UPDATE job_queue SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
         ).run(job.id);
 
         processed++;
@@ -95,14 +109,14 @@ async function processJobs(db, handlers) {
           const backoffMs = Math.pow(2, attempts) * 60 * 1000; // 2^n minutes
           const nextScheduled = new Date(Date.now() + backoffMs).toISOString();
           db.prepare(
-            "UPDATE job_queue SET attempts = ?, scheduled_at = ?, error = ? WHERE id = ?"
+            "UPDATE job_queue SET attempts = ?, scheduled_at = ?, error = ?, updated_at = datetime('now') WHERE id = ?"
           ).run(attempts, nextScheduled, err.message.substring(0, 255), job.id);
 
           console.warn(`[jobQueue] Job ${job.id} failed (attempt ${attempts}/${job.max_attempts}), rescheduled`);
         } else {
           // Mark as permanently failed
           db.prepare(
-            "UPDATE job_queue SET status = 'failed', error = ?, failed_at = datetime('now') WHERE id = ?"
+            "UPDATE job_queue SET status = 'failed', error = ?, failed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
           ).run(err.message.substring(0, 255), job.id);
 
           console.error(`[jobQueue] Job ${job.id} permanently failed:`, err.message);
