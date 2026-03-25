@@ -461,6 +461,9 @@ const server = app.listen(PORT, () => {
           }
         } catch (callErr) {
           console.error(`[jobQueue] Retell outbound call error:`, callErr.message);
+          if (captureException) {
+            captureException(callErr, { context: 'speed_to_lead_callback', leadId: payload.leadId });
+          }
         }
       },
       'followup_sms': async (payload) => {
@@ -577,9 +580,20 @@ const server = app.listen(PORT, () => {
     };
 
     setInterval(() => {
-      processJobs(db, jobHandlers).catch(err =>
-        console.error('[jobQueue] Processing error:', err.message)
-      );
+      try {
+        processJobs(db, jobHandlers).catch(err => {
+          console.error('[jobQueue] Processing error:', err.message);
+          // Log to monitoring if available
+          if (captureException) {
+            captureException(err, { context: 'jobQueue.processJobs' });
+          }
+        });
+      } catch (err) {
+        console.error('[jobQueue] Unexpected error in setInterval:', err.message);
+        if (captureException) {
+          captureException(err, { context: 'jobQueue.setInterval' });
+        }
+      }
     }, 15000); // Every 15 seconds
   }
 
@@ -594,32 +608,51 @@ const server = app.listen(PORT, () => {
         console.log(`[auto-classify] Found ${unclassified.c} unclassified replies, triggering...`);
         // Use internal HTTP call to reuse route logic
         const http = require('http');
-        const req = http.request({
-          hostname: 'localhost',
-          port: PORT,
-          path: '/api/outreach/auto-classify',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
-          },
-        }, (res) => {
-          res.on('error', (err) => {
-            console.error('[auto-classify] Response error:', err.message);
+        try {
+          const req = http.request({
+            hostname: 'localhost',
+            port: PORT,
+            path: '/api/outreach/auto-classify',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+            },
+          }, (res) => {
+            res.on('error', (err) => {
+              console.error('[auto-classify] Response error:', err.message);
+              if (captureException) {
+                captureException(err, { context: 'auto-classify.response' });
+              }
+            });
+            res.on('data', () => {}); // drain response
+            res.on('end', () => {
+              // Properly close connection
+            });
           });
-          res.on('data', () => {}); // drain response
-        });
-        req.on('error', (err) => {
-          console.error('[auto-classify] Request error:', err.message);
-        });
-        req.setTimeout(30000, () => {
-          req.destroy();
-          console.error('[auto-classify] Request timeout after 30s');
-        });
-        req.end();
+          req.on('error', (err) => {
+            console.error('[auto-classify] Request error:', err.message);
+            if (captureException) {
+              captureException(err, { context: 'auto-classify.request' });
+            }
+          });
+          req.setTimeout(30000, () => {
+            req.destroy();
+            console.error('[auto-classify] Request timeout after 30s');
+          });
+          req.end();
+        } catch (reqErr) {
+          console.error('[auto-classify] Request creation error:', reqErr.message);
+          if (captureException) {
+            captureException(reqErr, { context: 'auto-classify.creation' });
+          }
+        }
       }
     } catch (err) {
       console.error('[auto-classify] Periodic check error:', err.message);
+      if (captureException) {
+        captureException(err, { context: 'auto-classify.periodic' });
+      }
     }
   }, 5 * 60 * 1000); // Every 5 minutes
 
