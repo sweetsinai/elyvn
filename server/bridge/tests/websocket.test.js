@@ -131,6 +131,8 @@ describe('websocket', () => {
       const { broadcast: bc } = require('../utils/websocket');
       const WebSocket = require('ws');
 
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
       const clientWithError = {
         readyState: 1,
         send: jest.fn(() => {
@@ -158,6 +160,8 @@ describe('websocket', () => {
       connectionCallback(clientWithError, { url: '/ws' });
 
       expect(() => bc('test_event', {})).not.toThrow();
+
+      consoleSpy.mockRestore();
     });
   });
 
