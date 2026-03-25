@@ -135,9 +135,11 @@ describe('websocket', () => {
 
       const clientWithError = {
         readyState: 1,
-        send: jest.fn(() => {
-          throw new Error('Send failed');
-        }),
+        send: jest.fn()
+          .mockImplementationOnce(() => {}) // Initial ping on connection
+          .mockImplementationOnce(() => {
+            throw new Error('Send failed');
+          }), // Error on broadcast
         on: jest.fn(),
         once: jest.fn()
       };

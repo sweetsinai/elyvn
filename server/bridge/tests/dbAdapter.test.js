@@ -171,22 +171,33 @@ describe('dbAdapter', () => {
     });
 
     test('handles pragma errors gracefully', () => {
+      const { runMigrations } = require('../utils/migrations');
+
       const mockDb = {
-        pragma: jest.fn(() => {
-          throw new Error('Pragma failed');
+        pragma: jest.fn((query) => {
+          // Fail only when called during getDatabaseHealth, not during createDatabase
+          // Return empty array during createDatabase setup, throw during getDatabaseHealth
+          if (query.includes('page_count') || query.includes('page_size') || query.includes('freelist_count')) {
+            throw new Error('Pragma failed');
+          }
+          return [];
         }),
         close: jest.fn(),
         prepare: jest.fn(),
         exec: jest.fn(),
         transaction: jest.fn(),
-        _adapter: 'sqlite'
+        _adapter: 'sqlite',
+        _path: '/test/db.db',
+        _createdAt: new Date().toISOString()
       };
 
       const Database = require('better-sqlite3');
       Database.mockImplementation(() => mockDb);
 
-      const { createDatabase, getDatabaseHealth } = require('../utils/dbAdapter');
-      const db = createDatabase({ path: ':memory:' });
+      const { getDatabaseHealth } = require('../utils/dbAdapter');
+
+      // Create db manually with proper mock
+      const db = mockDb;
 
       const health = getDatabaseHealth(db);
 
