@@ -47,6 +47,13 @@ if (!process.env.ELYVN_API_KEY) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Timing-safe API key comparison
+function safeCompare(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
 // Middleware — restrict CORS to known origins
 const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
@@ -130,7 +137,7 @@ function apiAuth(req, res, next) {
   }
 
   // Check global admin key first
-  if (API_KEY && provided === API_KEY) {
+  if (API_KEY && safeCompare(provided, API_KEY)) {
     req.isAdmin = true;
     return next();
   }

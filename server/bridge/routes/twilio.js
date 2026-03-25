@@ -285,11 +285,20 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
       const rawText = resp.content[0]?.text || '';
       try {
         const parsed = JSON.parse(rawText);
-        reply = parsed.reply || rawText;
-        confidence = ['high', 'medium', 'low'].includes(parsed.confidence) ? parsed.confidence : 'high';
-      } catch (_) {
+        // Validate parsed object has expected structure
+        if (typeof parsed === 'object' && parsed !== null && typeof parsed.reply === 'string') {
+          reply = parsed.reply;
+          confidence = ['high', 'medium', 'low'].includes(parsed.confidence) ? parsed.confidence : 'medium';
+        } else {
+          // Parsed but invalid structure — fall back to raw text
+          reply = rawText;
+          confidence = 'medium';
+        }
+      } catch (parseErr) {
+        // JSON.parse failed — use raw text as fallback
+        console.warn('[twilio] Claude response JSON parse failed, using raw text:', parseErr.message);
         reply = rawText;
-        confidence = 'high';
+        confidence = 'medium';
       }
     } catch (err) {
       console.error('[twilio] Claude reply generation failed:', err.message);

@@ -14,6 +14,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const ANTHROPIC_TIMEOUT = 30000;
 
+// Whitelist of allowed client fields for updates (prevents SQL injection)
+const ALLOWED_CLIENT_FIELDS = new Set([
+  'business_name', 'business_address', 'phone', 'email', 'website',
+  'google_review_link', 'ticket_price', 'timezone', 'ai_enabled',
+  'booking_link', 'industry', 'auto_followup_enabled',
+  'owner_name', 'owner_phone', 'owner_email',
+  'retell_agent_id', 'retell_phone', 'twilio_phone',
+  'calcom_event_type_id', 'calcom_booking_link', 'telegram_chat_id',
+  'avg_ticket', 'is_active'
+]);
+
 function withTimeout(promise, ms, label) {
   return Promise.race([
     promise,
@@ -450,18 +461,12 @@ router.put('/clients/:clientId', async (req, res) => {
       return res.status(404).json({ error: 'Client not found' });
     }
 
-    const allowedFields = [
-      'business_name', 'owner_name', 'owner_phone', 'owner_email',
-      'retell_agent_id', 'retell_phone', 'twilio_phone', 'industry', 'timezone',
-      'calcom_event_type_id', 'calcom_booking_link', 'telegram_chat_id',
-      'avg_ticket', 'is_active'
-    ];
-
     const setClauses = [];
     const values = [];
 
-    for (const field of allowedFields) {
-      if (updates[field] !== undefined) {
+    // Only allow whitelisted fields to prevent SQL injection
+    for (const field in updates) {
+      if (ALLOWED_CLIENT_FIELDS.has(field) && updates[field] !== undefined) {
         setClauses.push(`${field} = ?`);
         values.push(updates[field]);
       }
