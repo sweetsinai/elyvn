@@ -1,30 +1,10 @@
-const nodemailer = require('nodemailer');
 const { randomUUID } = require('crypto');
+const { getTransporter } = require('./mailer');
 
 const DAILY_LIMIT = parseInt(process.env.EMAIL_DAILY_LIMIT || '300', 10);
 
-function createTransport() {
-  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const port = parseInt(process.env.SMTP_PORT || '465', 10);
-  const secure = process.env.SMTP_SECURE !== 'false';
-
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    return null;
-  }
-
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-}
-
 async function sendColdEmail(db, prospect, subject, body) {
-  const transport = createTransport();
+  const transport = getTransporter();
   if (!transport) {
     console.error('[EmailSender] SMTP not configured');
     return { success: false, error: 'SMTP not configured' };

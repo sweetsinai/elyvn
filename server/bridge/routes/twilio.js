@@ -8,17 +8,11 @@ const { cancelBooking } = require('../utils/calcom');
 const fs = require('fs');
 const path = require('path');
 const { isValidUUID } = require('../utils/validate');
+const { withTimeout } = require('../utils/resilience');
 
 const anthropic = new Anthropic();
 
 const ANTHROPIC_TIMEOUT = 30000;
-
-function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
-  ]);
-}
 
 // Twilio webhook signature verification
 router.use((req, res, next) => {

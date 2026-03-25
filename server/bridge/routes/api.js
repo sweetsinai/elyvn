@@ -7,6 +7,7 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 const path = require('path');
 const { isValidUUID, escapeLikePattern } = require('../utils/validate');
+const { withTimeout } = require('../utils/resilience');
 
 const anthropic = new Anthropic();
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
@@ -24,13 +25,6 @@ const ALLOWED_CLIENT_FIELDS = new Set([
   'calcom_event_type_id', 'calcom_booking_link', 'telegram_chat_id',
   'avg_ticket', 'is_active'
 ]);
-
-function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
-  ]);
-}
 
 // GET /stats/:clientId
 router.get('/stats/:clientId', (req, res) => {

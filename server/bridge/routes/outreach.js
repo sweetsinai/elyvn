@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { randomUUID } = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
-const nodemailer = require('nodemailer');
+const { getTransporter } = require('../utils/mailer');
 
 const anthropic = new Anthropic();
 const { wrapWithCTA, wrapInTemplate } = require('../utils/emailTemplates');
