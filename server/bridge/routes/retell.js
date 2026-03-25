@@ -25,14 +25,14 @@ const retellBreaker = new CircuitBreaker(
 router.use((req, res, next) => {
   const secret = process.env.RETELL_WEBHOOK_SECRET;
   if (!secret) {
-    console.warn('[retell] RETELL_WEBHOOK_SECRET not configured — skipping signature validation');
+    console.warn('[retell] Webhook signature validation disabled - set RETELL_WEBHOOK_SECRET');
     return next();
   }
   const signature = req.headers['x-retell-signature'];
   const payload = JSON.stringify(req.body);
   const expected = require('crypto').createHmac('sha256', secret).update(payload).digest('hex');
   if (signature !== expected) {
-    console.error('[retell] Invalid webhook signature');
+    console.warn('[retell] Invalid webhook signature');
     return res.status(401).json({ error: 'Invalid signature' });
   }
   next();

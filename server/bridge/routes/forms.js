@@ -6,35 +6,37 @@ const { triggerSpeedSequence } = require('../utils/speed-to-lead');
 const { normalizePhone } = require('../utils/phone');
 const { isValidUUID, isValidPhone, isValidEmail, sanitizeString } = require('../utils/validate');
 
-// Rate limiting for form submissions
-const formRateLimits = new Map();
-const FORM_RATE_LIMIT = 10; // max submissions per minute per IP
-const FORM_RATE_WINDOW = 60000; // 1 minute
+// Simple in-memory rate limiter for form submissions
+const formRateLimit = new Map();
+const FORM_RATE_LIMIT = 10; // max requests
+const FORM_RATE_WINDOW = 60000; // per 60 seconds
+
+function checkFormRateLimit(ip) {
+  const now = Date.now();
+  const entry = formRateLimit.get(ip);
+  if (!entry || now - entry.start > FORM_RATE_WINDOW) {
+    formRateLimit.set(ip, { start: now, count: 1 });
+    return true;
+  }
+  entry.count++;
+  if (entry.count > FORM_RATE_LIMIT) return false;
+  return true;
+}
+
+// Cleanup every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of formRateLimit) {
+    if (now - entry.start > FORM_RATE_WINDOW * 2) formRateLimit.delete(ip);
+  }
+}, 300000);
 
 function formRateLimit(req, res, next) {
-  const key = req.ip || req.connection.remoteAddress;
-  const now = Date.now();
-  const record = formRateLimits.get(key);
-
-  if (record) {
-    // Clean old entries
-    record.timestamps = record.timestamps.filter(t => now - t < FORM_RATE_WINDOW);
-    if (record.timestamps.length >= FORM_RATE_LIMIT) {
-      console.warn(`[forms] Rate limit exceeded for ${key}`);
-      return res.status(429).json({ error: 'Too many submissions. Please try again later.' });
-    }
-    record.timestamps.push(now);
-  } else {
-    formRateLimits.set(key, { timestamps: [now] });
+  const ip = req.ip || req.connection.remoteAddress;
+  if (!checkFormRateLimit(ip)) {
+    console.warn(`[forms] Rate limit exceeded for ${ip}`);
+    return res.status(429).json({ error: 'Too many submissions. Please try again later.' });
   }
-
-  // Cleanup old entries every 5 minutes
-  if (formRateLimits.size > 5000) {
-    for (const [k, v] of formRateLimits) {
-      if (now - Math.max(...v.timestamps) > FORM_RATE_WINDOW) formRateLimits.delete(k);
-    }
-  }
-
   next();
 }
 
