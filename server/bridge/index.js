@@ -472,6 +472,8 @@ const server = app.listen(PORT, () => {
   }
 
   // Auto-classify replies every 5 minutes
+  // Direct function call instead of HTTP self-request (fixes anti-pattern)
+  const { autoClassifyReplies } = require('./utils/autoClassify');
   setInterval(async () => {
     try {
       const unclassified = db.prepare(`
@@ -480,45 +482,13 @@ const server = app.listen(PORT, () => {
       `).get();
       if (unclassified.c > 0) {
         console.log(`[auto-classify] Found ${unclassified.c} unclassified replies, triggering...`);
-        // Use internal HTTP call to reuse route logic
-        const http = require('http');
         try {
-          const req = http.request({
-            hostname: 'localhost',
-            port: PORT,
-            path: '/api/outreach/auto-classify',
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
-            },
-          }, (res) => {
-            res.on('error', (err) => {
-              console.error('[auto-classify] Response error:', err.message);
-              if (captureException) {
-                captureException(err, { context: 'auto-classify.response' });
-              }
-            });
-            res.on('data', () => {}); // drain response
-            res.on('end', () => {
-              // Properly close connection
-            });
-          });
-          req.on('error', (err) => {
-            console.error('[auto-classify] Request error:', err.message);
-            if (captureException) {
-              captureException(err, { context: 'auto-classify.request' });
-            }
-          });
-          req.setTimeout(30000, () => {
-            req.destroy();
-            console.error('[auto-classify] Request timeout after 30s');
-          });
-          req.end();
-        } catch (reqErr) {
-          console.error('[auto-classify] Request creation error:', reqErr.message);
+          const result = await autoClassifyReplies(db);
+          console.log(`[auto-classify] Completed: ${result.classified} classified`);
+        } catch (err) {
+          console.error('[auto-classify] Processing error:', err.message);
           if (captureException) {
-            captureException(reqErr, { context: 'auto-classify.creation' });
+            captureException(err, { context: 'auto-classify.processing' });
           }
         }
       }

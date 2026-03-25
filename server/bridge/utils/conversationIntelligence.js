@@ -46,38 +46,35 @@ function getConversationIntelligence(db, clientId, days = 30) {
   `).get(clientId, since);
 
   // === Response Time Analysis ===
-  const responseTimeData = db.prepare(`
+  // Calculate average response time using SQL aggregation
+  // Uses ROW_NUMBER to get first response per outbound message, then AVG
+  const responseTimeStats = db.prepare(`
+    WITH ranked_responses AS (
+      SELECT
+        m1.id as msg_id,
+        CAST((julianday(m2.created_at) - julianday(m1.created_at)) * 24 * 60 AS INTEGER) as response_minutes,
+        ROW_NUMBER() OVER (PARTITION BY m1.id ORDER BY m2.created_at ASC) as rn
+      FROM messages m1
+      LEFT JOIN messages m2 ON m1.phone = m2.phone
+        AND m2.direction = 'inbound'
+        AND m2.created_at > m1.created_at
+        AND m2.created_at <= datetime(m1.created_at, '+2 hours')
+      WHERE m1.client_id = ?
+        AND m1.direction = 'outbound'
+        AND m1.created_at >= ?
+    ),
+    first_responses AS (
+      SELECT response_minutes
+      FROM ranked_responses
+      WHERE rn = 1 AND response_minutes IS NOT NULL
+    )
     SELECT
-      m1.id as msg_id,
-      m1.created_at as sent_at,
-      m2.created_at as reply_at,
-      CAST((julianday(m2.created_at) - julianday(m1.created_at)) * 24 * 60 AS INTEGER) as response_minutes,
-      l.id as lead_id
-    FROM messages m1
-    LEFT JOIN messages m2 ON m1.phone = m2.phone
-      AND m2.direction = 'inbound'
-      AND m2.created_at > m1.created_at
-      AND m2.created_at <= datetime(m1.created_at, '+2 hours')
-    LEFT JOIN leads l ON l.phone = m1.phone AND l.client_id = ?
-    WHERE m1.client_id = ?
-      AND m1.direction = 'outbound'
-      AND m1.created_at >= ?
-    LIMIT 100
-  `).all(clientId, clientId, since);
+      COUNT(*) as count,
+      CAST(AVG(response_minutes) AS INTEGER) as avg_response_minutes
+    FROM first_responses
+  `).get(clientId, since);
 
-  // Filter to first response only per conversation
-  const responseMap = new Map();
-  const firstResponses = [];
-  for (const r of responseTimeData) {
-    if (r.reply_at && !responseMap.has(r.msg_id)) {
-      firstResponses.push(r);
-      responseMap.set(r.msg_id, true);
-    }
-  }
-
-  const avgResponseMinutes = firstResponses.length > 0
-    ? Math.round(firstResponses.reduce((sum, r) => sum + (r.response_minutes || 0), 0) / firstResponses.length)
-    : null;
+  const avgResponseMinutes = responseTimeStats.count > 0 ? responseTimeStats.avg_response_minutes : null;
 
   // === Sentiment Distribution ===
   const totalSentiment = (callStats.positive_sentiment || 0) +
@@ -134,8 +131,8 @@ function getConversationIntelligence(db, clientId, days = 30) {
     common_topics: commonTopics,
     response_time_analysis: {
       avg_response_minutes: avgResponseMinutes,
-      messages_with_reply: firstResponses.length,
-      total_outbound_messages: callStats.total_calls > 0 ? callStats.total_calls : 0,
+      messages_with_reply: responseTimeStats.count || 0,
+      total_outbound_messages: messageStats.outbound_messages || 0,
     },
     coaching_tips: coachingTips,
   };

@@ -1,6 +1,6 @@
 /**
  * Database Backup Utility
- * Creates SQLite backups and manages retention
+ * Creates SQLite backups and manages retention with WAL checkpoint
  */
 
 const fs = require('fs');
@@ -8,25 +8,50 @@ const path = require('path');
 
 /**
  * Create a backup of the SQLite database
+ * Ensures WAL data is flushed before backup via checkpoint
  * @param {string} dbPath - Path to the SQLite database file
+ * @param {object} [db] - Optional database connection for WAL checkpoint
  * @returns {Promise<{success: boolean, backupPath?: string, error?: string}>}
  */
-async function backupDatabase(dbPath) {
+async function backupDatabase(dbPath, db) {
   if (!dbPath || !fs.existsSync(dbPath)) {
     return { success: false, error: 'Database path not found' };
   }
 
   try {
+    // Step 1: Checkpoint WAL to ensure all data is in main DB file
+    // This is critical for live database backups with WAL mode
+    if (db) {
+      try {
+        db.pragma('wal_checkpoint(TRUNCATE)');
+        console.log('[backup] WAL checkpoint completed (TRUNCATE)');
+      } catch (err) {
+        console.warn('[backup] WAL checkpoint failed (non-fatal):', err.message);
+        // Continue with backup attempt even if checkpoint fails
+      }
+    }
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupPath = `${dbPath}.backup.${timestamp}`;
 
-    // Copy the database file synchronously
-    fs.copyFileSync(dbPath, backupPath);
+    // Step 2: Use better-sqlite3 backup API if available, otherwise fall back to fs.copyFileSync
+    if (db && typeof db.backup === 'function') {
+      try {
+        db.backup(backupPath);
+        console.log('[backup] Created backup using db.backup() API: ${backupPath}');
+      } catch (err) {
+        console.warn('[backup] db.backup() failed, falling back to fs.copyFileSync:', err.message);
+        fs.copyFileSync(dbPath, backupPath);
+        console.log(`[backup] Created backup using fs.copyFileSync: ${backupPath}`);
+      }
+    } else {
+      // Fallback: copy the database file synchronously
+      fs.copyFileSync(dbPath, backupPath);
+      console.log(`[backup] Created backup using fs.copyFileSync: ${backupPath}`);
+    }
 
-    console.log(`[backup] Created backup: ${backupPath}`);
-
-    // Clean up old backups (keep last 5)
-    cleanupOldBackups(dbPath);
+    // Clean up old backups (keep last 7)
+    cleanupOldBackups(dbPath, 7);
 
     return { success: true, backupPath };
   } catch (err) {
@@ -38,9 +63,9 @@ async function backupDatabase(dbPath) {
 /**
  * Remove old backup files, keeping only the latest N
  * @param {string} dbPath - Path to the SQLite database
- * @param {number} [keepCount=5] - Number of backups to keep
+ * @param {number} [keepCount=7] - Number of backups to keep (default: 7 days worth)
  */
-function cleanupOldBackups(dbPath, keepCount = 5) {
+function cleanupOldBackups(dbPath, keepCount = 7) {
   try {
     const dir = path.dirname(dbPath);
     const dbName = path.basename(dbPath);
@@ -73,24 +98,25 @@ function cleanupOldBackups(dbPath, keepCount = 5) {
  * Schedule periodic backups
  * @param {string} dbPath - Path to the SQLite database
  * @param {number} [intervalHours=24] - Backup interval in hours
+ * @param {object} [db] - Optional database connection for WAL checkpoint
  * @returns {NodeJS.Timeout} Interval handle for cleanup
  */
-function scheduleBackups(dbPath, intervalHours = 24) {
+function scheduleBackups(dbPath, intervalHours = 24, db) {
   const intervalMs = intervalHours * 60 * 60 * 1000;
 
   // Run first backup immediately
-  backupDatabase(dbPath).catch(err =>
+  backupDatabase(dbPath, db).catch(err =>
     console.error('[backup] Initial backup failed:', err)
   );
 
   // Schedule recurring backups
   const handle = setInterval(() => {
-    backupDatabase(dbPath).catch(err =>
+    backupDatabase(dbPath, db).catch(err =>
       console.error('[backup] Scheduled backup failed:', err)
     );
   }, intervalMs);
 
-  console.log(`[backup] Backups scheduled every ${intervalHours} hours`);
+  console.log(`[backup] Backups scheduled every ${intervalHours} hours (with WAL checkpoint and rotation)`);
   return handle;
 }
 

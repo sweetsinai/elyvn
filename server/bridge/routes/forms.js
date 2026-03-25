@@ -6,6 +6,45 @@ const { triggerSpeedSequence } = require('../utils/speed-to-lead');
 const { normalizePhone } = require('../utils/phone');
 const { isValidUUID, isValidPhone, isValidEmail, sanitizeString } = require('../utils/validate');
 
+// Speed-to-lead deduplication store: tracks recent speed-to-lead jobs by phone+email within 5 minutes
+const speedToLeadStore = new Map();
+const SPEED_TO_LEAD_DEDUP_WINDOW = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Check if a speed-to-lead job was already created for this phone/email in the last 5 minutes.
+ * Returns true if duplicate, false if new/allowed.
+ */
+function isDuplicateSpeedToLead(phone, email) {
+  const key = `${phone}|${email}`;
+  const now = Date.now();
+  const entry = speedToLeadStore.get(key);
+
+  if (!entry) {
+    // New entry
+    speedToLeadStore.set(key, now);
+    return false;
+  }
+
+  if (now - entry > SPEED_TO_LEAD_DEDUP_WINDOW) {
+    // Expired, update and allow
+    speedToLeadStore.set(key, now);
+    return false;
+  }
+
+  // Duplicate within window
+  return true;
+}
+
+// Cleanup dedup store every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamp] of speedToLeadStore) {
+    if (now - timestamp > SPEED_TO_LEAD_DEDUP_WINDOW * 2) {
+      speedToLeadStore.delete(key);
+    }
+  }
+}, 10 * 60 * 1000);
+
 // Simple in-memory rate limiter for form submissions
 const formRateLimitStore = new Map();
 const FORM_RATE_LIMIT = 10; // max requests
@@ -113,7 +152,12 @@ router.post('/', formRateLimit, async (req, res) => {
     db.prepare(`INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, 'form', 'inbound', ?, 'received', datetime('now'), datetime('now'))`).run(randomUUID(), clientId, leadId, phone, message || `Form: ${service || 'General inquiry'}`);
 
-    await triggerSpeedSequence(db, { leadId, clientId, phone, name, email, message, service, source: 'form', client });
+    // Deduplication: only trigger speed-to-lead if not a duplicate within 5 minutes
+    if (!isDuplicateSpeedToLead(phone, email)) {
+      await triggerSpeedSequence(db, { leadId, clientId, phone, name, email, message, service, source: 'form', client });
+    } else {
+      console.log(`[Form] Speed-to-lead deduplicated for ${phone}/${email}`);
+    }
 
     try {
       const { getLeadMemory } = require('../utils/leadMemory');
@@ -236,12 +280,17 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
       VALUES (?, ?, ?, ?, 'form', 'inbound', ?, 'received', datetime('now'), datetime('now'))
     `).run(randomUUID(), clientId, leadId, phone, message || `Form submission: ${service || 'General inquiry'}`);
 
-    // Trigger triple-touch speed sequence
-    await triggerSpeedSequence(db, {
-      leadId, clientId, phone, name, email, message, service,
-      source: 'form',
-      client
-    });
+    // Deduplication: only trigger speed-to-lead if not a duplicate within 5 minutes
+    if (!isDuplicateSpeedToLead(phone, email)) {
+      // Trigger triple-touch speed sequence
+      await triggerSpeedSequence(db, {
+        leadId, clientId, phone, name, email, message, service,
+        source: 'form',
+        client
+      });
+    } else {
+      console.log(`[Form] Speed-to-lead deduplicated for ${phone}/${email}`);
+    }
 
     // Brain: form submission analysis
     try {

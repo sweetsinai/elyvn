@@ -19,6 +19,14 @@ function createJobHandlers(db, sendSMS, captureException) {
           return;
         }
       }
+      // Check for recent duplicate SMS to prevent queue retry duplication
+      const recentSMS = db.prepare(
+        "SELECT id FROM messages WHERE phone = ? AND created_at > datetime('now', '-5 minutes') AND direction = 'outbound'"
+      ).get(payload.phone);
+      if (recentSMS) {
+        console.log(`[jobHandlers] Skipping duplicate SMS to ${payload.phone}`);
+        return;
+      }
       // Truncate to Twilio max for concatenated SMS
       const message = (payload.message || '').slice(0, 1600);
       await sendSMS(payload.phone, message, payload.from, db, payload.clientId);
@@ -38,6 +46,14 @@ function createJobHandlers(db, sendSMS, captureException) {
       // Check if AI is active
       if (!client.is_active) {
         console.log(`[jobQueue] Skipping callback — AI paused for client ${payload.clientId}`);
+        return;
+      }
+      // Check for recent duplicate call to prevent queue retry duplication
+      const recentCall = db.prepare(
+        "SELECT id FROM calls WHERE phone = ? AND created_at > datetime('now', '-5 minutes')"
+      ).get(payload.phone);
+      if (recentCall) {
+        console.log(`[jobHandlers] Skipping duplicate call to ${payload.phone}`);
         return;
       }
       // Actually make the Retell outbound call
@@ -96,9 +112,18 @@ function createJobHandlers(db, sendSMS, captureException) {
           return;
         }
       }
+      // Check for recent duplicate SMS to prevent queue retry duplication
+      const phone = payload.phone || payload.to;
+      const recentSMS = db.prepare(
+        "SELECT id FROM messages WHERE phone = ? AND created_at > datetime('now', '-5 minutes') AND direction = 'outbound'"
+      ).get(phone);
+      if (recentSMS) {
+        console.log(`[jobHandlers] Skipping duplicate SMS to ${phone}`);
+        return;
+      }
       // Truncate to Twilio max for concatenated SMS
       const message = (payload.message || payload.body || '').slice(0, 1600);
-      await sendSMS(payload.phone || payload.to, message, payload.from, db, payload.clientId);
+      await sendSMS(phone, message, payload.from, db, payload.clientId);
     },
     'appointment_reminder': async (payload) => {
       // Verify appointment hasn't been cancelled
@@ -127,6 +152,14 @@ function createJobHandlers(db, sendSMS, captureException) {
         ).get(prospect.phone, payload.prospect_id);
         if (hasBooking) {
           console.log(`[jobQueue] Skipping follow-up — prospect ${payload.prospect_id} has a booking`);
+          return;
+        }
+        // Check for recent duplicate email to prevent queue retry duplication
+        const recentEmail = db.prepare(
+          "SELECT id FROM emails_sent WHERE to_email = ? AND prospect_id = ? AND created_at > datetime('now', '-5 minutes')"
+        ).get(payload.to_email, payload.prospect_id);
+        if (recentEmail) {
+          console.log(`[jobHandlers] Skipping duplicate email to ${payload.to_email}`);
           return;
         }
         const transport = getTransporter();

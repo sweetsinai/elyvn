@@ -615,24 +615,28 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
     const sanitizeHeader = s => String(s || '').replace(/[\r\n]/g, '');
     const { generateTrackingPixel, wrapLinksWithTracking } = require('../utils/emailTracking');
 
-    for (const email of drafts) {
-      // Verify email before sending
-      try {
-        const verification = await verifyEmail(email.to_email);
-        if (!verification.valid) {
-          console.log(`[outreach] Skipping invalid email ${email.to_email}: ${verification.reason}`);
-          db.prepare("UPDATE emails_sent SET status = 'invalid', error = ?, updated_at = ? WHERE id = ?")
-            .run(`verification_failed: ${verification.reason}`, new Date().toISOString(), email.id);
-          db.prepare("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?")
-            .run(new Date().toISOString(), email.prospect_id);
-          skippedInvalid++;
-          continue;
-        }
-      } catch (verifyErr) {
-        console.warn(`[outreach] Verification error for ${email.to_email}: ${verifyErr.message} — sending anyway`);
-      }
+    // Batch concurrent email sending for improved throughput
+    const BATCH_SIZE = 5;
+    const BATCH_DELAY_MS = 100;
 
+    // Helper function to verify and send a single email
+    const sendEmailAsync = async (email) => {
       try {
+        // Verify email before sending
+        try {
+          const verification = await verifyEmail(email.to_email);
+          if (!verification.valid) {
+            console.log(`[outreach] Skipping invalid email ${email.to_email}: ${verification.reason}`);
+            db.prepare("UPDATE emails_sent SET status = 'invalid', error = ?, updated_at = ? WHERE id = ?")
+              .run(`verification_failed: ${verification.reason}`, new Date().toISOString(), email.id);
+            db.prepare("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?")
+              .run(new Date().toISOString(), email.prospect_id);
+            return { status: 'invalid', email_id: email.id, prospect_id: email.prospect_id };
+          }
+        } catch (verifyErr) {
+          console.warn(`[outreach] Verification error for ${email.to_email}: ${verifyErr.message} — sending anyway`);
+        }
+
         // Generate HTML with tracking
         let htmlContent = wrapWithCTA(
           email.body.replace(/Book a 10-min demo:.*$/m, '').trim(),
@@ -679,12 +683,7 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
           console.error('[outreach] Failed to schedule follow-up:', err.message);
         }
 
-        sent++;
-
-        // 2-second delay between sends to avoid spam triggers
-        if (sent < drafts.length) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
+        return { status: 'sent', email_id: email.id, prospect_id: email.prospect_id };
       } catch (err) {
         console.error(`[outreach] Failed to send to ${email.to_email}:`, err.message);
 
@@ -704,7 +703,42 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
           db.prepare("UPDATE prospects SET status = 'bounced', updated_at = ? WHERE id = ?").run(now, email.prospect_id);
         }
 
-        failed++;
+        return { status: status, email_id: email.id, prospect_id: email.prospect_id, error: err.message };
+      }
+    };
+
+    // Process emails in batches with concurrent sending
+    for (let i = 0; i < drafts.length; i += BATCH_SIZE) {
+      const batch = drafts.slice(i, i + BATCH_SIZE);
+      console.log(`[outreach] Processing batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} emails)`);
+
+      // Send all emails in batch concurrently
+      const results = await Promise.allSettled(
+        batch.map(email => sendEmailAsync(email))
+      );
+
+      // Process results and track successes/failures
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          const outcome = result.value;
+          if (outcome.status === 'sent') {
+            sent++;
+          } else if (outcome.status === 'invalid') {
+            skippedInvalid++;
+          } else if (outcome.status === 'bounced' || outcome.status === 'failed') {
+            failed++;
+          }
+        } else {
+          // Promise rejected (shouldn't happen due to try-catch in sendEmailAsync)
+          console.error('[outreach] Unexpected error in batch processing:', result.reason);
+          failed++;
+        }
+      }
+
+      // Rate limit pause between batches to avoid SMTP rate limits
+      if (i + BATCH_SIZE < drafts.length) {
+        console.log(`[outreach] Batch complete. Pausing ${BATCH_DELAY_MS}ms before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
       }
     }
 
