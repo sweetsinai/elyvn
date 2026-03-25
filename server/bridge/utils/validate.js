@@ -39,4 +39,26 @@ function validateNumericRange(val, min, max, defaultVal) {
   return num;
 }
 
-module.exports = { isValidUUID, isValidPhone, isValidEmail, isValidURL, sanitizeString, escapeLikePattern, validateNumericRange };
+// === Functions from validators.js (merged for single source of truth) ===
+const VALID_STAGES = ['new', 'contacted', 'warm', 'hot', 'booked', 'completed', 'lost', 'nurture'];
+const VALID_ACTIONS = ['send_sms', 'schedule_followup', 'cancel_pending_followups', 'update_lead_stage', 'update_lead_score', 'book_appointment', 'notify_owner', 'log_insight', 'no_action'];
+
+/**
+ * Validate lead stage (new|contacted|warm|hot|booked|completed|lost|nurture)
+ * @param {string} str - Stage to validate
+ * @returns {boolean}
+ */
+function isValidStage(str) {
+  return VALID_STAGES.includes(str);
+}
+
+/**
+ * Validate brain action type
+ * @param {string} str - Action to validate
+ * @returns {boolean}
+ */
+function isValidAction(str) {
+  return VALID_ACTIONS.includes(str);
+}
+
+module.exports = { isValidUUID, isValidPhone, isValidEmail, isValidURL, sanitizeString, escapeLikePattern, validateNumericRange, isValidStage, isValidAction, VALID_STAGES, VALID_ACTIONS };

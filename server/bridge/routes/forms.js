@@ -97,16 +97,18 @@ router.post('/', formRateLimit, async (req, res) => {
       return;
     }
 
-    const existingLead = db.prepare('SELECT id FROM leads WHERE client_id = ? AND phone = ?').get(clientId, phone);
-    let leadId;
-    if (existingLead) {
-      leadId = existingLead.id;
-      db.prepare(`UPDATE leads SET name = COALESCE(?, name), email = COALESCE(?, email), last_contact = datetime('now'), stage = 'new', updated_at = datetime('now') WHERE id = ?`).run(name, email, leadId);
-    } else {
-      leadId = randomUUID();
-      db.prepare(`INSERT INTO leads (id, client_id, name, phone, email, source, score, stage, last_contact, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'), datetime('now'))`).run(leadId, clientId, name, phone, email, source);
-    }
+    // Atomic upsert using INSERT ... ON CONFLICT (no race conditions)
+    const leadId = randomUUID();
+    db.prepare(`
+      INSERT INTO leads (id, client_id, phone, name, email, source, score, stage, last_contact, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'))
+      ON CONFLICT(client_id, phone) DO UPDATE SET
+        name = COALESCE(excluded.name, leads.name),
+        email = COALESCE(excluded.email, leads.email),
+        source = COALESCE(excluded.source, leads.source),
+        last_contact = datetime('now'),
+        updated_at = datetime('now')
+    `).run(leadId, clientId, phone, name || null, email || null, source);
 
     db.prepare(`INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, 'form', 'inbound', ?, 'received', datetime('now'), datetime('now'))`).run(randomUUID(), clientId, leadId, phone, message || `Form: ${service || 'General inquiry'}`);
@@ -215,25 +217,18 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
       return;
     }
 
-    // Upsert lead
-    const existingLead = db.prepare(
-      'SELECT id FROM leads WHERE client_id = ? AND phone = ?'
-    ).get(clientId, phone);
-
-    let leadId;
-    if (existingLead) {
-      leadId = existingLead.id;
-      db.prepare(
-        `UPDATE leads SET name = COALESCE(?, name), email = COALESCE(?, email), last_contact = datetime('now'),
-         stage = 'new', updated_at = datetime('now') WHERE id = ?`
-      ).run(name, email || null, leadId);
-    } else {
-      leadId = randomUUID();
-      db.prepare(`
-        INSERT INTO leads (id, client_id, name, phone, email, source, score, stage, last_contact, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'), datetime('now'))
-      `).run(leadId, clientId, name, phone, email || null, source);
-    }
+    // Atomic upsert using INSERT ... ON CONFLICT (no race conditions)
+    const leadId = randomUUID();
+    db.prepare(`
+      INSERT INTO leads (id, client_id, phone, name, email, source, score, stage, last_contact, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'))
+      ON CONFLICT(client_id, phone) DO UPDATE SET
+        name = COALESCE(excluded.name, leads.name),
+        email = COALESCE(excluded.email, leads.email),
+        source = COALESCE(excluded.source, leads.source),
+        last_contact = datetime('now'),
+        updated_at = datetime('now')
+    `).run(leadId, clientId, phone, name || null, email || null, source);
 
     // Log inbound message
     db.prepare(`

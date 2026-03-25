@@ -199,6 +199,20 @@ app.use('/webhooks/form', formRoutes);
 const calcomWebhook = require('./routes/calcom-webhook');
 app.use('/webhooks/calcom', calcomWebhook);
 
+// SSRF protection utility for redirect URLs
+function isSafeRedirectUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const hostname = parsed.hostname;
+    // Block internal IPs
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') return false;
+    if (hostname.startsWith('10.') || hostname.startsWith('192.168.') || hostname.startsWith('172.')) return false;
+    if (hostname === '169.254.169.254') return false; // AWS metadata
+    return true;
+  } catch { return false; }
+}
+
 // Email tracking routes (open pixel and click redirect)
 app.get('/t/open/:emailId', (req, res) => {
   const { emailId } = req.params;
@@ -263,6 +277,11 @@ app.get('/t/click/:emailId', (req, res) => {
       }
       // Block dangerous protocols
       if (decodedUrl.match(/^(javascript|data|vbscript):/i)) {
+        return res.status(400).send('Invalid redirect URL');
+      }
+
+      // SSRF protection: validate redirect URL is safe
+      if (!isSafeRedirectUrl(decodedUrl)) {
         return res.status(400).send('Invalid redirect URL');
       }
 
