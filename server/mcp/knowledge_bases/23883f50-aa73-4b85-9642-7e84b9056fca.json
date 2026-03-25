@@ -1,0 +1,22 @@
+{
+  "client_id": "23883f50-aa73-4b85-9642-7e84b9056fca",
+  "business_name": "New Business Inc",
+  "greeting": "Thank you for calling New Business Inc! How can I help you today?",
+  "services": [
+    "Consulting",
+    "Strategy"
+  ],
+  "industry": "Marketing",
+  "business_hours": "Mon-Fri 9am-5pm",
+  "booking_info": "We're available Mon-Fri 9am-5pm",
+  "faq": [],
+  "escalation_phrases": [
+    "speak to a person",
+    "talk to someone",
+    "manager",
+    "complaint",
+    "human",
+    "representative"
+  ],
+  "generated_at": "2026-03-25T18:41:26.595Z"
+}

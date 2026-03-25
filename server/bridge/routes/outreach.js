@@ -36,23 +36,6 @@ function normalizePhoneE164(raw, defaultCountryCode = '1') {
   return '+' + digits;
 }
 
-// SMTP transporter (lazy init)
-let transporter = null;
-function getTransporter() {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-      }
-    });
-  }
-  return transporter;
-}
-
 // Helper: extract shared prospect scraping logic
 async function scrapeSingleQuery(industry, city, state, country, maxResults) {
   const query = `${industry} in ${city}${state ? ', ' + state : ''}${country ? ', ' + country : ''}`;

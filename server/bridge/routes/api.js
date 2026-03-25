@@ -277,18 +277,51 @@ router.get('/leads/:clientId', (req, res) => {
       `SELECT * FROM leads WHERE ${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`
     ).all(...params, limitNum, offset);
 
-    // Attach recent interactions to each lead
-    const leadsWithInteractions = leads.map(lead => {
-      const recentCalls = db.prepare(
-        'SELECT id, call_id, duration, outcome, summary, score, created_at FROM calls WHERE client_id = ? AND caller_phone = ? ORDER BY created_at DESC LIMIT 3'
-      ).all(clientId, lead.phone);
+    // Batch-load recent interactions for all leads in a single query per table
+    const leadIds = leads.map(l => l.id);
 
-      const recentMessages = db.prepare(
-        'SELECT id, direction, body, created_at FROM messages WHERE client_id = ? AND phone = ? ORDER BY created_at DESC LIMIT 3'
-      ).all(clientId, lead.phone);
+    // Get all recent calls for these leads in one query
+    const allCallsStmt = `
+      SELECT id, call_id, duration, outcome, summary, score, created_at, caller_phone
+      FROM calls
+      WHERE client_id = ? AND caller_phone IN (${leads.map(() => '?').join(',')})
+      ORDER BY created_at DESC
+    `;
+    const allCalls = leads.length > 0 ? db.prepare(allCallsStmt).all(clientId, ...leads.map(l => l.phone)) : [];
 
-      return { ...lead, recent_calls: recentCalls, recent_messages: recentMessages };
+    // Get all recent messages for these leads in one query
+    const allMessagesStmt = `
+      SELECT id, direction, body, created_at, phone
+      FROM messages
+      WHERE client_id = ? AND phone IN (${leads.map(() => '?').join(',')})
+      ORDER BY created_at DESC
+    `;
+    const allMessages = leads.length > 0 ? db.prepare(allMessagesStmt).all(clientId, ...leads.map(l => l.phone)) : [];
+
+    // Group results by lead phone and limit to 3 per lead
+    const callsByPhone = {};
+    const messagesByPhone = {};
+
+    allCalls.forEach(call => {
+      if (!callsByPhone[call.caller_phone]) callsByPhone[call.caller_phone] = [];
+      if (callsByPhone[call.caller_phone].length < 3) {
+        callsByPhone[call.caller_phone].push(call);
+      }
     });
+
+    allMessages.forEach(msg => {
+      if (!messagesByPhone[msg.phone]) messagesByPhone[msg.phone] = [];
+      if (messagesByPhone[msg.phone].length < 3) {
+        messagesByPhone[msg.phone].push(msg);
+      }
+    });
+
+    // Attach recent interactions to each lead
+    const leadsWithInteractions = leads.map(lead => ({
+      ...lead,
+      recent_calls: callsByPhone[lead.phone] || [],
+      recent_messages: messagesByPhone[lead.phone] || []
+    }));
 
     const totalPages = Math.ceil(total / limitNum);
     res.json({ leads: leadsWithInteractions, total, page: pageNum, limit: limitNum, total_pages: totalPages });
