@@ -345,17 +345,17 @@ function extractCommonTopics(db, clientId, since) {
   }
 
   // Use SQL to count keyword occurrences across all transcripts and summaries
-  // This avoids fetching all transcript text and processing in JavaScript
+  // Avoids fetching all transcript text and processing in JavaScript
   const topicFrequencies = db.prepare(`
     SELECT
-      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%pricing%' OR LOWER(transcript || summary) LIKE '%cost%' OR LOWER(transcript || summary) LIKE '%price%' THEN 1 END) as pricing_freq,
-      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%appointment%' OR LOWER(transcript || summary) LIKE '%booking%' OR LOWER(transcript || summary) LIKE '%schedule%' THEN 1 END) as booking_freq,
-      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%available%' OR LOWER(transcript || summary) LIKE '%availability%' OR LOWER(transcript || summary) LIKE '%time%' THEN 1 END) as availability_freq,
-      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%location%' OR LOWER(transcript || summary) LIKE '%address%' THEN 1 END) as location_freq,
-      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%service%' OR LOWER(transcript || summary) LIKE '%features%' OR LOWER(transcript || summary) LIKE '%benefits%' THEN 1 END) as service_freq,
-      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%insurance%' OR LOWER(transcript || summary) LIKE '%coverage%' THEN 1 END) as insurance_freq,
-      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%question%' OR LOWER(transcript || summary) LIKE '%help%' OR LOWER(transcript || summary) LIKE '%support%' THEN 1 END) as help_freq,
-      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%issue%' OR LOWER(transcript || summary) LIKE '%problem%' OR LOWER(transcript || summary) LIKE '%complaint%' THEN 1 END) as issue_freq
+      SUM(CASE WHEN LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%pricing%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%cost%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%price%' THEN 1 ELSE 0 END) as pricing_freq,
+      SUM(CASE WHEN LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%appointment%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%booking%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%schedule%' THEN 1 ELSE 0 END) as booking_freq,
+      SUM(CASE WHEN LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%available%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%availability%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%time%' THEN 1 ELSE 0 END) as availability_freq,
+      SUM(CASE WHEN LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%location%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%address%' THEN 1 ELSE 0 END) as location_freq,
+      SUM(CASE WHEN LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%service%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%features%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%benefits%' THEN 1 ELSE 0 END) as service_freq,
+      SUM(CASE WHEN LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%insurance%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%coverage%' THEN 1 ELSE 0 END) as insurance_freq,
+      SUM(CASE WHEN LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%question%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%help%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%support%' THEN 1 ELSE 0 END) as help_freq,
+      SUM(CASE WHEN LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%issue%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%problem%' OR LOWER(COALESCE(transcript, '') || COALESCE(summary, '')) LIKE '%complaint%' THEN 1 ELSE 0 END) as issue_freq
     FROM calls
     WHERE client_id = ? AND created_at >= ? AND (transcript IS NOT NULL OR summary IS NOT NULL)
   `).get(clientId, since);
