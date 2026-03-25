@@ -669,6 +669,20 @@ Reply: ${email.reply_text}`
   }
 });
 
+// POST /campaign/:campaignId/retry — reset failed emails back to draft
+router.post('/campaign/:campaignId/retry', (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { campaignId } = req.params;
+    const result = db.prepare(
+      "UPDATE emails_sent SET status = 'draft', error = NULL, updated_at = ? WHERE campaign_id = ? AND status = 'failed'"
+    ).run(new Date().toISOString(), campaignId);
+    res.json({ reset: result.changes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /auto-classify — automatically classify all unclassified replies
 // Call this on a cron (every 5 min) or after IMAP fetch
 router.post('/auto-classify', async (req, res) => {
