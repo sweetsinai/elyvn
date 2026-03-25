@@ -38,7 +38,7 @@ async function backupDatabase(dbPath, db) {
     if (db && typeof db.backup === 'function') {
       try {
         db.backup(backupPath);
-        console.log('[backup] Created backup using db.backup() API: ${backupPath}');
+        console.log(`[backup] Created backup using db.backup() API: ${backupPath}`);
       } catch (err) {
         console.warn('[backup] db.backup() failed, falling back to fs.copyFileSync:', err.message);
         fs.copyFileSync(dbPath, backupPath);

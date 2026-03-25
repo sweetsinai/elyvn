@@ -201,6 +201,14 @@ function createJobHandlers(db, sendSMS, captureException) {
           console.log(`[jobQueue] Skipping no-reply follow-up — prospect replied`);
           return;
         }
+        // Check for recent duplicate email to prevent queue retry duplication
+        const recentEmail = db.prepare(
+          "SELECT id FROM emails_sent WHERE to_email = ? AND prospect_id = ? AND created_at > datetime('now', '-5 minutes')"
+        ).get(payload.to_email, payload.prospect_id);
+        if (recentEmail) {
+          console.log(`[jobHandlers] Skipping duplicate email to ${payload.to_email}`);
+          return;
+        }
         const transport = getTransporter();
         if (!transport) {
           console.error('[jobQueue] SMTP not configured for noreply_followup');

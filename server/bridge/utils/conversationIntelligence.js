@@ -149,69 +149,81 @@ function analyzeResponseTimeImpact(db, clientId) {
     throw new Error('db and clientId are required');
   }
 
-  // Get messages with response data
-  const responseData = db.prepare(`
+  // Get response time buckets with conversion stats using SQL aggregation
+  const bucketStats = db.prepare(`
+    WITH ranked_responses AS (
+      SELECT
+        m1.id as msg_id,
+        l.id as lead_id,
+        CAST((julianday(m2.created_at) - julianday(m1.created_at)) * 24 * 60 AS INTEGER) as response_minutes,
+        CASE WHEN a.id IS NOT NULL THEN 1 ELSE 0 END as converted,
+        ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY m1.created_at ASC) as rn
+      FROM messages m1
+      LEFT JOIN messages m2 ON m1.phone = m2.phone
+        AND m2.direction = 'inbound'
+        AND m2.created_at > m1.created_at
+        AND m2.created_at <= datetime(m1.created_at, '+24 hours')
+      LEFT JOIN leads l ON l.phone = m1.phone AND l.client_id = ?
+      LEFT JOIN appointments a ON a.lead_id = l.id
+      WHERE m1.client_id = ?
+        AND m1.direction = 'outbound'
+    ),
+    first_responses_per_lead AS (
+      SELECT response_minutes, converted, lead_id
+      FROM ranked_responses
+      WHERE rn = 1 AND response_minutes IS NOT NULL AND lead_id IS NOT NULL
+    ),
+    bucketed AS (
+      SELECT
+        CASE
+          WHEN response_minutes < 1 THEN '0-1 min'
+          WHEN response_minutes < 5 THEN '1-5 min'
+          WHEN response_minutes < 15 THEN '5-15 min'
+          WHEN response_minutes < 60 THEN '15-60 min'
+          WHEN response_minutes < 240 THEN '1-4 hours'
+          ELSE '4+ hours'
+        END as range,
+        response_minutes,
+        converted
+      FROM first_responses_per_lead
+    )
     SELECT
-      m1.id as msg_id,
-      m1.created_at as sent_at,
-      m2.created_at as reply_at,
-      CAST((julianday(m2.created_at) - julianday(m1.created_at)) * 24 * 60 AS INTEGER) as response_minutes,
-      l.id as lead_id,
-      CASE WHEN a.id IS NOT NULL THEN 1 ELSE 0 END as converted
-    FROM messages m1
-    LEFT JOIN messages m2 ON m1.phone = m2.phone
-      AND m2.direction = 'inbound'
-      AND m2.created_at > m1.created_at
-      AND m2.created_at <= datetime(m1.created_at, '+24 hours')
-    LEFT JOIN leads l ON l.phone = m1.phone AND l.client_id = ?
-    LEFT JOIN appointments a ON a.lead_id = l.id
-    WHERE m1.client_id = ?
-      AND m1.direction = 'outbound'
-    ORDER BY m1.created_at DESC
-    LIMIT 200
+      range,
+      COUNT(*) as count,
+      SUM(converted) as conversions,
+      CAST(ROUND(SUM(converted) * 100.0 / COUNT(*)) AS INTEGER) as conversion_rate
+    FROM bucketed
+    GROUP BY range
+    ORDER BY
+      CASE
+        WHEN range = '0-1 min' THEN 1
+        WHEN range = '1-5 min' THEN 2
+        WHEN range = '5-15 min' THEN 3
+        WHEN range = '15-60 min' THEN 4
+        WHEN range = '1-4 hours' THEN 5
+        ELSE 6
+      END
   `).all(clientId, clientId);
 
-  // Filter to first response per lead
-  const leadResponseMap = new Map();
-  const uniqueResponses = [];
-  for (const r of responseData) {
-    if (r.lead_id && !leadResponseMap.has(r.lead_id)) {
-      uniqueResponses.push(r);
-      leadResponseMap.set(r.lead_id, true);
-    }
+  // Define bucket order for consistent output
+  const bucketOrder = ['0-1 min', '1-5 min', '5-15 min', '15-60 min', '1-4 hours', '4+ hours'];
+  const bucketMap = new Map();
+
+  for (const bucket of bucketStats) {
+    bucketMap.set(bucket.range, {
+      range: bucket.range,
+      count: bucket.count || 0,
+      conversions: bucket.conversions || 0,
+      conversion_rate: `${bucket.conversion_rate || 0}%`,
+    });
   }
 
-  // Group into buckets
-  const buckets = [
-    { name: '0-1 min', min: 0, max: 1 },
-    { name: '1-5 min', min: 1, max: 5 },
-    { name: '5-15 min', min: 5, max: 15 },
-    { name: '15-60 min', min: 15, max: 60 },
-    { name: '1-4 hours', min: 60, max: 240 },
-    { name: '4+ hours', min: 240, max: Infinity },
-  ];
+  // Ensure all buckets are present in output
+  const analysis = bucketOrder.map(name =>
+    bucketMap.get(name) || { range: name, count: 0, conversions: 0, conversion_rate: '0%' }
+  );
 
-  const analysis = buckets.map(bucket => {
-    const matching = uniqueResponses.filter(r =>
-      r.response_minutes !== null &&
-      r.response_minutes >= bucket.min &&
-      r.response_minutes < bucket.max
-    );
-
-    const conversions = matching.filter(r => r.converted).length;
-    const conversionRate = matching.length > 0
-      ? Math.round(conversions / matching.length * 100)
-      : 0;
-
-    return {
-      range: bucket.name,
-      count: matching.length,
-      conversions: conversions,
-      conversion_rate: `${conversionRate}%`,
-    };
-  });
-
-  // Find optimal window (highest conversion rate with minimum count)
+  // Find optimal window (highest conversion rate with minimum count of 2)
   const validBuckets = analysis.filter(b => b.count >= 2);
   const optimalBucket = validBuckets.length > 0
     ? validBuckets.reduce((best, current) =>
@@ -219,10 +231,12 @@ function analyzeResponseTimeImpact(db, clientId) {
       )
     : null;
 
+  const totalResponses = analysis.reduce((sum, b) => sum + b.count, 0);
+
   return {
     buckets: analysis,
     optimal_window: optimalBucket ? optimalBucket.range : 'Insufficient data',
-    total_responses_analyzed: uniqueResponses.length,
+    total_responses_analyzed: totalResponses,
   };
 }
 
@@ -383,22 +397,24 @@ function generateCoachingTips(db, clientId, callStats, bookingRate, avgResponseM
   if (callStats.avg_duration !== null) {
     const avgDuration = callStats.avg_duration;
 
-    // Analyze booking rate by call duration buckets
-    const shortCalls = db.prepare(`
+    // Analyze booking rate by call duration buckets - combined query
+    const durationStats = db.prepare(`
       SELECT
+        CASE WHEN duration > 120 THEN 'long' ELSE 'short' END as duration_type,
         COUNT(*) as total,
         SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked
       FROM calls
-      WHERE client_id = ? AND duration > 0 AND duration <= 120
-    `).get(clientId);
+      WHERE client_id = ? AND duration > 0
+      GROUP BY duration_type
+    `).all(clientId);
 
-    const longCalls = db.prepare(`
-      SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked
-      FROM calls
-      WHERE client_id = ? AND duration > 120
-    `).get(clientId);
+    const statsMap = new Map();
+    for (const stat of durationStats) {
+      statsMap.set(stat.duration_type, stat);
+    }
+
+    const shortCalls = statsMap.get('short') || { total: 0, booked: 0 };
+    const longCalls = statsMap.get('long') || { total: 0, booked: 0 };
 
     if (shortCalls.total > 5 && longCalls.total > 5) {
       const shortRate = Math.round((shortCalls.booked || 0) / shortCalls.total * 100);
