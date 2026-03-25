@@ -141,6 +141,12 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
   }
   const clientId = req.params.clientId;
 
+  // Validate clientId format
+  if (!isValidUUID(clientId)) {
+    console.error(`[Form] Invalid clientId format: ${clientId}`);
+    return;
+  }
+
   try {
     const client = db.prepare('SELECT * FROM clients WHERE id = ? AND is_active = 1').get(clientId);
     if (!client) {
@@ -162,6 +168,18 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
 
     const email = body.email || body.Email || body['your-email']
       || body.email_address || body.emailAddress || null;
+
+    // Validate phone if provided
+    if (phone && !isValidPhone(phone)) {
+      console.warn(`[Form] Invalid phone format: ${phone}`);
+      return;
+    }
+
+    // Validate email if provided
+    if (email && !isValidEmail(email)) {
+      console.warn(`[Form] Invalid email format: ${email}`);
+      return;
+    }
 
     const message = (body.message || body.Message || body['your-message']
       || body.comments || body.inquiry || body.details || body.notes || '').substring(0, 2000);

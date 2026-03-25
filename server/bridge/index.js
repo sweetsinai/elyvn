@@ -62,6 +62,11 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-api-key', 'Authorization'],
 }));
+
+// Add correlation ID middleware early in the chain
+const { correlationMiddleware } = require('./utils/correlationId');
+app.use(correlationMiddleware);
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
