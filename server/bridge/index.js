@@ -108,6 +108,20 @@ try {
 // Make db available to routes
 app.locals.db = db;
 
+// Recover stalled jobs from crashes
+(async () => {
+  try {
+    const { recoverStalledJobs } = require('./utils/jobQueue');
+    const result = await recoverStalledJobs(db);
+    if (result.recovered > 0) {
+      console.log(`[server] Job recovery complete: ${result.recovered} jobs recovered`);
+    }
+  } catch (err) {
+    console.error('[server] Job recovery failed:', err.message);
+    // Non-fatal error — continue startup
+  }
+})();
+
 // --- Rate limiting (in-memory, per IP/client with LRU eviction) ---
 const { BoundedRateLimiter } = require('./utils/rateLimiter');
 const limiter = new BoundedRateLimiter({ windowMs: 60000, maxRequests: 120, maxEntries: 10000 });

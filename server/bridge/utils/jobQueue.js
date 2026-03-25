@@ -178,4 +178,54 @@ function cancelJobs(db, filter) {
   }
 }
 
-module.exports = { enqueueJob, processJobs, cancelJobs };
+/**
+ * Recover stalled jobs on startup
+ * Handles two scenarios:
+ * 1. Jobs stuck in 'processing' status from a crash
+ * 2. Jobs stuck in 'pending' status for > 1 hour (likely missed the processing window)
+ * @param {object} db - better-sqlite3 instance
+ * @returns {Promise<{recovered: number}>}
+ */
+async function recoverStalledJobs(db) {
+  if (!db) return { recovered: 0 };
+
+  try {
+    let totalRecovered = 0;
+
+    // Recover jobs stuck in 'processing' status (crash scenario)
+    const processingResult = db.prepare(`
+      UPDATE job_queue
+      SET status = 'pending', updated_at = datetime('now')
+      WHERE status = 'processing'
+    `).run();
+
+    if (processingResult.changes > 0) {
+      console.log(`[jobQueue] Recovered ${processingResult.changes} jobs stuck in 'processing' status (crash recovery)`);
+      totalRecovered += processingResult.changes;
+    }
+
+    // Recover jobs stuck in 'pending' status for > 1 hour
+    const staleResult = db.prepare(`
+      UPDATE job_queue
+      SET status = 'pending', scheduled_at = datetime('now'), updated_at = datetime('now')
+      WHERE status = 'pending'
+      AND created_at < datetime('now', '-1 hour')
+    `).run();
+
+    if (staleResult.changes > 0) {
+      console.log(`[jobQueue] Recovered ${staleResult.changes} jobs stalled in 'pending' for > 1 hour (rescheduled to now)`);
+      totalRecovered += staleResult.changes;
+    }
+
+    if (totalRecovered > 0) {
+      console.log(`[jobQueue] Total jobs recovered on startup: ${totalRecovered}`);
+    }
+
+    return { recovered: totalRecovered };
+  } catch (err) {
+    console.error('[jobQueue] recoverStalledJobs error:', err.message);
+    return { recovered: 0 };
+  }
+}
+
+module.exports = { enqueueJob, processJobs, cancelJobs, recoverStalledJobs };
