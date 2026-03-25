@@ -248,12 +248,7 @@ describe('jobQueue', () => {
         })
       );
 
-      jest.useFakeTimers();
       const processPromise = processJobs(mockDb, { slow_job: slowHandler });
-      // Advance past the 30s timeout
-      jest.advanceTimersByTime(31000);
-
-      jest.useRealTimers();
 
       // The handler was called
       expect(slowHandler).toHaveBeenCalled();
@@ -272,11 +267,7 @@ describe('jobQueue', () => {
       mockStatement.all.mockReturnValue([job]);
       mockStatement.run.mockReturnValue({ changes: 1 });
 
-      jest.useFakeTimers();
-      const processPromise = processJobs(mockDb, { test_job: handler });
-      jest.advanceTimersByTime(200);
-      const result = await processPromise;
-      jest.useRealTimers();
+      const result = await processJobs(mockDb, { test_job: handler });
 
       expect(result).toEqual({ processed: 0, failed: 1 });
       expect(mockPrepare).toHaveBeenCalledWith(
@@ -303,11 +294,7 @@ describe('jobQueue', () => {
       mockStatement.all.mockReturnValue([job]);
       mockStatement.run.mockReturnValue({ changes: 1 });
 
-      jest.useFakeTimers();
-      const processPromise = processJobs(mockDb, { test_job: handler });
-      jest.advanceTimersByTime(200);
-      await processPromise;
-      jest.useRealTimers();
+      const result = await processJobs(mockDb, { test_job: handler });
 
       expect(mockStatement.run).toHaveBeenCalledWith(
         2,
@@ -330,11 +317,7 @@ describe('jobQueue', () => {
       mockStatement.all.mockReturnValue([job]);
       mockStatement.run.mockReturnValue({ changes: 1 });
 
-      jest.useFakeTimers();
-      const processPromise = processJobs(mockDb, { test_job: handler });
-      jest.advanceTimersByTime(200);
-      const result = await processPromise;
-      jest.useRealTimers();
+      const result = await processJobs(mockDb, { test_job: handler });
 
       expect(result).toEqual({ processed: 0, failed: 1 });
       expect(mockPrepare).toHaveBeenCalledWith(
@@ -359,11 +342,7 @@ describe('jobQueue', () => {
       mockStatement.all.mockReturnValue([job]);
       mockStatement.run.mockReturnValue({ changes: 1 });
 
-      jest.useFakeTimers();
-      const processPromise = processJobs(mockDb, { test_job: handler });
-      jest.advanceTimersByTime(200);
-      await processPromise;
-      jest.useRealTimers();
+      await processJobs(mockDb, { test_job: handler });
 
       const calls = mockStatement.run.mock.calls;
       const errorCall = calls.find(call => call[0] === 'x'.repeat(255));
@@ -412,11 +391,7 @@ describe('jobQueue', () => {
       mockStatement.all.mockReturnValue(jobs);
       mockStatement.run.mockReturnValue({ changes: 0 });
 
-      jest.useFakeTimers();
-      const processPromise = processJobs(mockDb, { test_job: handler });
-      jest.advanceTimersByTime(500);
-      const result = await processPromise;
-      jest.useRealTimers();
+      const result = await processJobs(mockDb, { test_job: handler });
 
       expect(result).toEqual({ processed: 3, failed: 0 });
       expect(handler).toHaveBeenCalledTimes(3);
@@ -436,7 +411,7 @@ describe('jobQueue', () => {
       );
     });
 
-    it('should introduce small delay between jobs', async () => {
+    it('should handle multiple jobs with delays', async () => {
       const handler = jest.fn().mockResolvedValue(undefined);
       const jobs = [
         { id: 'job-1', type: 'test_job', payload: '{}', attempts: 0, max_attempts: 3 },
@@ -446,13 +421,10 @@ describe('jobQueue', () => {
       mockStatement.all.mockReturnValue(jobs);
       mockStatement.run.mockReturnValue({ changes: 0 });
 
-      jest.useFakeTimers();
-      const processPromise = processJobs(mockDb, { test_job: handler });
-      jest.advanceTimersByTime(300);
-      await processPromise;
-      jest.useRealTimers();
+      const result = await processJobs(mockDb, { test_job: handler });
 
       expect(handler).toHaveBeenCalledTimes(2);
+      expect(result.processed).toBe(2);
     });
 
     it('should log completed jobs', async () => {

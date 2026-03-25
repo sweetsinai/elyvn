@@ -495,7 +495,7 @@ describe('Smart Scheduler Module', () => {
   describe('Edge Cases and Integration', () => {
     it('should handle leads with special characters in names', () => {
       db.prepare(`
-        INSERT INTO leads (id, client_id, phone, score, stage, name)
+        INSERT INTO leads (id, client_id, phone, score, stage, name, updated_at)
         VALUES ('special_lead', 'client1', '+12125551234', 5, 'warm', ?, ?)
       `).run('John\'s Lead (Test)', new Date().toISOString());
 
