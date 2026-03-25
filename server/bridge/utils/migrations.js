@@ -438,6 +438,77 @@ const migrations = [
       `);
     },
   },
+  {
+    id: '018_data_integrity_indexes_and_retention',
+    description: 'Add foreign key enforcement, performance indexes, and data retention policy table',
+    up(db) {
+      // Enable foreign key constraints
+      db.exec('PRAGMA foreign_keys = ON');
+
+      // Create performance indexes for common query patterns
+      // leads: commonly queried by client_id and date range
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_leads_client_created_at
+          ON leads(client_id, created_at)
+      `);
+
+      // messages: commonly queried by phone and date range
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_messages_phone_created_at
+          ON messages(phone, created_at)
+      `);
+
+      // calls: commonly queried by client_id and date range
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_calls_client_created_at
+          ON calls(client_id, created_at)
+      `);
+
+      // emails_sent: commonly queried by prospect_id and campaign_id together
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_emails_sent_prospect_campaign_created_at
+          ON emails_sent(prospect_id, campaign_id)
+      `);
+
+      // Create data retention policy table with default retention periods
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS data_retention_policy (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          table_name TEXT NOT NULL UNIQUE,
+          retention_days INTEGER NOT NULL DEFAULT 365,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Insert default retention policies (ignore duplicates if already exist)
+        INSERT OR IGNORE INTO data_retention_policy (table_name, retention_days) VALUES
+          ('messages', 90),
+          ('calls', 365),
+          ('emails_sent', 180),
+          ('audit_log', 90),
+          ('lead_timeline', 180);
+      `);
+
+      // Document foreign key relationships in comments for reference:
+      // - calls.client_id → clients.id
+      // - leads.client_id → clients.id
+      // - leads.prospect_id → prospects.id
+      // - messages.client_id → clients.id
+      // - messages.lead_id → leads.id
+      // - followups.lead_id → leads.id
+      // - followups.client_id → clients.id
+      // - appointments.client_id → clients.id
+      // - appointments.lead_id → leads.id
+      // - campaign_prospects.campaign_id → campaigns.id
+      // - campaign_prospects.prospect_id → prospects.id
+      // - emails_sent.campaign_id → campaigns.id
+      // - emails_sent.prospect_id → prospects.id
+      // - sms_opt_outs.client_id → clients.id
+      // - client_api_keys.client_id → clients.id
+      // - audit_log.client_id → clients.id
+      // - weekly_reports.client_id → clients.id
+    },
+  },
 ];
 
 /**
