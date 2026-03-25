@@ -33,6 +33,7 @@ function escapeLikePattern(str) {
 }
 
 function validateNumericRange(val, min, max, defaultVal) {
+  if (val === null || val === undefined || typeof val === 'object') return defaultVal;
   const num = Number(val);
   if (isNaN(num) || num < min || num > max) return defaultVal;
   return num;
