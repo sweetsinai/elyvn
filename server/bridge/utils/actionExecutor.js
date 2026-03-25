@@ -97,6 +97,11 @@ async function executeOne(db, action, lead, client) {
 
     case 'update_lead_stage': {
       if (!lead?.id) return { updated: false };
+      const { isValidStage } = require('./validators');
+      if (!isValidStage(action.stage)) {
+        console.warn(`[Executor] Invalid stage: ${action.stage}`);
+        return { updated: false, error: 'invalid_stage' };
+      }
       db.prepare(
         `UPDATE leads SET stage = ?, updated_at = datetime('now') WHERE id = ?`
       ).run(action.stage, lead.id);
@@ -105,10 +110,11 @@ async function executeOne(db, action, lead, client) {
 
     case 'update_lead_score': {
       if (!lead?.id) return { updated: false };
+      const score = Math.max(0, Math.min(10, Number(action.score) || 0));
       db.prepare(
         `UPDATE leads SET score = ?, updated_at = datetime('now') WHERE id = ?`
-      ).run(action.score, lead.id);
-      return { new_score: action.score, reason: action.reason };
+      ).run(score, lead.id);
+      return { new_score: score, reason: action.reason };
     }
 
     case 'notify_owner': {

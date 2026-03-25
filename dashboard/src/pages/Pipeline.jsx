@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Phone, MessageSquare } from 'lucide-react';
+import { X, Phone, MessageSquare, Search } from 'lucide-react';
 import LeadCard from '../components/LeadCard';
 import StatusBadge from '../components/StatusBadge';
 import { getLeads, updateLeadStage, getCalls, getMessages } from '../lib/api';
 import { formatPhone, timeAgo, truncate } from '../lib/utils';
+import { useWebSocket } from '../lib/useWebSocket';
 
 const STAGES = ['new', 'contacted', 'qualified', 'booked', 'completed', 'lost'];
 
@@ -27,6 +28,7 @@ const stageColors = {
 
 export default function Pipeline() {
   const clientId = localStorage.getItem('elyvn_client') || '';
+  const apiKey = sessionStorage.getItem('elyvn_api_key') || '';
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -35,26 +37,49 @@ export default function Pipeline() {
   const [loadingInteractions, setLoadingInteractions] = useState(false);
   const [dragOverStage, setDragOverStage] = useState(null);
 
+  // Search, filter, and pagination
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStage, setFilterStage] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // WebSocket integration
+  const { isConnected, lastEvent } = useWebSocket(apiKey);
+
   const loadLeads = useCallback(() => {
     if (!clientId) return;
     setLoading(true);
     setError(null);
 
-    getLeads(clientId)
+    getLeads(clientId, {
+      page,
+      limit: 20,
+      stage: filterStage || undefined,
+      search: searchQuery || undefined,
+    })
       .then(data => {
         const list = Array.isArray(data) ? data : data.leads || [];
         setLeads(list);
+        setTotalPages(data.total_pages || Math.ceil((data.total || list.length) / 20) || 1);
         setLoading(false);
       })
       .catch(err => {
         setError(err.message || 'Failed to load leads');
         setLoading(false);
       });
-  }, [clientId]);
+  }, [clientId, page, filterStage, searchQuery]);
 
   useEffect(() => {
     loadLeads();
   }, [loadLeads]);
+
+  // Listen for WebSocket updates (new calls/messages that might affect leads)
+  useEffect(() => {
+    if (lastEvent && (lastEvent.type === 'new_call' || lastEvent.type === 'new_message')) {
+      // Refresh leads after a short delay to allow DB to update
+      setTimeout(() => loadLeads(), 500);
+    }
+  }, [lastEvent, loadLeads]);
 
   const handleDrop = async (e, targetStage) => {
     e.preventDefault();
@@ -107,9 +132,80 @@ export default function Pipeline() {
     );
   }
 
+  const handleSearch = (query) => {
+    setSearchQuery(query);
+    setPage(1);
+  };
+
+  const handleFilterStage = (stage) => {
+    setFilterStage(stage);
+    setPage(1);
+  };
+
   return (
     <div className="fade-in">
-      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 24 }}>Pipeline</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600 }}>Pipeline</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: isConnected ? '#16A34A' : '#DC2626' }}>
+          <div style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: isConnected ? '#16A34A' : '#DC2626',
+            boxShadow: isConnected ? '0 0 6px #16A34A' : 'none',
+          }} />
+          {isConnected ? 'Live Updates' : 'Disconnected'}
+        </div>
+      </div>
+
+      {/* Search and Filter Bar */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        marginBottom: 24,
+        padding: '12px 16px',
+        background: 'rgba(255,255,255,0.03)',
+        borderRadius: 8,
+        border: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        <Search size={16} color="#555" />
+        <input
+          type="text"
+          placeholder="Search by name, phone, or email..."
+          value={searchQuery}
+          onChange={e => handleSearch(e.target.value)}
+          style={{
+            flex: 1,
+            background: 'transparent',
+            border: 'none',
+            color: '#e0d8c8',
+            outline: 'none',
+            fontSize: 13,
+          }}
+        />
+        <select
+          value={filterStage}
+          onChange={e => handleFilterStage(e.target.value)}
+          style={{
+            padding: '6px 10px',
+            borderRadius: 4,
+            border: '1px solid rgba(255,255,255,0.1)',
+            background: '#141414',
+            color: '#e0d8c8',
+            fontSize: 12,
+            cursor: 'pointer',
+          }}
+        >
+          <option value="">All Stages</option>
+          <option value="new">New</option>
+          <option value="contacted">Contacted</option>
+          <option value="qualified">Qualified</option>
+          <option value="booked">Booked</option>
+          <option value="completed">Completed</option>
+          <option value="lost">Lost</option>
+        </select>
+      </div>
 
       {error && (
         <div style={{
@@ -206,6 +302,39 @@ export default function Pipeline() {
           );
         })}
       </div>
+
+      {/* Pagination */}
+      {!loading && totalPages > 1 && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 16,
+          marginTop: 24,
+          paddingTop: 16,
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+        }}>
+          <button
+            className="btn-ghost"
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            style={{ opacity: page <= 1 ? 0.3 : 1 }}
+          >
+            Previous
+          </button>
+          <span style={{ fontSize: 13, color: '#888', minWidth: 100, textAlign: 'center' }}>
+            Page {page} of {totalPages}
+          </span>
+          <button
+            className="btn-ghost"
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            style={{ opacity: page >= totalPages ? 0.3 : 1 }}
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       {/* Lead Detail Modal */}
       {selectedLead && (

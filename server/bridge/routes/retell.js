@@ -278,6 +278,21 @@ async function handleCallEnded(db, call) {
       WHERE call_id = ?
     `).run(duration, outcome, summary, score, sentiment, transcriptText, new Date().toISOString(), callId);
 
+    // Broadcast real-time update
+    try {
+      const { broadcast } = require('../utils/websocket');
+      broadcast('new_call', {
+        id: callId,
+        phone: callRecord.caller_phone,
+        status: outcome,
+        duration,
+        score,
+        summary
+      });
+    } catch (err) {
+      console.warn('[retell] WebSocket broadcast error:', err.message);
+    }
+
     // 7. Upsert lead
     const callerPhone = callRecord.caller_phone;
     const clientId = callRecord.client_id;

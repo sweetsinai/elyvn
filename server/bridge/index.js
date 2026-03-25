@@ -4,19 +4,27 @@ require('dotenv').config({ path: require('path').join(__dirname, '../../.env') }
 const { setupLogger, closeLogger } = require('./utils/logger');
 setupLogger();
 
+// Initialize monitoring & error tracking
+const { initMonitoring, captureException } = require('./utils/monitoring');
+initMonitoring();
+
 // Catch unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  captureException(err, { type: 'unhandledRejection' });
   console.error('[CRASH] UNHANDLED REJECTION:', reason);
 });
 
 // Catch uncaught exceptions — don't exit
 process.on('uncaughtException', (error) => {
+  captureException(error, { type: 'uncaughtException' });
   console.error('[CRASH] UNCAUGHT EXCEPTION:', error);
 });
 
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const crypto = require('crypto');
 const Database = require('better-sqlite3');
 
 // === STARTUP ENV VALIDATION ===
@@ -90,57 +98,73 @@ try {
 // Make db available to routes
 app.locals.db = db;
 
-// --- Rate limiting (in-memory, per IP) ---
-const rateLimitMap = new Map();
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const RATE_LIMIT_MAX = 120; // requests per window
+// --- Rate limiting (in-memory, per IP/client with LRU eviction) ---
+const { BoundedRateLimiter } = require('./utils/rateLimiter');
+const limiter = new BoundedRateLimiter({ windowMs: 60000, maxRequests: 120, maxEntries: 10000 });
 
 function rateLimiter(req, res, next) {
-  const ip = req.ip || req.connection.remoteAddress || 'unknown';
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
+  const key = req.clientId || req.ip || req.connection?.remoteAddress || 'unknown';
+  const result = limiter.check(key);
 
-  if (!entry || now - entry.start > RATE_LIMIT_WINDOW_MS) {
-    rateLimitMap.set(ip, { start: now, count: 1 });
-    return next();
-  }
+  res.set('X-RateLimit-Remaining', String(result.remaining));
+  res.set('X-RateLimit-Reset', String(Math.ceil(result.resetAt / 1000)));
 
-  entry.count++;
-  if (entry.count > RATE_LIMIT_MAX) {
-    return res.status(429).json({ error: 'Too many requests' });
+  if (!result.allowed) {
+    res.set('Retry-After', String(result.retryAfter || 60));
+    return res.status(429).json({ error: 'Too many requests', retry_after: result.retryAfter });
   }
   next();
 }
 
 app.use(rateLimiter);
 
-// Clean up rate limit map every 5 minutes + cap size to prevent memory leak
-setInterval(() => {
-  const cutoff = Date.now() - RATE_LIMIT_WINDOW_MS;
-  for (const [ip, entry] of rateLimitMap) {
-    if (entry.start < cutoff) rateLimitMap.delete(ip);
-  }
-  // Hard cap: if map somehow grows huge, nuke it
-  if (rateLimitMap.size > 10000) {
-    console.warn(`[rateLimit] Map size ${rateLimitMap.size} exceeded cap, clearing`);
-    rateLimitMap.clear();
-  }
-}, 5 * 60 * 1000);
+// Periodic cleanup
+setInterval(() => limiter.cleanup(), 5 * 60 * 1000);
 
 // --- API auth middleware (skip webhooks + health) ---
 const API_KEY = process.env.ELYVN_API_KEY;
+const { logAudit } = require('./utils/auditLog');
 
 function apiAuth(req, res, next) {
-  // In production, API_KEY MUST be set. In dev, warn but allow through.
-  if (!API_KEY) {
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(401).json({ error: 'Server misconfigured — API key not set' });
-    }
-    return next(); // dev mode fallback
+  const provided = req.headers['x-api-key'];
+  if (!provided) {
+    logAudit(db, { action: 'auth_failure', ip: req.ip, userAgent: req.get('user-agent'), details: { reason: 'no_api_key', path: req.path } });
+    return res.status(401).json({ error: 'API key required' });
   }
-  const provided = req.headers['x-api-key'] || req.query.api_key;
-  if (provided === API_KEY) return next();
-  return res.status(401).json({ error: 'Unauthorized' });
+
+  // Check global admin key first
+  if (API_KEY && provided === API_KEY) {
+    req.isAdmin = true;
+    return next();
+  }
+
+  // Check per-client keys
+  if (db) {
+    try {
+      const hash = crypto.createHash('sha256').update(provided).digest('hex');
+      const keyRecord = db.prepare(
+        "SELECT * FROM client_api_keys WHERE api_key_hash = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))"
+      ).get(hash);
+      if (keyRecord) {
+        req.clientId = keyRecord.client_id;
+        req.keyPermissions = JSON.parse(keyRecord.permissions || '["read","write"]');
+        // Update last_used_at
+        db.prepare("UPDATE client_api_keys SET last_used_at = datetime('now') WHERE id = ?").run(keyRecord.id);
+        logAudit(db, { action: 'auth_success', clientId: keyRecord.client_id, ip: req.ip, userAgent: req.get('user-agent'), details: { key_id: keyRecord.id, path: req.path } });
+        return next();
+      }
+    } catch (err) {
+      console.error('[auth] Client key lookup error:', err.message);
+    }
+  }
+
+  // Dev mode fallback
+  if (!API_KEY && process.env.NODE_ENV !== 'production') {
+    return next();
+  }
+
+  logAudit(db, { action: 'auth_failure', ip: req.ip, userAgent: req.get('user-agent'), details: { reason: 'invalid_key', path: req.path } });
+  return res.status(401).json({ error: 'Invalid API key' });
 }
 
 // Routes
@@ -337,8 +361,12 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`[server] ELYVN bridge running on port ${PORT}`);
+
+  // Initialize WebSocket
+  const { initWebSocket } = require('./utils/websocket');
+  initWebSocket(server);
 
   // Initialize Telegram scheduler
   const { initScheduler } = require('./utils/scheduler');
@@ -350,6 +378,14 @@ app.listen(PORT, () => {
     scheduleBackups(DB_PATH, 24); // Daily backups
   }
 
+  // Run data retention daily
+  if (db) {
+    const { runRetention } = require('./utils/dataRetention');
+    setInterval(() => {
+      runRetention(db);
+    }, 24 * 60 * 60 * 1000); // Every 24 hours
+  }
+
   // Start job queue processor
   if (db) {
     const { processJobs } = require('./utils/jobQueue');
@@ -358,6 +394,14 @@ app.listen(PORT, () => {
 
     const jobHandlers = {
       'speed_to_lead_sms': async (payload) => {
+        // Check if lead already booked/completed before sending
+        if (payload.leadId) {
+          const lead = db.prepare('SELECT stage FROM leads WHERE id = ?').get(payload.leadId);
+          if (lead && (lead.stage === 'booked' || lead.stage === 'completed')) {
+            console.log(`[jobQueue] Skipping speed_to_lead_sms — lead ${payload.leadId} already ${lead.stage}`);
+            return;
+          }
+        }
         await sendSMS(payload.phone, payload.message, payload.from, db, payload.clientId);
       },
       'speed_to_lead_callback': async (payload) => {

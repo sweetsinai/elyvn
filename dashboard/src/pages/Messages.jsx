@@ -2,14 +2,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import MessageCard from '../components/MessageCard';
 import { getMessages } from '../lib/api';
+import { useWebSocket } from '../lib/useWebSocket';
 
 export default function Messages() {
   const clientId = localStorage.getItem('elyvn_client') || '';
+  const apiKey = sessionStorage.getItem('elyvn_api_key') || '';
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+
+  // WebSocket integration
+  const { isConnected, lastEvent } = useWebSocket(apiKey);
 
   // Filters
   const [startDate, setStartDate] = useState('');
@@ -44,6 +49,14 @@ export default function Messages() {
     loadMessages();
   }, [loadMessages]);
 
+  // Listen for WebSocket updates
+  useEffect(() => {
+    if (lastEvent && lastEvent.type === 'new_message') {
+      // Refresh messages after a short delay
+      setTimeout(() => loadMessages(), 500);
+    }
+  }, [lastEvent, loadMessages]);
+
   const handleFilter = () => {
     setPage(1);
     loadMessages();
@@ -51,7 +64,19 @@ export default function Messages() {
 
   return (
     <div className="fade-in">
-      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 24 }}>Messages</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600 }}>Messages</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: isConnected ? '#16A34A' : '#DC2626' }}>
+          <div style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: isConnected ? '#16A34A' : '#DC2626',
+            boxShadow: isConnected ? '0 0 6px #16A34A' : 'none',
+          }} />
+          {isConnected ? 'Live Updates' : 'Disconnected'}
+        </div>
+      </div>
 
       {/* Filters */}
       <div style={{

@@ -2,14 +2,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import CallCard from '../components/CallCard';
 import { getCalls } from '../lib/api';
+import { useWebSocket } from '../lib/useWebSocket';
 
 export default function Calls() {
   const clientId = localStorage.getItem('elyvn_client') || '';
+  const apiKey = sessionStorage.getItem('elyvn_api_key') || '';
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+
+  // WebSocket integration
+  const { isConnected, lastEvent } = useWebSocket(apiKey);
 
   // Filters
   const [startDate, setStartDate] = useState('');
@@ -46,6 +51,14 @@ export default function Calls() {
     loadCalls();
   }, [loadCalls]);
 
+  // Listen for WebSocket updates
+  useEffect(() => {
+    if (lastEvent && lastEvent.type === 'new_call') {
+      // Refresh calls after a short delay
+      setTimeout(() => loadCalls(), 500);
+    }
+  }, [lastEvent, loadCalls]);
+
   const handleFilter = () => {
     setPage(1);
     loadCalls();
@@ -53,7 +66,19 @@ export default function Calls() {
 
   return (
     <div className="fade-in">
-      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 24 }}>Calls</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600 }}>Calls</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: isConnected ? '#16A34A' : '#DC2626' }}>
+          <div style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: isConnected ? '#16A34A' : '#DC2626',
+            boxShadow: isConnected ? '0 0 6px #16A34A' : 'none',
+          }} />
+          {isConnected ? 'Live Updates' : 'Disconnected'}
+        </div>
+      </div>
 
       {/* Filters */}
       <div style={{

@@ -131,7 +131,8 @@ router.get('/calls/:clientId', (req, res) => {
        FROM calls WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
     ).all(...params, limitNum, offset);
 
-    res.json({ calls, total, page: pageNum, limit: limitNum });
+    const totalPages = Math.ceil(total / limitNum);
+    res.json({ calls, total, page: pageNum, limit: limitNum, total_pages: totalPages });
   } catch (err) {
     console.error('[api] calls error:', err);
     res.status(500).json({ error: 'Failed to fetch calls' });
@@ -192,7 +193,8 @@ router.get('/messages/:clientId', (req, res) => {
       `SELECT * FROM messages WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
     ).all(...params, limitNum, offset);
 
-    res.json({ messages, total, page: pageNum, limit: limitNum });
+    const totalPages = Math.ceil(total / limitNum);
+    res.json({ messages, total, page: pageNum, limit: limitNum, total_pages: totalPages });
   } catch (err) {
     console.error('[api] messages error:', err);
     res.status(500).json({ error: 'Failed to fetch messages' });
@@ -204,7 +206,7 @@ router.get('/leads/:clientId', (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
-    const { stage, minScore } = req.query;
+    const { stage, minScore, search } = req.query;
     const pageNum = Math.max(1, parseInt(req.query.page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const offset = (pageNum - 1) * limitNum;
@@ -221,6 +223,11 @@ router.get('/leads/:clientId', (req, res) => {
         conditions.push('score >= ?');
         params.push(ms);
       }
+    }
+    if (search) {
+      conditions.push('(name LIKE ? OR phone LIKE ? OR email LIKE ?)');
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern);
     }
 
     const where = conditions.join(' AND ');
@@ -244,7 +251,8 @@ router.get('/leads/:clientId', (req, res) => {
       return { ...lead, recent_calls: recentCalls, recent_messages: recentMessages };
     });
 
-    res.json({ leads: leadsWithInteractions, total, page: pageNum, limit: limitNum });
+    const totalPages = Math.ceil(total / limitNum);
+    res.json({ leads: leadsWithInteractions, total, page: pageNum, limit: limitNum, total_pages: totalPages });
   } catch (err) {
     console.error('[api] leads error:', err);
     res.status(500).json({ error: 'Failed to fetch leads' });

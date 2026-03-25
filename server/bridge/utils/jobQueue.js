@@ -64,7 +64,7 @@ async function processJobs(db, handlers) {
     const due = db.prepare(`
       SELECT * FROM job_queue
       WHERE status = 'pending'
-      AND scheduled_at <= datetime('now')
+      AND datetime(scheduled_at) <= datetime('now')
       ORDER BY scheduled_at ASC
       LIMIT 20
     `).all();

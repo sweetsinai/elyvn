@@ -297,6 +297,21 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
       VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'auto_replied', ?, datetime('now'))
     `).run(outboundId, client.id, leadId, from, reply, confidence);
 
+    // Broadcast real-time update
+    try {
+      const { broadcast } = require('../utils/websocket');
+      broadcast('new_message', {
+        id: inboundId,
+        phone: from,
+        direction: 'inbound',
+        body,
+        confidence,
+        lead_id: leadId
+      });
+    } catch (err) {
+      console.warn('[twilio] WebSocket broadcast error:', err.message);
+    }
+
     // Schedule follow-up touch for brand-new SMS contacts
     if (!existingLead) {
       try {

@@ -163,6 +163,28 @@ What actions should ELYVN take?`;
     const cleaned = text.replace(/```json|```/g, '').trim();
     const decision = JSON.parse(cleaned);
 
+    // Validate actions
+    if (decision.actions && Array.isArray(decision.actions)) {
+      const { isValidAction, isValidStage, VALID_ACTIONS } = require('./validators');
+      decision.actions = decision.actions.filter(a => {
+        if (!a.action || !isValidAction(a.action)) {
+          console.warn(`[Brain] Filtered invalid action type: ${a.action}. Valid: ${VALID_ACTIONS.join(', ')}`);
+          return false;
+        }
+        // Validate stage in update_lead_stage
+        if (a.action === 'update_lead_stage' && a.stage && !isValidStage(a.stage)) {
+          console.warn(`[Brain] Invalid stage "${a.stage}" — filtering out`);
+          return false;
+        }
+        // Validate score range
+        if (a.action === 'update_lead_score' && (typeof a.score !== 'number' || a.score < 0 || a.score > 10)) {
+          console.warn(`[Brain] Invalid score ${a.score} — filtering out`);
+          return false;
+        }
+        return true;
+      });
+    }
+
     console.log(`[Brain] ${lead?.phone || '?'}: ${decision.reasoning}`);
     console.log(`[Brain] Actions: ${decision.actions.map(a => a.action).join(', ')}`);
 
@@ -195,13 +217,13 @@ function checkGuardrails(db, lead, client) {
       warnings.push('RATE_LIMIT: 3 brain SMS sent in 24h. Do NOT send_sms.');
     }
 
-    // Owner took over via transfer
-    const transferred = db.prepare(
-      `SELECT 1 FROM calls WHERE caller_phone = ? AND client_id = ? AND outcome = 'transferred'
+    // Owner took over via transfer (check most recent call only)
+    const lastCall = db.prepare(
+      `SELECT outcome FROM calls WHERE caller_phone = ? AND client_id = ?
        ORDER BY created_at DESC LIMIT 1`
     ).get(lead.phone, client.id);
-    if (transferred) {
-      warnings.push('OWNER_HANDLING: Lead was transferred to owner. Only notify_owner, no send_sms or schedule_followup.');
+    if (lastCall && lastCall.outcome === 'transferred') {
+      warnings.push('OWNER_HANDLING: Lead was most recently transferred to owner. Only notify_owner, no send_sms or schedule_followup.');
     }
 
     // Opt-out signals

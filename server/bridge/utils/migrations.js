@@ -51,7 +51,7 @@ const migrations = [
           email TEXT,
           source TEXT,
           score INTEGER DEFAULT 0,
-          status TEXT DEFAULT 'new',
+          stage TEXT DEFAULT 'new',
           notes TEXT,
           created_at TEXT DEFAULT (datetime('now')),
           updated_at TEXT DEFAULT (datetime('now'))
@@ -298,6 +298,111 @@ const migrations = [
     up(db) {
       // Use IF NOT EXISTS to be idempotent
       db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_client_phone_unique ON leads(client_id, phone)');
+    },
+  },
+  {
+    id: '012_client_api_keys',
+    description: 'Create per-client API key authentication table',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS client_api_keys (
+          id TEXT PRIMARY KEY,
+          client_id TEXT NOT NULL,
+          api_key_hash TEXT NOT NULL,
+          label TEXT DEFAULT 'default',
+          permissions TEXT DEFAULT '["read","write"]',
+          rate_limit INTEGER DEFAULT 120,
+          is_active INTEGER DEFAULT 1,
+          last_used_at TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          expires_at TEXT,
+          FOREIGN KEY (client_id) REFERENCES clients(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_client_api_keys_hash ON client_api_keys(api_key_hash);
+        CREATE INDEX IF NOT EXISTS idx_client_api_keys_client ON client_api_keys(client_id);
+      `);
+    },
+  },
+  {
+    id: '013_audit_log',
+    description: 'Create audit logging table for security events',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS audit_log (
+          id TEXT PRIMARY KEY,
+          client_id TEXT,
+          user_id TEXT,
+          action TEXT NOT NULL,
+          resource_type TEXT,
+          resource_id TEXT,
+          ip_address TEXT,
+          user_agent TEXT,
+          details TEXT,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_log_client ON audit_log(client_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action, created_at);
+      `);
+    },
+  },
+  {
+    id: '014_schema_completion',
+    description: 'Add missing columns used by codebase but not in original schema',
+    up(db) {
+      // calls table: missing score, outcome
+      const callCols = db.prepare("PRAGMA table_info('calls')").all().map(c => c.name);
+      if (!callCols.includes('score')) db.exec('ALTER TABLE calls ADD COLUMN score INTEGER');
+      if (!callCols.includes('outcome')) db.exec('ALTER TABLE calls ADD COLUMN outcome TEXT');
+
+      // messages table: missing lead_id, channel, reply_text, reply_source, confidence
+      const msgCols = db.prepare("PRAGMA table_info('messages')").all().map(c => c.name);
+      if (!msgCols.includes('lead_id')) db.exec('ALTER TABLE messages ADD COLUMN lead_id TEXT');
+      if (!msgCols.includes('channel')) db.exec("ALTER TABLE messages ADD COLUMN channel TEXT DEFAULT 'sms'");
+      if (!msgCols.includes('reply_text')) db.exec('ALTER TABLE messages ADD COLUMN reply_text TEXT');
+      if (!msgCols.includes('reply_source')) db.exec('ALTER TABLE messages ADD COLUMN reply_source TEXT');
+      if (!msgCols.includes('confidence')) db.exec('ALTER TABLE messages ADD COLUMN confidence REAL');
+      if (!msgCols.includes('updated_at')) db.exec("ALTER TABLE messages ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))");
+
+      // followups table: missing touch_number, content, content_source, sent_at, updated_at
+      const fuCols = db.prepare("PRAGMA table_info('followups')").all().map(c => c.name);
+      if (!fuCols.includes('touch_number')) db.exec('ALTER TABLE followups ADD COLUMN touch_number INTEGER');
+      if (!fuCols.includes('content')) db.exec('ALTER TABLE followups ADD COLUMN content TEXT');
+      if (!fuCols.includes('content_source')) db.exec('ALTER TABLE followups ADD COLUMN content_source TEXT');
+      if (!fuCols.includes('sent_at')) db.exec('ALTER TABLE followups ADD COLUMN sent_at TEXT');
+      if (!fuCols.includes('updated_at')) db.exec("ALTER TABLE followups ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))");
+
+      // clients table: missing calcom_booking_link, twilio_phone, retell_phone, is_active, calcom_event_type_id
+      const clientCols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+      if (!clientCols.includes('calcom_booking_link')) db.exec('ALTER TABLE clients ADD COLUMN calcom_booking_link TEXT');
+      if (!clientCols.includes('business_name')) db.exec('ALTER TABLE clients ADD COLUMN business_name TEXT');
+      if (!clientCols.includes('twilio_phone')) db.exec("ALTER TABLE clients ADD COLUMN twilio_phone TEXT");
+      if (!clientCols.includes('retell_phone')) db.exec('ALTER TABLE clients ADD COLUMN retell_phone TEXT');
+      if (!clientCols.includes('is_active')) db.exec('ALTER TABLE clients ADD COLUMN is_active INTEGER DEFAULT 1');
+      if (!clientCols.includes('calcom_event_type_id')) db.exec('ALTER TABLE clients ADD COLUMN calcom_event_type_id TEXT');
+    },
+  },
+  {
+    id: '015_performance_indexes_retention',
+    description: 'Add missing performance indexes and data retention policy',
+    up(db) {
+      // Missing indexes on high-query columns
+      db.exec('CREATE INDEX IF NOT EXISTS idx_calls_created_at ON calls(client_id, created_at)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(client_id, created_at)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_followups_status_scheduled ON followups(status, scheduled_at)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_appointments_client_status ON appointments(client_id, status)');
+      // Handle status→stage column rename (older deployments may have 'status', newer have 'stage')
+      const leadCols = db.prepare("PRAGMA table_info('leads')").all().map(c => c.name);
+      if (leadCols.includes('stage')) {
+        db.exec('CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(client_id, stage)');
+      } else if (leadCols.includes('status')) {
+        db.exec("ALTER TABLE leads RENAME COLUMN status TO stage");
+        db.exec('CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(client_id, stage)');
+      }
+      if (leadCols.includes('score')) {
+        db.exec('CREATE INDEX IF NOT EXISTS idx_leads_score ON leads(client_id, score)');
+      }
+      db.exec('CREATE INDEX IF NOT EXISTS idx_prospects_city_industry ON prospects(city, industry)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_emails_sent_campaign ON emails_sent(campaign_id, status)');
     },
   },
 ];

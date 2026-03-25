@@ -55,7 +55,7 @@ async function triggerSpeedSequence(db, leadData) {
     const delayMs = shouldDelayUntilBusinessHours(client);
     const scheduledAt = new Date(Date.now() + delayMs).toISOString();
 
-    enqueueJob(db, 'speed_to_lead_sms', { phone, message: smsText, from: fromNumber, clientId }, scheduledAt);
+    enqueueJob(db, 'speed_to_lead_sms', { phone, message: smsText, from: fromNumber, clientId, leadId }, scheduledAt);
 
     db.prepare(`
       INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, reply_text, reply_source, status, created_at, updated_at)
