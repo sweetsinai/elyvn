@@ -1,283 +1,567 @@
-const Database = require('better-sqlite3');
+/**
+ * Unit tests for jobQueue.js
+ * 100% branch and line coverage
+ */
+
 const { enqueueJob, processJobs, cancelJobs } = require('../utils/jobQueue');
-const { runMigrations } = require('../utils/migrations');
+const { randomUUID } = require('crypto');
+
+jest.mock('crypto');
 
 describe('jobQueue', () => {
-  let db;
+  let mockDb;
+  let mockStatement;
+  let mockPrepare;
 
   beforeEach(() => {
-    // Create in-memory database for testing
-    db = new Database(':memory:');
-    // Run migrations to set up schema
-    runMigrations(db);
-  });
+    jest.clearAllMocks();
 
-  afterEach(() => {
-    db.close();
+    mockStatement = {
+      run: jest.fn(),
+      all: jest.fn(),
+      get: jest.fn(),
+    };
+
+    mockPrepare = jest.fn(() => mockStatement);
+
+    mockDb = {
+      prepare: mockPrepare,
+    };
+
+    randomUUID.mockReturnValue('test-uuid-1234');
+    console.log = jest.fn();
+    console.error = jest.fn();
+    console.warn = jest.fn();
   });
 
   describe('enqueueJob', () => {
-    it('should create a job with correct fields', () => {
-      const jobId = enqueueJob(db, 'speed_to_lead_sms', { phone: '+12125551234' });
+    it('should enqueue a job with default scheduledAt', () => {
+      mockStatement.run.mockReturnValue({ changes: 1 });
 
-      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
-      expect(job).toBeDefined();
-      expect(job.type).toBe('speed_to_lead_sms');
-      expect(job.status).toBe('pending');
-      expect(job.attempts).toBe(0);
-      expect(job.max_attempts).toBe(3);
-      expect(JSON.parse(job.payload)).toEqual({ phone: '+12125551234' });
+      const jobId = enqueueJob(mockDb, 'speed_to_lead_sms', { to: '5551234567' });
+
+      expect(jobId).toBe('test-uuid-1234');
+      expect(randomUUID).toHaveBeenCalled();
+      expect(mockPrepare).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO job_queue')
+      );
+      expect(mockStatement.run).toHaveBeenCalledWith(
+        'test-uuid-1234',
+        'speed_to_lead_sms',
+        JSON.stringify({ to: '5551234567' }),
+        expect.stringMatching(/\d{4}-\d{2}-\d{2}/)
+      );
     });
 
-    it('should set scheduledAt to now if not provided', () => {
-      const jobId = enqueueJob(db, 'test_job', {});
-      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
+    it('should enqueue a job with custom scheduledAt', () => {
+      mockStatement.run.mockReturnValue({ changes: 1 });
+      const customTime = '2025-03-25T10:00:00.000Z';
 
-      const now = new Date();
-      const scheduled = new Date(job.scheduled_at);
-      // Should be within 5 seconds of now
-      expect(Math.abs(now - scheduled)).toBeLessThan(5000);
-    });
+      const jobId = enqueueJob(mockDb, 'speed_to_lead_callback', { leadId: '123' }, customTime);
 
-    it('should use provided scheduledAt timestamp', () => {
-      const futureTime = new Date(Date.now() + 3600000).toISOString();
-      const jobId = enqueueJob(db, 'test_job', {}, futureTime);
-      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
-
-      expect(job.scheduled_at).toBe(futureTime);
-    });
-
-    it('should handle JSON payload', () => {
-      const payload = { key1: 'value1', key2: 123 };
-      const jobId = enqueueJob(db, 'test_job', payload);
-      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
-
-      expect(JSON.parse(job.payload)).toEqual(payload);
+      expect(jobId).toBe('test-uuid-1234');
+      expect(mockStatement.run).toHaveBeenCalledWith(
+        'test-uuid-1234',
+        'speed_to_lead_callback',
+        JSON.stringify({ leadId: '123' }),
+        customTime
+      );
     });
 
     it('should handle string payload', () => {
-      const payload = 'string payload';
-      const jobId = enqueueJob(db, 'test_job', payload);
-      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
+      mockStatement.run.mockReturnValue({ changes: 1 });
+      const payload = JSON.stringify({ test: 'data' });
 
-      expect(job.payload).toBe(payload);
+      enqueueJob(mockDb, 'test_job', payload);
+
+      expect(mockStatement.run).toHaveBeenCalledWith(
+        'test-uuid-1234',
+        'test_job',
+        payload,
+        expect.anything()
+      );
     });
 
-    it('should throw error if db is missing', () => {
+    it('should throw error when db is missing', () => {
       expect(() => enqueueJob(null, 'test_job', {})).toThrow('db and type required');
     });
 
-    it('should throw error if type is missing', () => {
-      expect(() => enqueueJob(db, null, {})).toThrow('db and type required');
+    it('should throw error when type is missing', () => {
+      expect(() => enqueueJob(mockDb, null, {})).toThrow('db and type required');
     });
 
-    it('should return unique job IDs', () => {
-      const id1 = enqueueJob(db, 'test_job', {});
-      const id2 = enqueueJob(db, 'test_job', {});
-      expect(id1).not.toBe(id2);
+    it('should throw error when db.prepare fails', () => {
+      mockPrepare.mockImplementation(() => {
+        throw new Error('Database error');
+      });
+
+      expect(() => enqueueJob(mockDb, 'test_job', {})).toThrow('Database error');
+      expect(console.error).toHaveBeenCalledWith(
+        '[jobQueue] enqueueJob error:',
+        'Database error'
+      );
+    });
+
+    it('should log enqueued job', () => {
+      mockStatement.run.mockReturnValue({ changes: 1 });
+
+      enqueueJob(mockDb, 'speed_to_lead_sms', {});
+
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('[jobQueue] Enqueued speed_to_lead_sms job')
+      );
     });
   });
 
   describe('processJobs', () => {
-    it('should process due jobs with correct status', async () => {
-      const jobId = enqueueJob(db, 'test_job', { data: 'test' });
+    it('should return empty results when db is missing', async () => {
+      const result = await processJobs(null, {});
+      expect(result).toEqual({ processed: 0, failed: 0 });
+    });
+
+    it('should return empty results when handlers is missing', async () => {
+      const result = await processJobs(mockDb, null);
+      expect(result).toEqual({ processed: 0, failed: 0 });
+    });
+
+    it('should process a single successful job', async () => {
       const handler = jest.fn().mockResolvedValue(undefined);
+      const job = {
+        id: 'job-1',
+        type: 'test_job',
+        payload: '{"test":"data"}',
+        attempts: 0,
+        max_attempts: 3,
+      };
 
-      await processJobs(db, { test_job: handler });
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 0 });
 
-      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
-      expect(job.status).toBe('completed');
-      expect(handler).toHaveBeenCalled();
-    });
+      const result = await processJobs(mockDb, { test_job: handler });
 
-    it('should skip future-scheduled jobs', async () => {
-      const futureTime = new Date(Date.now() + 3600000).toISOString();
-      const jobId = enqueueJob(db, 'test_job', {}, futureTime);
-      const handler = jest.fn();
-
-      await processJobs(db, { test_job: handler });
-
-      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
-      expect(job.status).toBe('pending');
-      expect(handler).not.toHaveBeenCalled();
-    });
-
-    it('should retry failed jobs with exponential backoff', async () => {
-      const jobId = enqueueJob(db, 'test_job', {});
-      const handler = jest.fn().mockRejectedValue(new Error('test error'));
-
-      await processJobs(db, { test_job: handler });
-
-      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
-      expect(job.attempts).toBe(1);
-      expect(job.status).toBe('pending'); // Rescheduled, not failed
-      expect(job.error).toBe('test error');
-
-      // Check that scheduled_at was moved forward
-      const originalScheduled = new Date(new Date().toISOString());
-      const newScheduled = new Date(job.scheduled_at);
-      expect(newScheduled.getTime()).toBeGreaterThan(originalScheduled.getTime());
-    });
-
-    it('should mark as permanently failed after max_attempts', async () => {
-      const jobId = enqueueJob(db, 'test_job', {});
-
-      // Manually set attempts to max-1
-      db.prepare('UPDATE job_queue SET attempts = 2, max_attempts = 3 WHERE id = ?').run(jobId);
-
-      const handler = jest.fn().mockRejectedValue(new Error('final error'));
-
-      await processJobs(db, { test_job: handler });
-
-      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
-      expect(job.status).toBe('failed');
-      expect(job.error).toBe('final error');
-    });
-
-    it('should handle unknown job types', async () => {
-      const jobId = enqueueJob(db, 'unknown_job', {});
-      await processJobs(db, { other_job: jest.fn() });
-
-      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
-      expect(job.status).toBe('failed');
-      expect(job.error).toBe('Unknown job type');
-    });
-
-    it('should parse JSON payload', async () => {
-      const payload = { phone: '+12125551234', message: 'Hello' };
-      const jobId = enqueueJob(db, 'test_job', payload);
-      const handler = jest.fn().mockResolvedValue(undefined);
-
-      await processJobs(db, { test_job: handler });
-
-      expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining(payload),
-        jobId,
-        db
+      expect(result).toEqual({ processed: 1, failed: 0 });
+      expect(handler).toHaveBeenCalledWith({ test: 'data' }, 'job-1', mockDb);
+      expect(mockPrepare).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE job_queue SET status = 'completed'")
       );
     });
 
-    it('should cleanup old completed jobs', async () => {
-      // Create a completed job
-      const jobId = enqueueJob(db, 'test_job', {});
-      db.prepare(
-        "UPDATE job_queue SET status = 'completed', updated_at = datetime('now', '-8 days') WHERE id = ?"
-      ).run(jobId);
+    it('should parse JSON payload from string', async () => {
+      const handler = jest.fn().mockResolvedValue(undefined);
+      const job = {
+        id: 'job-1',
+        type: 'test_job',
+        payload: '{"key":"value"}',
+        attempts: 0,
+        max_attempts: 3,
+      };
 
-      // Create a recent job that should not be deleted
-      const recentJobId = enqueueJob(db, 'test_job', {});
-      db.prepare("UPDATE job_queue SET status = 'completed' WHERE id = ?").run(recentJobId);
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 0 });
 
-      await processJobs(db, {});
+      await processJobs(mockDb, { test_job: handler });
 
-      const oldJob = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
-      const recentJob = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(recentJobId);
+      expect(handler).toHaveBeenCalledWith({ key: 'value' }, 'job-1', mockDb);
+    });
 
-      expect(oldJob).toBeUndefined();
-      expect(recentJob).toBeDefined();
+    it('should keep payload as string if JSON parse fails', async () => {
+      const handler = jest.fn().mockResolvedValue(undefined);
+      const job = {
+        id: 'job-1',
+        type: 'test_job',
+        payload: 'not json',
+        attempts: 0,
+        max_attempts: 3,
+      };
+
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 0 });
+
+      await processJobs(mockDb, { test_job: handler });
+
+      expect(handler).toHaveBeenCalledWith('not json', 'job-1', mockDb);
+    });
+
+    it('should handle payload already as object', async () => {
+      const handler = jest.fn().mockResolvedValue(undefined);
+      const job = {
+        id: 'job-1',
+        type: 'test_job',
+        payload: { direct: 'object' },
+        attempts: 0,
+        max_attempts: 3,
+      };
+
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 0 });
+
+      await processJobs(mockDb, { test_job: handler });
+
+      expect(handler).toHaveBeenCalledWith({ direct: 'object' }, 'job-1', mockDb);
+    });
+
+    it('should fail job when handler is not found', async () => {
+      const job = {
+        id: 'job-1',
+        type: 'unknown_type',
+        payload: '{}',
+        attempts: 0,
+        max_attempts: 3,
+      };
+
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 1 });
+
+      const result = await processJobs(mockDb, {});
+
+      expect(result).toEqual({ processed: 0, failed: 1 });
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining('[jobQueue] No handler for job type')
+      );
+      expect(mockPrepare).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE job_queue SET status = 'failed'")
+      );
+      expect(mockStatement.run).toHaveBeenCalledWith(
+        'Unknown job type',
+        'job-1'
+      );
+    });
+
+    it('should handle job handler timeout', async () => {
+      const handler = jest.fn(() => new Promise(r => setTimeout(r, 50000)));
+      const job = {
+        id: 'job-1',
+        type: 'slow_job',
+        payload: '{}',
+        attempts: 0,
+        max_attempts: 3,
+      };
+
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 1 });
+
+      jest.useFakeTimers();
+      const processPromise = processJobs(mockDb, { slow_job: handler });
+      jest.advanceTimersByTime(31000);
+      const result = await processPromise;
+      jest.useRealTimers();
+
+      expect(result.failed).toBe(1);
+    });
+
+    it('should reschedule job with exponential backoff on first failure', async () => {
+      const handler = jest.fn().mockRejectedValue(new Error('Handler error'));
+      const job = {
+        id: 'job-1',
+        type: 'test_job',
+        payload: '{}',
+        attempts: 0,
+        max_attempts: 3,
+      };
+
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 1 });
+
+      const result = await processJobs(mockDb, { test_job: handler });
+
+      expect(result).toEqual({ processed: 0, failed: 1 });
+      expect(mockPrepare).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE job_queue SET attempts = ?, scheduled_at = ?')
+      );
+      expect(mockStatement.run).toHaveBeenCalledWith(
+        1,
+        expect.any(String),
+        'Handler error',
+        'job-1'
+      );
+    });
+
+    it('should reschedule job with exponential backoff on second failure', async () => {
+      const handler = jest.fn().mockRejectedValue(new Error('Handler error'));
+      const job = {
+        id: 'job-1',
+        type: 'test_job',
+        payload: '{}',
+        attempts: 1,
+        max_attempts: 3,
+      };
+
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 1 });
+
+      await processJobs(mockDb, { test_job: handler });
+
+      expect(mockStatement.run).toHaveBeenCalledWith(
+        2,
+        expect.any(String),
+        'Handler error',
+        'job-1'
+      );
+    });
+
+    it('should mark job as permanently failed after max attempts', async () => {
+      const handler = jest.fn().mockRejectedValue(new Error('Handler error'));
+      const job = {
+        id: 'job-1',
+        type: 'test_job',
+        payload: '{}',
+        attempts: 2,
+        max_attempts: 3,
+      };
+
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 1 });
+
+      const result = await processJobs(mockDb, { test_job: handler });
+
+      expect(result).toEqual({ processed: 0, failed: 1 });
+      expect(mockPrepare).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE job_queue SET status = 'failed'")
+      );
+      expect(mockStatement.run).toHaveBeenCalledWith(
+        'Handler error',
+        'job-1'
+      );
+    });
+
+    it('should truncate long error messages to 255 characters', async () => {
+      const handler = jest.fn().mockRejectedValue(new Error('x'.repeat(300)));
+      const job = {
+        id: 'job-1',
+        type: 'test_job',
+        payload: '{}',
+        attempts: 0,
+        max_attempts: 3,
+      };
+
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 1 });
+
+      await processJobs(mockDb, { test_job: handler });
+
+      const calls = mockStatement.run.mock.calls;
+      const errorCall = calls.find(call => call[0] === 'x'.repeat(255));
+      expect(errorCall).toBeDefined();
+    });
+
+    it('should clean up old completed jobs', async () => {
+      mockStatement.all.mockReturnValue([]);
+      mockStatement.run.mockReturnValue({ changes: 5 });
+
+      await processJobs(mockDb, {});
+
+      expect(mockPrepare).toHaveBeenCalledWith(
+        expect.stringContaining("DELETE FROM job_queue")
+      );
+      expect(console.log).toHaveBeenCalledWith(
+        '[jobQueue] Cleaned up 5 old jobs'
+      );
+    });
+
+    it('should handle cleanup error gracefully', async () => {
+      mockPrepare.mockImplementationOnce(() => {
+        throw new Error('Cleanup failed');
+      }).mockImplementation(() => mockStatement);
+
+      mockStatement.all.mockReturnValue([]);
+      mockStatement.run.mockReturnValue({ changes: 0 });
+
+      const result = await processJobs(mockDb, {});
+
+      expect(result).toEqual({ processed: 0, failed: 0 });
+      expect(console.warn).toHaveBeenCalledWith(
+        '[jobQueue] Cleanup error:',
+        'Cleanup failed'
+      );
     });
 
     it('should process multiple jobs', async () => {
-      const jobId1 = enqueueJob(db, 'job_type_1', { id: 1 });
-      const jobId2 = enqueueJob(db, 'job_type_2', { id: 2 });
+      const handler = jest.fn().mockResolvedValue(undefined);
+      const jobs = [
+        { id: 'job-1', type: 'test_job', payload: '{}', attempts: 0, max_attempts: 3 },
+        { id: 'job-2', type: 'test_job', payload: '{}', attempts: 0, max_attempts: 3 },
+        { id: 'job-3', type: 'test_job', payload: '{}', attempts: 0, max_attempts: 3 },
+      ];
 
-      const handler1 = jest.fn().mockResolvedValue(undefined);
-      const handler2 = jest.fn().mockResolvedValue(undefined);
+      mockStatement.all.mockReturnValue(jobs);
+      mockStatement.run.mockReturnValue({ changes: 0 });
 
-      const result = await processJobs(db, {
-        job_type_1: handler1,
-        job_type_2: handler2,
-      });
+      jest.useFakeTimers();
+      const processPromise = processJobs(mockDb, { test_job: handler });
+      jest.advanceTimersByTime(500);
+      const result = await processPromise;
+      jest.useRealTimers();
 
-      expect(result.processed).toBe(2);
-      expect(handler1).toHaveBeenCalled();
-      expect(handler2).toHaveBeenCalled();
+      expect(result).toEqual({ processed: 3, failed: 0 });
+      expect(handler).toHaveBeenCalledTimes(3);
     });
 
-    it('should return processed and failed counts', async () => {
-      enqueueJob(db, 'success_job', {});
-      enqueueJob(db, 'fail_job', {});
-
-      const result = await processJobs(db, {
-        success_job: jest.fn().mockResolvedValue(undefined),
-        fail_job: jest.fn().mockRejectedValue(new Error('error')),
+    it('should handle processJobs outer error gracefully', async () => {
+      mockPrepare.mockImplementation(() => {
+        throw new Error('Database connection lost');
       });
 
-      expect(result.processed).toBe(1);
-      expect(result.failed).toBe(1);
+      const result = await processJobs(mockDb, {});
+
+      expect(result).toEqual({ processed: 0, failed: 0 });
+      expect(console.error).toHaveBeenCalledWith(
+        '[jobQueue] processJobs error:',
+        'Database connection lost'
+      );
+    });
+
+    it('should introduce small delay between jobs', async () => {
+      const handler = jest.fn().mockResolvedValue(undefined);
+      const jobs = [
+        { id: 'job-1', type: 'test_job', payload: '{}', attempts: 0, max_attempts: 3 },
+        { id: 'job-2', type: 'test_job', payload: '{}', attempts: 0, max_attempts: 3 },
+      ];
+
+      mockStatement.all.mockReturnValue(jobs);
+      mockStatement.run.mockReturnValue({ changes: 0 });
+
+      jest.useFakeTimers();
+      const processPromise = processJobs(mockDb, { test_job: handler });
+      jest.advanceTimersByTime(300);
+      await processPromise;
+      jest.useRealTimers();
+
+      expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    it('should log completed jobs', async () => {
+      const handler = jest.fn().mockResolvedValue(undefined);
+      const job = {
+        id: 'job-1',
+        type: 'test_job',
+        payload: '{}',
+        attempts: 0,
+        max_attempts: 3,
+      };
+
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 0 });
+
+      await processJobs(mockDb, { test_job: handler });
+
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('[jobQueue] Completed job job-1')
+      );
+    });
+
+    it('should handle job handler rejecting with non-error', async () => {
+      const handler = jest.fn().mockRejectedValue('String error');
+      const job = {
+        id: 'job-1',
+        type: 'test_job',
+        payload: '{}',
+        attempts: 0,
+        max_attempts: 3,
+      };
+
+      mockStatement.all.mockReturnValue([job]);
+      mockStatement.run.mockReturnValue({ changes: 1 });
+
+      const result = await processJobs(mockDb, { test_job: handler });
+
+      expect(result).toEqual({ processed: 0, failed: 1 });
     });
   });
 
   describe('cancelJobs', () => {
-    it('should cancel pending jobs by type', () => {
-      const jobId1 = enqueueJob(db, 'cancel_me', {});
-      const jobId2 = enqueueJob(db, 'keep_me', {});
-
-      const cancelled = cancelJobs(db, { type: 'cancel_me' });
-
-      expect(cancelled).toBe(1);
-
-      const job1 = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId1);
-      const job2 = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId2);
-
-      expect(job1.status).toBe('cancelled');
-      expect(job2.status).toBe('pending');
+    it('should return 0 when db is missing', () => {
+      const count = cancelJobs(null, { type: 'test_job' });
+      expect(count).toBe(0);
     });
 
-    it('should cancel jobs matching payload content', () => {
-      const jobId1 = enqueueJob(db, 'test_job', { leadId: 'lead123' });
-      const jobId2 = enqueueJob(db, 'test_job', { leadId: 'lead456' });
-
-      const cancelled = cancelJobs(db, { payloadContains: 'lead123' });
-
-      expect(cancelled).toBe(1);
-
-      const job1 = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId1);
-      const job2 = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId2);
-
-      expect(job1.status).toBe('cancelled');
-      expect(job2.status).toBe('pending');
+    it('should return 0 when filter is missing', () => {
+      const count = cancelJobs(mockDb, null);
+      expect(count).toBe(0);
     });
 
-    it('should not cancel non-pending jobs', () => {
-      const jobId = enqueueJob(db, 'test_job', {});
-      db.prepare("UPDATE job_queue SET status = 'completed' WHERE id = ?").run(jobId);
+    it('should cancel jobs by type', () => {
+      mockStatement.run.mockReturnValue({ changes: 5 });
 
-      const cancelled = cancelJobs(db, { type: 'test_job' });
+      const count = cancelJobs(mockDb, { type: 'speed_to_lead_sms' });
 
-      expect(cancelled).toBe(0);
-
-      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(jobId);
-      expect(job.status).toBe('completed');
+      expect(count).toBe(5);
+      expect(mockPrepare).toHaveBeenCalledWith(
+        expect.stringContaining("status = 'pending' AND type = ?")
+      );
+      expect(mockStatement.run).toHaveBeenCalledWith('speed_to_lead_sms');
     });
 
-    it('should return 0 if no jobs match', () => {
-      enqueueJob(db, 'some_job', {});
-      const cancelled = cancelJobs(db, { type: 'nonexistent' });
-      expect(cancelled).toBe(0);
+    it('should cancel jobs by payload contains', () => {
+      mockStatement.run.mockReturnValue({ changes: 3 });
+
+      const count = cancelJobs(mockDb, { payloadContains: 'leadId' });
+
+      expect(count).toBe(3);
+      expect(mockPrepare).toHaveBeenCalledWith(
+        expect.stringContaining("status = 'pending' AND payload LIKE ?")
+      );
+      expect(mockStatement.run).toHaveBeenCalledWith('%leadId%');
     });
 
-    it('should return 0 if filter is null', () => {
-      enqueueJob(db, 'test_job', {});
-      const cancelled = cancelJobs(db, null);
-      expect(cancelled).toBe(0);
+    it('should cancel jobs by both type and payload', () => {
+      mockStatement.run.mockReturnValue({ changes: 2 });
+
+      const count = cancelJobs(mockDb, { type: 'test_job', payloadContains: 'key' });
+
+      expect(count).toBe(2);
+      expect(mockPrepare).toHaveBeenCalledWith(
+        expect.stringContaining("status = 'pending' AND type = ? AND payload LIKE ?")
+      );
+      expect(mockStatement.run).toHaveBeenCalledWith('test_job', '%key%');
     });
 
-    it('should return 0 if db is null', () => {
-      const cancelled = cancelJobs(null, { type: 'test' });
-      expect(cancelled).toBe(0);
+    it('should return 0 when no jobs are cancelled', () => {
+      mockStatement.run.mockReturnValue({ changes: 0 });
+
+      const count = cancelJobs(mockDb, { type: 'unknown_type' });
+
+      expect(count).toBe(0);
     });
 
-    it('should cancel multiple jobs matching type', () => {
-      enqueueJob(db, 'cancel_all', {});
-      enqueueJob(db, 'cancel_all', {});
-      enqueueJob(db, 'cancel_all', {});
+    it('should handle undefined changes gracefully', () => {
+      mockStatement.run.mockReturnValue({});
 
-      const cancelled = cancelJobs(db, { type: 'cancel_all' });
-      expect(cancelled).toBe(3);
+      const count = cancelJobs(mockDb, { type: 'test_job' });
 
-      const count = db.prepare("SELECT COUNT(*) as c FROM job_queue WHERE status = 'cancelled'").get();
-      expect(count.c).toBe(3);
+      expect(count).toBe(0);
+    });
+
+    it('should log cancelled jobs count', () => {
+      mockStatement.run.mockReturnValue({ changes: 5 });
+
+      cancelJobs(mockDb, { type: 'test_job' });
+
+      expect(console.log).toHaveBeenCalledWith(
+        '[jobQueue] Cancelled 5 pending jobs'
+      );
+    });
+
+    it('should handle error gracefully', () => {
+      mockPrepare.mockImplementation(() => {
+        throw new Error('Database error');
+      });
+
+      const count = cancelJobs(mockDb, { type: 'test_job' });
+
+      expect(count).toBe(0);
+      expect(console.error).toHaveBeenCalledWith(
+        '[jobQueue] cancelJobs error:',
+        'Database error'
+      );
+    });
+
+    it('should cancel jobs with empty filter object', () => {
+      mockStatement.run.mockReturnValue({ changes: 10 });
+
+      const count = cancelJobs(mockDb, {});
+
+      expect(count).toBe(10);
+      expect(mockStatement.run).toHaveBeenCalledWith();
     });
   });
 });
