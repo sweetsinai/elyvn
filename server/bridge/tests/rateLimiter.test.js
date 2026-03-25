@@ -189,6 +189,24 @@ describe('BoundedRateLimiter', () => {
   });
 
   describe('_evictIfNeeded method', () => {
+    it('should not evict when under maxEntries', () => {
+      const limiter = new BoundedRateLimiter({ maxEntries: 5 });
+
+      limiter.check('key1');
+      expect(limiter.size).toBe(1);
+
+      limiter.check('key2');
+      expect(limiter.size).toBe(2);
+
+      limiter.check('key3');
+      expect(limiter.size).toBe(3);
+
+      // All entries should be preserved
+      expect(limiter.entries.has('key1')).toBe(true);
+      expect(limiter.entries.has('key2')).toBe(true);
+      expect(limiter.entries.has('key3')).toBe(true);
+    });
+
     it('should evict oldest entry when maxEntries exceeded', () => {
       const limiter = new BoundedRateLimiter({ maxEntries: 3 });
 
@@ -237,7 +255,7 @@ describe('BoundedRateLimiter', () => {
       expect(limiter.entries.has('key3')).toBe(true);
     });
 
-    it('should not evict when under maxEntries', () => {
+    it('should preserve all entries when under maxEntries limit', () => {
       const limiter = new BoundedRateLimiter({ maxEntries: 100 });
 
       for (let i = 0; i < 50; i++) {
@@ -263,22 +281,53 @@ describe('BoundedRateLimiter', () => {
       expect(limiter.entries.has('another_key')).toBe(true);
     });
 
-    it('should handle when oldest is null (edge case)', () => {
+    it('should call _evictIfNeeded correctly', () => {
+      const limiter = new BoundedRateLimiter({ maxEntries: 2 });
+
+      // Add 2 entries - at limit, no eviction needed
+      limiter.check('key1');
+      limiter.check('key2');
+      expect(limiter.size).toBe(2);
+
+      // Adding 3rd entry triggers eviction
+      limiter.check('key3');
+      expect(limiter.size).toBe(2);
+
+      // Verify one of the old ones was removed
+      const hasKey1Or2 = limiter.entries.has('key1') || limiter.entries.has('key2');
+      const hasKey3 = limiter.entries.has('key3');
+      expect(hasKey3).toBe(true);
+    });
+
+    it('should handle _evictIfNeeded with single entry', () => {
       const limiter = new BoundedRateLimiter({ maxEntries: 1 });
 
-      // Create a scenario where we add to an empty map
-      // The _evictIfNeeded checks if size > maxEntries
-      // So when we go from 1 to 1 entry, it won't trigger eviction
-      // But we can manually test the null check scenario
-
-      // Add one entry
+      // When we exceed maxEntries with a single entry in the map
       limiter.check('key1');
       expect(limiter.size).toBe(1);
 
-      // The if (oldest) check prevents delete of null
-      // This is already covered by other tests, but ensure branch is hit
-      // by verifying the state is correct after eviction attempts
-      expect(limiter.entries.has('key1')).toBe(true);
+      // Next check triggers eviction (size > maxEntries after set)
+      limiter.check('key2');
+      expect(limiter.size).toBe(1);
+      expect(limiter.entries.has('key2')).toBe(true);
+    });
+
+    it('should test _evictIfNeeded directly for branch coverage', () => {
+      const limiter = new BoundedRateLimiter({ maxEntries: 2 });
+
+      // Manually populate entries and call _evictIfNeeded
+      limiter.entries.set('key1', { count: 1, windowStart: Date.now(), lastAccess: Date.now() - 100 });
+      limiter.entries.set('key2', { count: 1, windowStart: Date.now(), lastAccess: Date.now() });
+      limiter.entries.set('key3', { count: 1, windowStart: Date.now(), lastAccess: Date.now() });
+
+      expect(limiter.size).toBe(3);
+
+      // Call _evictIfNeeded directly
+      limiter._evictIfNeeded();
+
+      expect(limiter.size).toBe(2);
+      // key1 should be evicted (oldest lastAccess)
+      expect(limiter.entries.has('key1')).toBe(false);
     });
   });
 
