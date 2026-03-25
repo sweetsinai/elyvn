@@ -28,19 +28,55 @@ router.post('/', (req, res) => {
   }
 });
 
+// ─── Helper: format duration ───
+function fmtDuration(sec) {
+  if (!sec) return '';
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}m${s > 0 ? ` ${s}s` : ''}` : `${s}s`;
+}
+
+// ─── Helper: format relative time ───
+function timeAgo(isoDate) {
+  if (!isoDate) return '';
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+// ─── Helper: outcome emoji ───
+function outcomeEmoji(outcome) {
+  return outcome === 'booked' ? '✅'
+    : outcome === 'missed' ? '❌'
+    : outcome === 'voicemail' ? '📩'
+    : outcome === 'transferred' ? '🔀'
+    : '📞';
+}
+
+// ─── Helper: stage emoji ───
+function stageEmoji(stage) {
+  return stage === 'hot' ? '🔥'
+    : stage === 'warm' ? '🌡'
+    : stage === 'booked' ? '✅'
+    : stage === 'new' ? '🆕'
+    : stage === 'contacted' ? '💬'
+    : stage === 'nurture' ? '🌱'
+    : stage === 'lost' ? '💀'
+    : '📋';
+}
+
 async function handleCommand(db, message) {
-  if (!message || !message.chat || !message.chat.id) {
-    console.warn('[telegram] handleCommand: missing chat or chat.id');
-    return;
-  }
+  if (!message || !message.chat || !message.chat.id) return;
   const chatId = String(message.chat.id);
   const text = (message.text || '').trim();
   const firstName = message.from?.first_name || 'there';
 
-  // Ignore non-text messages (photos, stickers, etc.)
-  if (!text) {
-    return;
-  }
+  if (!text) return;
 
   const client = db.prepare('SELECT * FROM clients WHERE telegram_chat_id = ?').get(chatId);
 
@@ -56,18 +92,15 @@ async function handleCommand(db, message) {
     await telegram.sendMessage(chatId,
       `Hey ${firstName}! You're connected to <b>${target.business_name || target.name || 'your business'}</b>.\n\n`
       + `Here's what I can do:\n`
-      + `/today - Today's schedule\n`
-      + `/stats - Last 7 days stats\n`
-      + `/calls - Recent calls\n`
-      + `/leads - Hot leads\n`
-      + `/pause - Pause AI answering\n`
-      + `/resume - Resume AI answering\n`
-      + `/help - Show commands`
+      + `/status — Full dashboard (calls, leads, revenue)\n`
+      + `/leads — All your leads by stage\n`
+      + `/complete +phone — Mark job done\n`
+      + `/pause / /resume — Toggle AI\n`
+      + `/help — All commands`
     );
     return;
   }
 
-  // /start without param and no linked client
   if (text === '/start' && !client) {
     await telegram.sendMessage(chatId, 'Use the onboarding link sent to your email to connect your account.');
     return;
@@ -78,66 +111,140 @@ async function handleCommand(db, message) {
     return;
   }
 
-  const cmd = text.split(' ')[0].toLowerCase().replace('@', '');
+  const cmd = text.split(' ')[0].toLowerCase().replace(/@\w+/, '');
 
   switch (cmd) {
-    case '/start': {
-      await telegram.sendMessage(chatId,
-        `Welcome back, ${firstName}!\n\n`
-        + `/today - Today's schedule\n`
-        + `/stats - Last 7 days stats\n`
-        + `/calls - Recent calls\n`
-        + `/leads - Hot leads\n`
-        + `/pause - Pause AI answering\n`
-        + `/resume - Resume AI answering\n`
-        + `/help - Show commands`
-      );
-      break;
-    }
 
-    case '/today': {
+    // ═══════════════════════════════════════════════════════
+    // /status — THE ONE COMMAND that shows everything
+    // ═══════════════════════════════════════════════════════
+    case '/start':
+    case '/status': {
       const today = new Date().toISOString().split('T')[0];
-      const bookings = db.prepare(
-        `SELECT * FROM calls WHERE client_id = ? AND outcome = 'booked' AND date(created_at) = ? ORDER BY created_at ASC`
-      ).all(client.id, today);
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-      if (bookings.length === 0) {
-        await telegram.sendMessage(chatId, 'No bookings for today.');
-      } else {
-        let msg = `<b>Today's schedule</b> (${bookings.length})\n\n`;
-        bookings.forEach((b, i) => {
-          const time = b.created_at ? new Date(b.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
-          msg += `${i + 1}. ${time} - ${b.caller_name || b.caller_phone || 'Unknown'}\n`;
-          if (b.summary) msg += `   ${b.summary.substring(0, 80)}\n`;
-        });
-        await telegram.sendMessage(chatId, msg);
+      // Today's stats
+      const todayCalls = db.prepare(
+        `SELECT COUNT(*) as total,
+          SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked,
+          SUM(CASE WHEN outcome = 'missed' THEN 1 ELSE 0 END) as missed
+        FROM calls WHERE client_id = ? AND date(created_at) = ?`
+      ).get(client.id, today);
+
+      const todayMsgs = db.prepare(
+        `SELECT COUNT(*) as total FROM messages WHERE client_id = ? AND date(created_at) = ?`
+      ).get(client.id, today);
+
+      // 7-day stats
+      const weekCalls = db.prepare(
+        `SELECT COUNT(*) as total,
+          SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked
+        FROM calls WHERE client_id = ? AND created_at >= ?`
+      ).get(client.id, weekAgo);
+
+      const weekRevenue = (weekCalls.booked || 0) * (client.avg_ticket || 0);
+
+      // Active leads count
+      const leadCounts = db.prepare(
+        `SELECT stage, COUNT(*) as c FROM leads WHERE client_id = ? AND stage NOT IN ('lost', 'completed') GROUP BY stage`
+      ).all(client.id);
+      const totalActive = leadCounts.reduce((sum, l) => sum + l.c, 0);
+      const hotCount = leadCounts.find(l => l.stage === 'hot')?.c || 0;
+      const bookedCount = leadCounts.find(l => l.stage === 'booked')?.c || 0;
+
+      // Last 3 calls
+      const recentCalls = db.prepare(
+        `SELECT caller_name, caller_phone, outcome, duration, score, summary, created_at
+         FROM calls WHERE client_id = ? ORDER BY created_at DESC LIMIT 3`
+      ).all(client.id);
+
+      // Pending jobs
+      const pendingJobs = db.prepare(
+        `SELECT COUNT(*) as c FROM job_queue WHERE status = 'pending'`
+      ).get();
+
+      // Build the message
+      let msg = `📊 <b>${client.business_name || 'Dashboard'}</b>\n\n`;
+
+      // Today
+      msg += `<b>Today</b>\n`;
+      msg += `  Calls: ${todayCalls.total || 0}`;
+      if (todayCalls.booked) msg += ` (${todayCalls.booked} booked)`;
+      if (todayCalls.missed) msg += ` (${todayCalls.missed} missed)`;
+      msg += `\n  Messages: ${todayMsgs.total || 0}\n\n`;
+
+      // 7-day
+      msg += `<b>This week</b>\n`;
+      msg += `  Calls: ${weekCalls.total || 0} | Booked: ${weekCalls.booked || 0}\n`;
+      msg += `  Revenue: $${weekRevenue.toLocaleString()}\n\n`;
+
+      // Leads
+      msg += `<b>Leads</b>  (${totalActive} active)\n`;
+      if (hotCount > 0) msg += `  🔥 ${hotCount} hot`;
+      if (bookedCount > 0) msg += `  ✅ ${bookedCount} booked`;
+      if (hotCount > 0 || bookedCount > 0) msg += '\n';
+      msg += '\n';
+
+      // Recent calls
+      if (recentCalls.length > 0) {
+        msg += `<b>Recent calls</b>\n`;
+        for (const c of recentCalls) {
+          const who = c.caller_name || c.caller_phone || 'Unknown';
+          msg += `  ${outcomeEmoji(c.outcome)} ${who}`;
+          if (c.duration) msg += ` (${fmtDuration(c.duration)})`;
+          if (c.score) msg += ` ${c.score}/10`;
+          msg += ` — ${timeAgo(c.created_at)}\n`;
+        }
+        msg += '\n';
       }
+
+      // AI status
+      msg += client.is_active !== 0 ? '🟢 AI is active' : '🔴 AI is paused';
+      if (pendingJobs.c > 0) msg += ` | ${pendingJobs.c} jobs queued`;
+
+      await telegram.sendMessage(chatId, msg);
       break;
     }
 
-    case '/stats': {
-      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const calls = db.prepare(
-        `SELECT COUNT(*) as total, SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked, SUM(CASE WHEN outcome = 'missed' THEN 1 ELSE 0 END) as missed FROM calls WHERE client_id = ? AND created_at >= ?`
-      ).get(client.id, since);
-      const msgs = db.prepare(
-        `SELECT COUNT(*) as total FROM messages WHERE client_id = ? AND created_at >= ?`
-      ).get(client.id, since);
-      const bookedCount = calls.booked || 0;
-      const clientData = db.prepare('SELECT avg_ticket FROM clients WHERE id = ?').get(client.id);
-      const rev = { revenue: bookedCount * (clientData?.avg_ticket || 0) };
+    // ═══════════════════════════════════════════════════════
+    // /leads — All leads grouped by stage
+    // ═══════════════════════════════════════════════════════
+    case '/leads': {
+      const leads = db.prepare(
+        `SELECT name, phone, score, stage, updated_at
+         FROM leads WHERE client_id = ? AND stage NOT IN ('lost', 'completed')
+         ORDER BY
+           CASE stage WHEN 'hot' THEN 1 WHEN 'booked' THEN 2 WHEN 'warm' THEN 3
+           WHEN 'contacted' THEN 4 WHEN 'new' THEN 5 WHEN 'nurture' THEN 6 ELSE 7 END,
+           score DESC
+         LIMIT 20`
+      ).all(client.id);
 
-      await telegram.sendMessage(chatId,
-        `<b>Last 7 days</b>\n\n`
-        + `Calls: ${calls.total || 0}\n`
-        + `Booked: ${calls.booked || 0}\n`
-        + `Missed: ${calls.missed || 0}\n`
-        + `Messages: ${msgs.total || 0}\n`
-        + `Revenue: $${rev.revenue || 0}`
-      );
+      if (leads.length === 0) {
+        await telegram.sendMessage(chatId, 'No active leads yet. They\'ll show up after your first call or message.');
+        break;
+      }
+
+      let msg = `📋 <b>Leads</b> (${leads.length})\n\n`;
+      let currentStage = '';
+      for (const l of leads) {
+        if (l.stage !== currentStage) {
+          currentStage = l.stage;
+          msg += `\n${stageEmoji(l.stage)} <b>${(l.stage || 'unknown').toUpperCase()}</b>\n`;
+        }
+        const who = l.name || l.phone || 'Unknown';
+        msg += `  ${who}`;
+        if (l.score) msg += ` — ${l.score}/10`;
+        msg += ` — ${timeAgo(l.updated_at)}\n`;
+      }
+
+      await telegram.sendMessage(chatId, msg);
       break;
     }
 
+    // ═══════════════════════════════════════════════════════
+    // /calls — Recent calls with transcripts
+    // ═══════════════════════════════════════════════════════
     case '/calls': {
       const recent = db.prepare(
         `SELECT * FROM calls WHERE client_id = ? ORDER BY created_at DESC LIMIT 5`
@@ -146,58 +253,45 @@ async function handleCommand(db, message) {
       if (recent.length === 0) {
         await telegram.sendMessage(chatId, 'No calls yet.');
       } else {
-        let msg = '<b>Recent calls</b>\n\n';
-        recent.forEach((c) => {
-          const outcomeEmoji = c.outcome === 'booked' ? '&#9989;'
-            : c.outcome === 'missed' ? '&#10060;'
-            : c.outcome === 'voicemail' ? '&#128233;'
-            : '&#128222;';
-          const duration = c.duration ? `${Math.floor(c.duration / 60)}m ${c.duration % 60}s` : '';
-          msg += `${outcomeEmoji} ${c.caller_name || c.caller_phone || 'Unknown'}`;
-          if (duration) msg += ` (${duration})`;
-          if (c.score) msg += ` - Score: ${c.score}/10`;
-          msg += `\n`;
-          if (c.summary) msg += `  ${c.summary.substring(0, 100)}\n`;
-          msg += `\n`;
+        let msg = '📞 <b>Recent calls</b>\n\n';
+        for (const c of recent) {
+          const who = c.caller_name || c.caller_phone || 'Unknown';
+          msg += `${outcomeEmoji(c.outcome)} <b>${who}</b>`;
+          if (c.duration) msg += ` (${fmtDuration(c.duration)})`;
+          if (c.score) msg += ` — ${c.score}/10`;
+          msg += ` — ${timeAgo(c.created_at)}\n`;
+          if (c.summary) msg += `  ${c.summary.substring(0, 120)}\n`;
+          msg += '\n';
+        }
+        await telegram.sendMessage(chatId, msg, {
+          reply_markup: recent[0]?.call_id ? {
+            inline_keyboard: [[
+              { text: '📄 Full transcript', callback_data: `transcript:${recent[0].call_id}` }
+            ]]
+          } : undefined
         });
-        await telegram.sendMessage(chatId, msg);
       }
       break;
     }
 
-    case '/leads': {
-      const leads = db.prepare(
-        `SELECT * FROM leads WHERE client_id = ? AND score >= 7 AND stage NOT IN ('completed', 'lost') ORDER BY score DESC LIMIT 10`
-      ).all(client.id);
-
-      if (leads.length === 0) {
-        await telegram.sendMessage(chatId, 'No hot leads right now.');
-      } else {
-        let msg = '<b>Hot leads</b>\n\n';
-        leads.forEach((l, i) => {
-          const scoreEmoji = l.score >= 9 ? '&#128293;&#128293;' : '&#128293;';
-          msg += `${i + 1}. <b>${l.name || 'Unknown'}</b> - ${l.score}/10 ${scoreEmoji}\n`;
-          if (l.phone) msg += `   📞 ${l.phone}\n`;
-          if (l.summary) msg += `   ${l.summary.substring(0, 80)}\n`;
-          msg += `\n`;
-        });
-        await telegram.sendMessage(chatId, msg);
-      }
-      break;
-    }
-
+    // ═══════════════════════════════════════════════════════
+    // /pause & /resume — Toggle AI
+    // ═══════════════════════════════════════════════════════
     case '/pause': {
       db.prepare('UPDATE clients SET is_active = 0 WHERE id = ?').run(client.id);
-      await telegram.sendMessage(chatId, 'AI answering <b>paused</b>. Your calls will ring through to you directly. Use /resume to turn it back on.');
+      await telegram.sendMessage(chatId, '🔴 AI paused — calls will ring through to you. Use /resume to turn it back on.');
       break;
     }
 
     case '/resume': {
       db.prepare('UPDATE clients SET is_active = 1 WHERE id = ?').run(client.id);
-      await telegram.sendMessage(chatId, 'AI answering <b>resumed</b>. I\'m back on duty.');
+      await telegram.sendMessage(chatId, '🟢 AI resumed — I\'m back on duty.');
       break;
     }
 
+    // ═══════════════════════════════════════════════════════
+    // /complete +phone — Mark job done → review request
+    // ═══════════════════════════════════════════════════════
     case '/complete': {
       const phone = text.split(' ')[1]?.trim();
       if (!phone) {
@@ -205,7 +299,6 @@ async function handleCommand(db, message) {
         break;
       }
 
-      // Mark appointments as completed + cancel reminders + schedule review (in transaction)
       try {
         const { randomUUID } = require('crypto');
         const reviewLink = client.google_review_link || '';
@@ -221,10 +314,11 @@ async function handleCommand(db, message) {
 
           const lead = db.prepare('SELECT id, name FROM leads WHERE phone = ? AND client_id = ?').get(phone, client.id);
           if (lead) {
-            // Cancel any pending appointment reminders for this lead
             db.prepare(
               "UPDATE followups SET status = 'cancelled' WHERE lead_id = ? AND type = 'reminder' AND status = 'scheduled'"
             ).run(lead.id);
+
+            db.prepare("UPDATE leads SET stage = 'completed', updated_at = datetime('now') WHERE id = ?").run(lead.id);
 
             const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
             db.prepare(`
@@ -235,7 +329,7 @@ async function handleCommand(db, message) {
         })();
 
         await telegram.sendMessage(chatId,
-          `&#9989; Job marked complete for ${phone}.\n\nReminders cancelled. Review request scheduled for 2h.${reviewLink ? '' : '\n\n&#9888;&#65039; Set a Google review link via /reviewlink to include it.'}`
+          `✅ Done for ${phone}.\nReminders cancelled. Review request in 2h.${reviewLink ? '' : '\n\n⚠️ Set a Google review link: /set review YOUR_LINK'}`
         );
       } catch (completeErr) {
         console.error('[telegram] /complete error:', completeErr.message);
@@ -244,151 +338,77 @@ async function handleCommand(db, message) {
       break;
     }
 
-    case '/reviewlink': {
-      const link = text.split(' ').slice(1).join(' ').trim();
-      if (!link) {
-        const current = client.google_review_link || 'not set';
-        await telegram.sendMessage(chatId, `Current review link: ${current}\n\nUsage: /reviewlink https://g.page/...`);
-        break;
-      }
-      db.prepare('UPDATE clients SET google_review_link = ?, updated_at = datetime(\'now\') WHERE id = ?').run(link, client.id);
-      await telegram.sendMessage(chatId, `&#9989; Review link updated.`);
-      break;
-    }
-
-    case '/brain': {
-      const brainActions = db.prepare(
-        `SELECT m.phone, m.body as action_text, m.created_at, l.name, l.score
-         FROM messages m
-         LEFT JOIN leads l ON m.phone = l.phone AND m.client_id = l.client_id
-         WHERE m.client_id = ? AND m.reply_source = 'brain' AND m.direction = 'outbound'
-         ORDER BY m.created_at DESC LIMIT 10`
-      ).all(client.id);
-
-      if (brainActions.length === 0) {
-        await telegram.sendMessage(chatId, '&#129504; <b>Brain Activity</b>\n\nNo autonomous actions yet. The brain activates after calls and messages.');
-      } else {
-        let msg = '&#129504; <b>Brain Activity (Last 10)</b>\n\n';
-        brainActions.forEach((a, i) => {
-          msg += `${i + 1}. <b>${a.name || a.phone}</b> (Score: ${a.score || '?'})\n`;
-          msg += `   "${(a.action_text || '').substring(0, 80)}"\n`;
-          msg += `   ${new Date(a.created_at).toLocaleString()}\n\n`;
-        });
-        await telegram.sendMessage(chatId, msg);
-      }
-      break;
-    }
-
-    case '/outreach': {
-      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const sent = db.prepare("SELECT COUNT(*) as c FROM emails_sent WHERE status = 'sent' AND sent_at >= ?").get(since);
-      const replied = db.prepare("SELECT COUNT(*) as c FROM emails_sent WHERE reply_at IS NOT NULL AND sent_at >= ?").get(since);
-      const interested = db.prepare("SELECT COUNT(*) as c FROM prospects WHERE status = 'interested' AND updated_at >= ?").get(since);
-      const totalProspects = db.prepare("SELECT COUNT(*) as c FROM prospects").get();
-      const newProspects = db.prepare("SELECT COUNT(*) as c FROM prospects WHERE status = 'new' AND email IS NOT NULL").get();
-
-      await telegram.sendMessage(chatId,
-        `<b>Outreach Stats (7 days)</b>\n\n`
-        + `Emails sent: ${sent.c}\n`
-        + `Replies: ${replied.c}\n`
-        + `Interested: ${interested.c}\n`
-        + `Total prospects: ${totalProspects.c}\n`
-        + `Ready to email: ${newProspects.c}`
-      );
-      break;
-    }
-
-    case '/scrape': {
+    // ═══════════════════════════════════════════════════════
+    // /set key value — Configure settings
+    // ═══════════════════════════════════════════════════════
+    case '/set': {
       const parts = text.split(' ').slice(1);
-      if (parts.length < 2) {
-        await telegram.sendMessage(chatId, 'Usage: /scrape plumber philadelphia');
-        break;
-      }
-      const industry = parts[0];
-      const city = parts.slice(1).join(' ');
+      const key = (parts[0] || '').toLowerCase();
+      const value = parts.slice(1).join(' ').trim();
 
-      await telegram.sendMessage(chatId, `Scraping ${industry} in ${city}...`);
-
-      try {
-        const { scrapeGoogleMaps } = require('../utils/scraper');
-        const result = await scrapeGoogleMaps(db, industry, city, '', 50);
+      if (!key || !value) {
         await telegram.sendMessage(chatId,
-          `Scrape complete\n\nFound: ${result.found}\nNew prospects: ${result.new}`
+          '<b>Settings</b>\n\n'
+          + '/set review https://g.page/... — Google review link\n'
+          + '/set ticket 150 — Average ticket price\n'
+          + '/set name My Business — Business name'
         );
-      } catch (scrapeErr) {
-        await telegram.sendMessage(chatId, `Scrape failed: ${scrapeErr.message}`);
-      }
-      break;
-    }
-
-    case '/prospects': {
-      const hot = db.prepare(`
-        SELECT business_name, city, industry, rating, review_count, status, phone
-        FROM prospects
-        WHERE status IN ('interested', 'replied', 'new')
-        ORDER BY
-          CASE status WHEN 'interested' THEN 1 WHEN 'replied' THEN 2 ELSE 3 END,
-          rating DESC
-        LIMIT 10
-      `).all();
-
-      if (hot.length === 0) {
-        await telegram.sendMessage(chatId, 'No prospects yet. Use /scrape to find some.');
         break;
       }
 
-      let msg = '<b>Top Prospects</b>\n\n';
-      hot.forEach((p, i) => {
-        const statusLabel = p.status === 'interested' ? '[HOT]' : p.status === 'replied' ? '[REPLIED]' : '[NEW]';
-        msg += `${i+1}. ${statusLabel} <b>${p.business_name}</b>\n`;
-        msg += `   ${p.city} | ${p.industry || 'N/A'} | ${p.rating || '?'}/5 (${p.review_count || 0})\n`;
-        if (p.phone) msg += `   ${p.phone}\n`;
-        msg += `   Status: ${p.status}\n\n`;
-      });
-      await telegram.sendMessage(chatId, msg);
+      if (key === 'review') {
+        db.prepare('UPDATE clients SET google_review_link = ?, updated_at = datetime(\'now\') WHERE id = ?').run(value, client.id);
+        await telegram.sendMessage(chatId, `✅ Review link updated.`);
+      } else if (key === 'ticket') {
+        const amount = parseFloat(value);
+        if (isNaN(amount)) {
+          await telegram.sendMessage(chatId, 'Invalid amount. Usage: /set ticket 150');
+          break;
+        }
+        db.prepare('UPDATE clients SET avg_ticket = ?, updated_at = datetime(\'now\') WHERE id = ?').run(amount, client.id);
+        await telegram.sendMessage(chatId, `✅ Average ticket set to $${amount}.`);
+      } else if (key === 'name') {
+        db.prepare('UPDATE clients SET business_name = ?, updated_at = datetime(\'now\') WHERE id = ?').run(value, client.id);
+        await telegram.sendMessage(chatId, `✅ Business name updated to "${value}".`);
+      } else {
+        await telegram.sendMessage(chatId, `Unknown setting "${key}". Try: review, ticket, name`);
+      }
       break;
     }
 
+    // ═══════════════════════════════════════════════════════
+    // /help — Simple command list
+    // ═══════════════════════════════════════════════════════
     case '/help': {
       await telegram.sendMessage(chatId,
         `<b>Commands</b>\n\n`
-        + `/today - Today's schedule\n`
-        + `/stats - Last 7 days stats\n`
-        + `/calls - Recent calls\n`
-        + `/leads - Hot leads\n`
-        + `/brain - Brain activity feed\n`
-        + `/outreach - Outreach stats (7 days)\n`
-        + `/scrape industry city - Scrape Google Maps\n`
-        + `/prospects - Top 10 prospects\n`
-        + `/complete +phone - Mark job done + schedule review request\n`
-        + `/reviewlink URL - Set Google review link\n`
-        + `/pause - Pause AI answering\n`
-        + `/resume - Resume AI answering\n`
-        + `/help - Show this message`
+        + `/status — Full dashboard\n`
+        + `/leads — All leads by stage\n`
+        + `/calls — Recent calls\n`
+        + `/complete +phone — Mark job done\n`
+        + `/set — Configure settings\n`
+        + `/pause — Pause AI\n`
+        + `/resume — Resume AI\n`
+        + `/help — This message`
       );
       break;
     }
 
     default: {
-      await telegram.sendMessage(chatId, 'Type /help to see available commands.');
+      // For any unrecognized text, show a friendly nudge
+      await telegram.sendMessage(chatId, 'Type /status for your dashboard or /help for commands.');
       break;
     }
   }
 }
 
 async function handleCallback(db, callbackQuery) {
-  if (!callbackQuery) {
-    console.warn('[telegram] handleCallback: missing callbackQuery');
-    return;
-  }
+  if (!callbackQuery) return;
   const chatId = String(callbackQuery.message?.chat?.id || '');
   const data = callbackQuery.data || '';
   const callbackId = callbackQuery.id;
 
-  if (!chatId || !data) {
-    console.warn('[telegram] handleCallback: missing chatId or data');
-    return;
-  }
+  if (!chatId || !data) return;
 
   if (data.startsWith('transcript:')) {
     const callId = data.split(':')[1];
@@ -404,13 +424,24 @@ async function handleCallback(db, callbackQuery) {
     }
     await telegram.answerCallback(callbackId, 'Transcript sent');
   } else if (data.startsWith('msg_ok:')) {
-    await telegram.answerCallback(callbackId, 'Noted -- AI reply was good');
+    await telegram.answerCallback(callbackId, 'Noted — AI reply was good');
   } else if (data.startsWith('msg_takeover:')) {
     const parts = data.split(':');
     const phone = parts[2] || '';
     await telegram.answerCallback(callbackId, "You're handling this one");
     if (chatId) {
       await telegram.sendMessage(chatId, `You're handling this one.${phone ? ` Contact: ${phone}` : ''}`);
+    }
+  } else if (data.startsWith('cancel_speed:')) {
+    const leadId = data.split(':')[1];
+    try {
+      const { cancelJobs } = require('../utils/jobQueue');
+      const cancelled = cancelJobs(db, { payloadContains: leadId });
+      db.prepare("UPDATE followups SET status = 'cancelled' WHERE lead_id = ? AND status = 'scheduled'").run(leadId);
+      await telegram.answerCallback(callbackId, `Cancelled ${cancelled} jobs`);
+      await telegram.sendMessage(chatId, `⏹ Speed sequence cancelled for lead.`);
+    } catch (err) {
+      await telegram.answerCallback(callbackId, 'Error cancelling');
     }
   }
 }

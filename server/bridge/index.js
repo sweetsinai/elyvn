@@ -405,7 +405,6 @@ const server = app.listen(PORT, () => {
         await sendSMS(payload.phone, payload.message, payload.from, db, payload.clientId);
       },
       'speed_to_lead_callback': async (payload) => {
-        const { scheduleCallback } = require('./utils/speed-to-lead');
         const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(payload.clientId);
         if (!client) {
           console.error(`[jobQueue] speed_to_lead_callback — client ${payload.clientId} not found`);
@@ -417,7 +416,52 @@ const server = app.listen(PORT, () => {
           console.log(`[jobQueue] Skipping callback — lead ${payload.leadId} already ${lead.stage}`);
           return;
         }
-        scheduleCallback(db, { ...payload, client });
+        // Check if AI is active
+        if (!client.is_active) {
+          console.log(`[jobQueue] Skipping callback — AI paused for client ${payload.clientId}`);
+          return;
+        }
+        // Actually make the Retell outbound call
+        const agentId = payload.retell_agent_id || client.retell_agent_id;
+        const fromPhone = payload.retell_phone || client.retell_phone;
+        if (!agentId || !fromPhone || !payload.phone) {
+          console.warn(`[jobQueue] speed_to_lead_callback — missing agent_id (${agentId}), from (${fromPhone}), or to (${payload.phone})`);
+          // Fallback: send SMS instead
+          await sendSMS(payload.phone, `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried calling you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back when you can!'}`, client.twilio_phone, db, client.id);
+          return;
+        }
+        const RETELL_API_KEY = process.env.RETELL_API_KEY;
+        if (!RETELL_API_KEY) {
+          console.warn('[jobQueue] No RETELL_API_KEY — cannot make outbound call');
+          return;
+        }
+        try {
+          const resp = await fetch('https://api.retellai.com/v2/create-phone-call', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${RETELL_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from_number: fromPhone,
+              to_number: payload.phone,
+              agent_id: agentId,
+              metadata: { lead_id: payload.leadId, client_id: payload.clientId, reason: payload.reason || 'speed_callback' },
+            }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            console.log(`[jobQueue] Retell outbound call created: ${data.call_id || 'ok'} to ${payload.phone}`);
+          } else {
+            const errText = await resp.text().catch(() => '');
+            console.error(`[jobQueue] Retell create-phone-call failed (${resp.status}): ${errText}`);
+            // Fallback SMS
+            await sendSMS(payload.phone, `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried to reach you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back!'}`, client.twilio_phone, db, client.id);
+          }
+        } catch (callErr) {
+          console.error(`[jobQueue] Retell outbound call error:`, callErr.message);
+        }
       },
       'followup_sms': async (payload) => {
         // Check if lead already booked before sending follow-up
