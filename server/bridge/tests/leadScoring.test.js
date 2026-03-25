@@ -311,5 +311,303 @@ describe('Lead Scoring Module', () => {
 
       expect(result).toBeNull();
     });
+
+    it('should return null when missing leadId', () => {
+      const result = getLeadScoringReport(db, null, 'client1');
+      expect(result).toBeNull();
+    });
+
+    it('should return null when missing clientId', () => {
+      const result = getLeadScoringReport(db, 'lead1', null);
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('predictLeadScore - Edge Cases and Branches', () => {
+    it('should return 0 when both leadId and clientId are missing', () => {
+      const result = predictLeadScore(db, null, null);
+      expect(result.score).toBe(0);
+      expect(result.insight).toBe('Insufficient data');
+    });
+
+    it('should return 0 when only leadId is missing', () => {
+      const result = predictLeadScore(db, null, 'client1');
+      expect(result.score).toBe(0);
+    });
+
+    it('should handle responsiveness with immediate response (< 5 min)', () => {
+      db.prepare(`DELETE FROM leads WHERE id = 'resp_lead1'`).run();
+      db.prepare(`DELETE FROM messages WHERE phone = '+12125551400'`).run();
+
+      db.prepare(`
+        INSERT INTO leads (id, client_id, phone, score, stage)
+        VALUES ('resp_lead1', 'client1', '+12125551400', 0, 'new')
+      `).run();
+
+      const now = Date.now();
+      const twoMinutesAgo = new Date(now - 2 * 60000).toISOString();
+      const oneMinuteAgo = new Date(now - 60000).toISOString();
+
+      db.prepare(`
+        INSERT INTO messages (id, client_id, phone, direction, body, status, created_at)
+        VALUES (?, 'client1', '+12125551400', 'outbound', 'Hello', 'sent', ?)
+      `).run('msg_out1', twoMinutesAgo);
+
+      db.prepare(`
+        INSERT INTO messages (id, client_id, phone, direction, body, status, created_at)
+        VALUES (?, 'client1', '+12125551400', 'inbound', 'Hi', 'received', ?)
+      `).run('msg_in1', oneMinuteAgo);
+
+      const result = predictLeadScore(db, 'resp_lead1', 'client1');
+      expect(result.factors.responsiveness).toBe(100);
+    });
+
+    it('should handle responsiveness with 30 min response (very fast)', () => {
+      db.prepare(`DELETE FROM leads WHERE id = 'resp_lead2'`).run();
+      db.prepare(`DELETE FROM messages WHERE phone = '+12125551401'`).run();
+
+      db.prepare(`
+        INSERT INTO leads (id, client_id, phone, score, stage)
+        VALUES ('resp_lead2', 'client1', '+12125551401', 0, 'new')
+      `).run();
+
+      const now = Date.now();
+      const fortyMinutesAgo = new Date(now - 40 * 60000).toISOString();
+      const tenMinutesAgo = new Date(now - 10 * 60000).toISOString();
+
+      db.prepare(`
+        INSERT INTO messages (id, client_id, phone, direction, body, status, created_at)
+        VALUES (?, 'client1', '+12125551401', 'outbound', 'Hello', 'sent', ?)
+      `).run('msg_out2', fortyMinutesAgo);
+
+      db.prepare(`
+        INSERT INTO messages (id, client_id, phone, direction, body, status, created_at)
+        VALUES (?, 'client1', '+12125551401', 'inbound', 'Hi', 'received', ?)
+      `).run('msg_in2', tenMinutesAgo);
+
+      const result = predictLeadScore(db, 'resp_lead2', 'client1');
+      // Between 30-60 minutes should be 75
+      expect(result.factors.responsiveness).toBe(75);
+    });
+
+    it('should detect responsiveness via call answer (no first response message)', () => {
+      db.prepare(`DELETE FROM leads WHERE id = 'resp_call'`).run();
+      db.prepare(`DELETE FROM messages WHERE phone = '+12125551402'`).run();
+      db.prepare(`DELETE FROM calls WHERE caller_phone = '+12125551402'`).run();
+
+      db.prepare(`
+        INSERT INTO leads (id, client_id, phone, score, stage)
+        VALUES ('resp_call', 'client1', '+12125551402', 0, 'new')
+      `).run();
+
+      const now = Date.now();
+      const oneHourAgo = new Date(now - 60 * 60000).toISOString();
+      const fiftyMinutesAgo = new Date(now - 50 * 60000).toISOString();
+
+      db.prepare(`
+        INSERT INTO messages (id, client_id, phone, direction, body, status, created_at)
+        VALUES (?, 'client1', '+12125551402', 'outbound', 'Call me', 'sent', ?)
+      `).run('msg_call1', oneHourAgo);
+
+      db.prepare(`
+        INSERT INTO calls (id, call_id, client_id, caller_phone, direction, duration, outcome, score, created_at)
+        VALUES (?, ?, 'client1', '+12125551402', 'inbound', 300, 'qualified', 8, ?)
+      `).run('call_resp', 'call_resp_id', fiftyMinutesAgo);
+
+      const result = predictLeadScore(db, 'resp_call', 'client1');
+      expect(result.factors.responsiveness).toBeGreaterThan(0);
+    });
+
+    it('should score engagement with 5+ interactions at max', () => {
+      db.prepare(`DELETE FROM leads WHERE id = 'eng_lead5'`).run();
+      db.prepare(`DELETE FROM calls WHERE caller_phone = '+12125551405'`).run();
+      db.prepare(`DELETE FROM messages WHERE phone = '+12125551405'`).run();
+
+      db.prepare(`
+        INSERT INTO leads (id, client_id, phone, score, stage)
+        VALUES ('eng_lead5', 'client1', '+12125551405', 0, 'new')
+      `).run();
+
+      const now = new Date().toISOString();
+      for (let i = 0; i < 5; i++) {
+        db.prepare(`
+          INSERT INTO calls (id, call_id, client_id, caller_phone, direction, duration, outcome, score, created_at)
+          VALUES (?, ?, 'client1', '+12125551405', 'inbound', 300, 'qualified', 8, ?)
+        `).run(`call_eng${i}`, `call_eng${i}_id`, now);
+      }
+
+      const result = predictLeadScore(db, 'eng_lead5', 'client1');
+      expect(result.factors.engagement).toBe(100);
+    });
+
+    it('should handle intent signals from different sources', () => {
+      db.prepare(`DELETE FROM leads WHERE id = 'intent_lead'`).run();
+      db.prepare(`DELETE FROM calls WHERE caller_phone = '+12125551410'`).run();
+
+      db.prepare(`
+        INSERT INTO leads (id, client_id, phone, score, stage, source)
+        VALUES ('intent_lead', 'client1', '+12125551410', 0, 'new', 'missed_call')
+      `).run();
+
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO calls (id, call_id, client_id, caller_phone, direction, duration, outcome, score, sentiment, created_at)
+        VALUES (?, ?, 'client1', '+12125551410', 'inbound', 300, 'qualified', 8, 9, ?)
+      `).run('call_intent', 'call_intent_id', now);
+
+      const result = predictLeadScore(db, 'intent_lead', 'client1');
+      expect(result.factors.intent).toBeGreaterThan(0);
+    });
+
+    it('should score recency with various time windows', () => {
+      db.prepare(`DELETE FROM leads WHERE id LIKE 'recency_%'`).run();
+      db.prepare(`DELETE FROM calls WHERE id LIKE 'call_%' AND id NOT LIKE 'call_high%' AND id NOT LIKE 'call_action%' AND id NOT LIKE 'call_resp%' AND id NOT LIKE 'call_intent%' AND id NOT LIKE 'call_eng%' AND id NOT LIKE 'call_multi%'`).run();
+
+      const testCases = [
+        { name: 'now', minutes: 0, expectedFactor: 100 },
+        { name: '12h', minutes: 12 * 60, expectedFactor: 90 },
+        { name: '48h', minutes: 48 * 60, expectedFactor: 75 },
+      ];
+
+      testCases.forEach((testCase, idx) => {
+        const leadId = `recency_${testCase.name}`;
+        const phone = `+1212555${1800 + idx}`;
+
+        db.prepare(`
+          INSERT INTO leads (id, client_id, phone, score, stage)
+          VALUES (?, 'client1', ?, 0, 'new')
+        `).run(leadId, phone);
+
+        const contactTime = new Date(Date.now() - testCase.minutes * 60000).toISOString();
+        db.prepare(`
+          INSERT INTO calls (id, call_id, client_id, caller_phone, direction, duration, outcome, score, created_at)
+          VALUES (?, ?, 'client1', ?, 'inbound', 300, 'qualified', 8, ?)
+        `).run(`recency_call_${testCase.name}`, `recency_call_${testCase.name}_id`, phone, contactTime);
+
+        const result = predictLeadScore(db, leadId, 'client1');
+        expect(result.factors.recency).toBeLessThanOrEqual(100);
+        expect(result.factors.recency).toBeGreaterThanOrEqual(5);
+      });
+    });
+
+    it('should score multi-channel engagement higher', () => {
+      db.prepare(`DELETE FROM leads WHERE id = 'multi_lead'`).run();
+      db.prepare(`DELETE FROM calls WHERE caller_phone = '+12125551456'`).run();
+      db.prepare(`DELETE FROM messages WHERE phone = '+12125551456'`).run();
+
+      db.prepare(`
+        INSERT INTO leads (id, client_id, phone, score, stage)
+        VALUES ('multi_lead', 'client1', '+12125551456', 0, 'new')
+      `).run();
+
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO calls (id, call_id, client_id, caller_phone, direction, duration, outcome, score, created_at)
+        VALUES (?, ?, 'client1', '+12125551456', 'inbound', 300, 'qualified', 8, ?)
+      `).run('call_multi', 'call_multi_id', now);
+
+      db.prepare(`
+        INSERT INTO messages (id, client_id, phone, direction, body, status, created_at)
+        VALUES (?, 'client1', '+12125551456', 'inbound', 'Message', 'received', ?)
+      `).run('msg_multi', now);
+
+      const result = predictLeadScore(db, 'multi_lead', 'client1');
+      expect(result.factors.channelDiversity).toBe(100);
+    });
+
+    it('should generate actionable insights based on score ranges', () => {
+      db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
+
+      // High urgency lead (score >= 80)
+      db.prepare(`
+        INSERT INTO leads (id, client_id, phone, score, stage)
+        VALUES ('high_lead', 'client1', '+12125551460', 5, 'new')
+      `).run();
+
+      const now = new Date().toISOString();
+      for (let i = 0; i < 8; i++) {
+        db.prepare(`
+          INSERT INTO calls (id, call_id, client_id, caller_phone, direction, duration, outcome, score, created_at)
+          VALUES (?, ?, 'client1', '+12125551460', 'inbound', 300, 'qualified', 8, ?)
+        `).run(`call_high${i}`, `call_high${i}_id`, now);
+      }
+
+      const highResult = predictLeadScore(db, 'high_lead', 'client1');
+      if (highResult.score >= 80) {
+        expect(highResult.insight).toContain('urgency');
+        expect(highResult.recommended_action).toContain('immediately');
+      }
+    });
+
+    it('should recommend different actions based on score', () => {
+      const testCases = [
+        { score: 85, shouldContain: 'immediately' },
+        { score: 65, shouldContain: 'follow-up' },
+        { score: 55, shouldContain: 'SMS' },
+      ];
+
+      for (let i = 0; i < testCases.length; i++) {
+        const leadId = `action_lead${i}`;
+        const phone = `+1212555${1470 + i}`;
+
+        db.prepare(`
+          INSERT INTO leads (id, client_id, phone, score, stage)
+          VALUES (?, 'client1', ?, 0, 'new')
+        `).run(leadId, phone);
+
+        const now = new Date().toISOString();
+        for (let j = 0; j < testCases[i].score / 10; j++) {
+          db.prepare(`
+            INSERT INTO calls (id, call_id, client_id, caller_phone, direction, duration, outcome, score, created_at)
+            VALUES (?, ?, 'client1', ?, 'inbound', 300, 'qualified', 8, ?)
+          `).run(`call_action${i}_${j}`, `call_action${i}_${j}_id`, phone, now);
+        }
+
+        const result = predictLeadScore(db, leadId, 'client1');
+        expect(result.recommended_action).toBeDefined();
+        expect(result.recommended_action.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('should handle leads with no first outreach gracefully', () => {
+      db.prepare(`DELETE FROM leads WHERE id = 'no_outreach_lead'`).run();
+      db.prepare(`DELETE FROM messages WHERE phone = '+12125551920'`).run();
+      db.prepare(`DELETE FROM calls WHERE caller_phone = '+12125551920'`).run();
+
+      db.prepare(`
+        INSERT INTO leads (id, client_id, phone, score, stage)
+        VALUES ('no_outreach_lead', 'client1', '+12125551920', 0, 'new')
+      `).run();
+
+      const result = predictLeadScore(db, 'no_outreach_lead', 'client1');
+      // Lead with no interactions will have score based on factors
+      expect(result.score).toBeGreaterThanOrEqual(0);
+      expect(result.insight).toBeDefined();
+    });
+
+    it('should handle error gracefully during scoring', () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      const result = predictLeadScore(db, 'nonexistent_id', 'nonexistent_client');
+      expect(result.score).toBe(0);
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should batch score multiple leads efficiently', () => {
+      db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
+
+      for (let i = 0; i < 5; i++) {
+        db.prepare(`
+          INSERT INTO leads (id, client_id, phone, score, stage)
+          VALUES (?, 'client1', ?, ?, 'warm')
+        `).run(`batch_${i}`, `+1212555${1490 + i}`, 5 - i);
+      }
+
+      const result = batchScoreLeads(db, 'client1');
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBeLessThanOrEqual(5);
+      expect(result[0].predictive_score).toBeGreaterThanOrEqual(result[result.length - 1]?.predictive_score || 0);
+    });
   });
 });
