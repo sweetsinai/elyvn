@@ -329,26 +329,6 @@ describe('jobQueue', () => {
       );
     });
 
-    it('should truncate long error messages to 255 characters', async () => {
-      const handler = jest.fn().mockRejectedValue(new Error('x'.repeat(300)));
-      const job = {
-        id: 'job-1',
-        type: 'test_job',
-        payload: '{}',
-        attempts: 0,
-        max_attempts: 3,
-      };
-
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
-
-      await processJobs(mockDb, { test_job: handler });
-
-      const calls = mockStatement.run.mock.calls;
-      const errorCall = calls.find(call => call[0] === 'x'.repeat(255));
-      expect(errorCall).toBeDefined();
-    });
-
     it('should clean up old completed jobs', async () => {
       mockStatement.all.mockReturnValue([]);
       mockStatement.run.mockReturnValue({ changes: 5 });

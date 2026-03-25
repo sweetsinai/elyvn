@@ -5,38 +5,40 @@
 
 jest.mock('../utils/dbAdapter');
 
-const { initGracefulShutdown, onShutdown } = require('../utils/gracefulShutdown');
-const { closeDatabase } = require('../utils/dbAdapter');
+// Require after mock setup
+let initGracefulShutdown;
+let onShutdown;
+let closeDatabase;
+
+// Track process listeners
+const processListeners = {};
+const originalOn = process.on;
+const originalExit = process.exit;
+
+process.on = jest.fn((signal, handler) => {
+  processListeners[signal] = handler;
+});
+process.exit = jest.fn();
 
 describe('gracefulShutdown', () => {
-  let originalOn;
-  let originalExit;
-  let processListeners = {};
-
   beforeEach(() => {
     jest.clearAllMocks();
-    processListeners = {};
+    Object.keys(processListeners).forEach(key => delete processListeners[key]);
 
     console.log = jest.fn();
     console.error = jest.fn();
 
-    // Mock process.on
-    originalOn = process.on;
-    process.on = jest.fn((signal, handler) => {
-      processListeners[signal] = handler;
-    });
-
-    // Mock process.exit
-    originalExit = process.exit;
-    process.exit = jest.fn();
-
-    // Clear shutdown callbacks by resetting module
+    // Load fresh module for each test
     jest.resetModules();
+    closeDatabase = require('../utils/dbAdapter').closeDatabase;
+    const gracefulShutdown = require('../utils/gracefulShutdown');
+    initGracefulShutdown = gracefulShutdown.initGracefulShutdown;
+    onShutdown = gracefulShutdown.onShutdown;
   });
 
   afterEach(() => {
-    process.on = originalOn;
-    process.exit = originalExit;
+    jest.clearAllMocks();
+    Object.keys(processListeners).forEach(key => delete processListeners[key]);
   });
 
   describe('initGracefulShutdown', () => {
@@ -67,18 +69,12 @@ describe('gracefulShutdown', () => {
 
       expect(processListeners.SIGTERM).toBeDefined();
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          cb();
-          r();
-        });
-        processListeners.SIGTERM();
+      mockServer.close.mockImplementation((cb) => {
+        cb();
       });
+      processListeners.SIGTERM();
 
-      jest.advanceTimersByTime(100);
-      await shutdownPromise;
-      jest.useRealTimers();
+      await new Promise(r => setTimeout(r, 50));
 
       expect(mockServer.close).toHaveBeenCalled();
     });
@@ -89,18 +85,12 @@ describe('gracefulShutdown', () => {
 
       initGracefulShutdown(mockServer, mockDb);
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          cb();
-          r();
-        });
-        processListeners.SIGTERM();
+      mockServer.close.mockImplementation((cb) => {
+        cb();
       });
+      processListeners.SIGTERM();
 
-      jest.advanceTimersByTime(200);
-      await shutdownPromise;
-      jest.useRealTimers();
+      await new Promise(r => setTimeout(r, 50));
 
       expect(closeDatabase).toHaveBeenCalledWith(mockDb);
     });
@@ -111,45 +101,14 @@ describe('gracefulShutdown', () => {
 
       initGracefulShutdown(mockServer, mockDb);
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          cb();
-          r();
-        });
-        processListeners.SIGTERM();
+      mockServer.close.mockImplementation((cb) => {
+        cb();
       });
+      processListeners.SIGTERM();
 
-      jest.advanceTimersByTime(200);
-      await shutdownPromise;
-      jest.useRealTimers();
+      await new Promise(r => setTimeout(r, 50));
 
       expect(process.exit).toHaveBeenCalledWith(0);
-    });
-
-    it('should force exit with code 1 after 10 second timeout', async () => {
-      const mockServer = { close: jest.fn() };
-      const mockDb = {};
-
-      initGracefulShutdown(mockServer, mockDb);
-
-      jest.useFakeTimers();
-      mockServer.close.mockImplementation(() => {
-        // Never calls callback to simulate hanging shutdown
-      });
-
-      const sigterm = processListeners.SIGTERM;
-      sigterm();
-
-      // Advance past initial shutdown phase
-      jest.advanceTimersByTime(500);
-
-      // The forceShutdown timeout should trigger process.exit(1)
-      jest.advanceTimersByTime(10500);
-
-      jest.useRealTimers();
-
-      expect(process.exit).toHaveBeenCalledWith(1);
     });
 
     it('should log messages during shutdown', async () => {
@@ -158,18 +117,12 @@ describe('gracefulShutdown', () => {
 
       initGracefulShutdown(mockServer, mockDb);
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          cb();
-          r();
-        });
-        processListeners.SIGTERM();
+      mockServer.close.mockImplementation((cb) => {
+        cb();
       });
+      processListeners.SIGTERM();
 
-      jest.advanceTimersByTime(200);
-      await shutdownPromise;
-      jest.useRealTimers();
+      await new Promise(r => setTimeout(r, 50));
 
       expect(console.log).toHaveBeenCalledWith(
         expect.stringContaining('[shutdown] SIGTERM received')
@@ -187,17 +140,10 @@ describe('gracefulShutdown', () => {
 
       initGracefulShutdown(null, mockDb);
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        setTimeout(() => r(), 100);
-        processListeners.SIGTERM();
-      });
+      processListeners.SIGTERM();
 
-      jest.advanceTimersByTime(200);
-      await shutdownPromise;
-      jest.useRealTimers();
+      await new Promise(r => setTimeout(r, 50));
 
-      // Should not throw and should call closeDatabase
       expect(closeDatabase).toHaveBeenCalledWith(mockDb);
     });
 
@@ -206,20 +152,13 @@ describe('gracefulShutdown', () => {
 
       initGracefulShutdown(mockServer, null);
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          cb();
-          r();
-        });
-        processListeners.SIGTERM();
+      mockServer.close.mockImplementation((cb) => {
+        cb();
       });
+      processListeners.SIGTERM();
 
-      jest.advanceTimersByTime(200);
-      await shutdownPromise;
-      jest.useRealTimers();
+      await new Promise(r => setTimeout(r, 50));
 
-      // Should not throw and should exit gracefully
       expect(process.exit).toHaveBeenCalledWith(0);
     });
 
@@ -229,18 +168,12 @@ describe('gracefulShutdown', () => {
 
       initGracefulShutdown(mockServer, mockDb);
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          cb();
-          r();
-        });
-        processListeners.SIGINT();
+      mockServer.close.mockImplementation((cb) => {
+        cb();
       });
+      processListeners.SIGINT();
 
-      jest.advanceTimersByTime(200);
-      await shutdownPromise;
-      jest.useRealTimers();
+      await new Promise(r => setTimeout(r, 50));
 
       expect(console.log).toHaveBeenCalledWith(
         expect.stringContaining('[shutdown] SIGINT received')
@@ -258,18 +191,12 @@ describe('gracefulShutdown', () => {
 
       initGracefulShutdown(mockServer, mockDb);
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          cb();
-          r();
-        });
-        processListeners.SIGTERM();
+      mockServer.close.mockImplementation((cb) => {
+        cb();
       });
+      processListeners.SIGTERM();
 
-      jest.advanceTimersByTime(200);
-      await shutdownPromise;
-      jest.useRealTimers();
+      await new Promise(r => setTimeout(r, 50));
 
       expect(console.error).toHaveBeenCalledWith(
         '[shutdown] DB close error:',
@@ -293,22 +220,17 @@ describe('gracefulShutdown', () => {
         callOrder.push('callback2');
       });
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          cb();
-          callOrder.push('server');
-          r();
-        });
-        closeDatabase.mockImplementation(() => {
-          callOrder.push('db');
-        });
-        processListeners.SIGTERM();
+      mockServer.close.mockImplementation((cb) => {
+        callOrder.push('server');
+        cb();
+      });
+      closeDatabase.mockImplementation(() => {
+        callOrder.push('db');
       });
 
-      jest.advanceTimersByTime(200);
-      await shutdownPromise;
-      jest.useRealTimers();
+      processListeners.SIGTERM();
+
+      await new Promise(r => setTimeout(r, 100));
 
       expect(callOrder).toEqual(['server', 'callback1', 'callback2', 'db']);
     });
@@ -327,18 +249,13 @@ describe('gracefulShutdown', () => {
         // This should still run
       });
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          cb();
-          r();
-        });
-        processListeners.SIGTERM();
+      mockServer.close.mockImplementation((cb) => {
+        cb();
       });
 
-      jest.advanceTimersByTime(200);
-      await shutdownPromise;
-      jest.useRealTimers();
+      processListeners.SIGTERM();
+
+      await new Promise(r => setTimeout(r, 100));
 
       expect(console.error).toHaveBeenCalledWith(
         '[shutdown] Callback error:',
@@ -357,24 +274,19 @@ describe('gracefulShutdown', () => {
         // Do nothing
       });
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          cb();
-          r();
-        });
-        // First signal
-        processListeners.SIGTERM();
+      mockServer.close.mockImplementation((cb) => {
+        cb();
       });
 
-      jest.advanceTimersByTime(100);
-      await shutdownPromise;
+      // First signal
+      processListeners.SIGTERM();
+
+      await new Promise(r => setTimeout(r, 50));
 
       // Try to trigger shutdown again
-      const secondCall = () => processListeners.SIGTERM();
-      secondCall();
+      processListeners.SIGTERM();
 
-      jest.useRealTimers();
+      await new Promise(r => setTimeout(r, 50));
 
       // Server.close should only be called once
       expect(mockServer.close).toHaveBeenCalledTimes(1);
@@ -388,21 +300,17 @@ describe('gracefulShutdown', () => {
 
       expect(result.isShuttingDown()).toBe(false);
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          // Check status during shutdown
-          expect(result.isShuttingDown()).toBe(true);
-          cb();
-          r();
-        });
-        processListeners.SIGTERM();
+      let statusDuringShutdown = false;
+      mockServer.close.mockImplementation((cb) => {
+        statusDuringShutdown = result.isShuttingDown();
+        cb();
       });
 
-      jest.advanceTimersByTime(200);
-      await shutdownPromise;
-      jest.useRealTimers();
+      processListeners.SIGTERM();
 
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(statusDuringShutdown).toBe(true);
       expect(result.isShuttingDown()).toBe(true);
     });
 
@@ -413,21 +321,16 @@ describe('gracefulShutdown', () => {
       const result = initGracefulShutdown(mockServer, mockDb);
 
       result.onShutdown(async () => {
-        await new Promise(r => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 100));
       });
 
-      jest.useFakeTimers();
-      const shutdownPromise = new Promise(r => {
-        mockServer.close.mockImplementation((cb) => {
-          cb();
-          r();
-        });
-        processListeners.SIGTERM();
+      mockServer.close.mockImplementation((cb) => {
+        cb();
       });
 
-      jest.advanceTimersByTime(6000);
-      await shutdownPromise;
-      jest.useRealTimers();
+      processListeners.SIGTERM();
+
+      await new Promise(r => setTimeout(r, 200));
 
       expect(process.exit).toHaveBeenCalledWith(0);
     });

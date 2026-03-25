@@ -399,16 +399,15 @@ describe('backup', () => {
       expect(fs.copyFileSync).toHaveBeenCalledTimes(1); // only initial
     });
 
-    it('should handle backup failure in initial backup', async () => {
+    it('should handle backup failure in scheduled operation', () => {
       fs.existsSync.mockReturnValue(true);
       fs.copyFileSync.mockImplementation(() => {
         throw new Error('Backup failed');
       });
 
-      await new Promise(r => setTimeout(r, 100));
       scheduleBackups('/data/app.db');
-      await new Promise(r => setTimeout(r, 100));
 
+      // Verify the backup was attempted and logged error
       expect(console.error).toHaveBeenCalledWith(
         '[backup] backupDatabase error:',
         'Backup failed'
