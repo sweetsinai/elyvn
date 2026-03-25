@@ -344,40 +344,39 @@ function extractCommonTopics(db, clientId, since) {
     throw new Error('db and clientId are required');
   }
 
-  // Get all transcripts
-  const transcripts = db.prepare(`
-    SELECT transcript, summary
+  // Use SQL to count keyword occurrences across all transcripts and summaries
+  // This avoids fetching all transcript text and processing in JavaScript
+  const topicFrequencies = db.prepare(`
+    SELECT
+      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%pricing%' OR LOWER(transcript || summary) LIKE '%cost%' OR LOWER(transcript || summary) LIKE '%price%' THEN 1 END) as pricing_freq,
+      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%appointment%' OR LOWER(transcript || summary) LIKE '%booking%' OR LOWER(transcript || summary) LIKE '%schedule%' THEN 1 END) as booking_freq,
+      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%available%' OR LOWER(transcript || summary) LIKE '%availability%' OR LOWER(transcript || summary) LIKE '%time%' THEN 1 END) as availability_freq,
+      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%location%' OR LOWER(transcript || summary) LIKE '%address%' THEN 1 END) as location_freq,
+      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%service%' OR LOWER(transcript || summary) LIKE '%features%' OR LOWER(transcript || summary) LIKE '%benefits%' THEN 1 END) as service_freq,
+      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%insurance%' OR LOWER(transcript || summary) LIKE '%coverage%' THEN 1 END) as insurance_freq,
+      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%question%' OR LOWER(transcript || summary) LIKE '%help%' OR LOWER(transcript || summary) LIKE '%support%' THEN 1 END) as help_freq,
+      COUNT(CASE WHEN LOWER(transcript || summary) LIKE '%issue%' OR LOWER(transcript || summary) LIKE '%problem%' OR LOWER(transcript || summary) LIKE '%complaint%' THEN 1 END) as issue_freq
     FROM calls
     WHERE client_id = ? AND created_at >= ? AND (transcript IS NOT NULL OR summary IS NOT NULL)
-  `).all(clientId, since);
+  `).get(clientId, since);
 
-  const topicFreq = new Map();
-
-  // Simple keyword extraction from summaries
-  const keywords = [
-    'pricing', 'cost', 'price', 'appointment', 'booking', 'schedule',
-    'available', 'availability', 'time', 'date', 'location', 'address',
-    'service', 'services', 'features', 'benefits', 'insurance', 'coverage',
-    'question', 'help', 'support', 'issue', 'problem', 'complaint'
+  // Convert frequency counts to topic array and sort
+  const topics = [
+    { topic: 'Pricing', frequency: topicFrequencies.pricing_freq || 0 },
+    { topic: 'Booking', frequency: topicFrequencies.booking_freq || 0 },
+    { topic: 'Availability', frequency: topicFrequencies.availability_freq || 0 },
+    { topic: 'Location', frequency: topicFrequencies.location_freq || 0 },
+    { topic: 'Service', frequency: topicFrequencies.service_freq || 0 },
+    { topic: 'Insurance', frequency: topicFrequencies.insurance_freq || 0 },
+    { topic: 'Help', frequency: topicFrequencies.help_freq || 0 },
+    { topic: 'Issue', frequency: topicFrequencies.issue_freq || 0 },
   ];
 
-  for (const call of transcripts) {
-    const text = ((call.summary || '') + ' ' + (call.transcript || '')).toLowerCase();
-    for (const keyword of keywords) {
-      if (text.includes(keyword)) {
-        topicFreq.set(keyword, (topicFreq.get(keyword) || 0) + 1);
-      }
-    }
-  }
-
-  // Return top topics
-  return Array.from(topicFreq.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([topic, freq]) => ({
-      topic: topic.charAt(0).toUpperCase() + topic.slice(1),
-      frequency: freq,
-    }));
+  // Return top topics sorted by frequency
+  return topics
+    .filter(t => t.frequency > 0)
+    .sort((a, b) => b.frequency - a.frequency)
+    .slice(0, 8);
 }
 
 /**
