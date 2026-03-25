@@ -6,6 +6,7 @@ const { getBookings } = require('../utils/calcom');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const path = require('path');
+const { isValidUUID, escapeLikePattern } = require('../utils/validate');
 
 const anthropic = new Anthropic();
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
@@ -16,6 +17,11 @@ router.get('/stats/:clientId', (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
+
+    // Validate clientId format
+    if (!isValidUUID(clientId)) {
+      return res.status(400).json({ error: 'Invalid client ID format' });
+    }
 
     const now = new Date();
     const startOfWeek = new Date(now);
@@ -95,6 +101,12 @@ router.get('/calls/:clientId', (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
+
+    // Validate clientId format
+    if (!isValidUUID(clientId)) {
+      return res.status(400).json({ error: 'Invalid client ID format' });
+    }
+
     const { outcome, startDate, endDate, minScore } = req.query;
     const pageNum = Math.max(1, parseInt(req.query.page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
@@ -165,6 +177,12 @@ router.get('/messages/:clientId', (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
+
+    // Validate clientId format
+    if (!isValidUUID(clientId)) {
+      return res.status(400).json({ error: 'Invalid client ID format' });
+    }
+
     const { status, startDate, endDate } = req.query;
     const pageNum = Math.max(1, parseInt(req.query.page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
@@ -206,6 +224,12 @@ router.get('/leads/:clientId', (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
+
+    // Validate clientId format
+    if (!isValidUUID(clientId)) {
+      return res.status(400).json({ error: 'Invalid client ID format' });
+    }
+
     const { stage, minScore, search } = req.query;
     const pageNum = Math.max(1, parseInt(req.query.page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
@@ -226,7 +250,8 @@ router.get('/leads/:clientId', (req, res) => {
     }
     if (search) {
       conditions.push('(name LIKE ? OR phone LIKE ? OR email LIKE ?)');
-      const searchPattern = `%${search}%`;
+      const escapedSearch = escapeLikePattern(search);
+      const searchPattern = `%${escapedSearch}%`;
       params.push(searchPattern, searchPattern, searchPattern);
     }
 
@@ -264,6 +289,12 @@ router.put('/leads/:clientId/:leadId', (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId, leadId } = req.params;
+
+    // Validate clientId and leadId format
+    if (!isValidUUID(clientId) || !isValidUUID(leadId)) {
+      return res.status(400).json({ error: 'Invalid client ID or lead ID format' });
+    }
+
     const { stage } = req.body;
 
     const validStages = ['new', 'contacted', 'qualified', 'booked', 'completed', 'lost'];
@@ -291,6 +322,12 @@ router.get('/bookings/:clientId', async (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
+
+    // Validate clientId format
+    if (!isValidUUID(clientId)) {
+      return res.status(400).json({ error: 'Invalid client ID format' });
+    }
+
     const { startDate, endDate } = req.query;
 
     const client = db.prepare('SELECT calcom_event_type_id FROM clients WHERE id = ?').get(clientId);
@@ -311,6 +348,11 @@ router.get('/reports/:clientId', (req, res) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
+
+    // Validate clientId format
+    if (!isValidUUID(clientId)) {
+      return res.status(400).json({ error: 'Invalid client ID format' });
+    }
 
     const reports = db.prepare(
       'SELECT * FROM weekly_reports WHERE client_id = ? ORDER BY created_at DESC LIMIT 12'

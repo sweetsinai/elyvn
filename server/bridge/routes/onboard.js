@@ -3,6 +3,7 @@ const router = express.Router();
 const { randomUUID } = require('crypto');
 const path = require('path');
 const fsPromises = require('fs').promises;
+const { isValidUUID, isValidPhone, isValidEmail, sanitizeString } = require('../utils/validate');
 
 // Rate limiting for onboarding
 const onboardRateLimits = new Map();
@@ -36,21 +37,6 @@ function onboardRateLimit(req, res, next) {
   next();
 }
 
-/**
- * Input validation helper
- */
-function validateEmail(email) {
-  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return re.test(String(email).toLowerCase());
-}
-
-/**
- * Input sanitization - removes potentially harmful characters
- */
-function sanitizeString(str) {
-  if (typeof str !== 'string') return str;
-  return str.trim().slice(0, 500); // Max 500 chars
-}
 
 /**
  * POST /api/onboard
@@ -113,9 +99,11 @@ router.post('/onboard', onboardRateLimit, async (req, res) => {
 
     if (!owner_phone || typeof owner_phone !== 'string' || !owner_phone.trim()) {
       errors.push('owner_phone is required and must be a non-empty string');
+    } else if (!isValidPhone(owner_phone)) {
+      errors.push('owner_phone must be a valid phone number');
     }
 
-    if (!owner_email || typeof owner_email !== 'string' || !validateEmail(owner_email)) {
+    if (!owner_email || typeof owner_email !== 'string' || !isValidEmail(owner_email)) {
       errors.push('owner_email is required and must be a valid email address');
     }
 
