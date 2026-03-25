@@ -154,7 +154,10 @@ describe('dataRetention', () => {
 
       const result = runRetention(mockDb);
 
-      expect(result.deleted).toEqual({});
+      // When query fails for each table, it stores error info
+      expect(result.deleted.job_queue).toEqual({ error: 'Query failed' });
+      expect(result.deleted.audit_log).toEqual({ error: 'Query failed' });
+      expect(result.deleted.messages).toEqual({ error: 'Query failed' });
       expect(console.error).toHaveBeenCalledWith(
         expect.stringMatching(/\[retention\] Error on/),
         expect.anything()

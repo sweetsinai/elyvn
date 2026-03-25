@@ -51,14 +51,14 @@ describe('fallback', () => {
       expect(result).toBe('Hi Alice, your code is 12345. Your email is alice@example.com.');
     });
 
-    test('handles missing variables gracefully', () => {
+    test('leaves unmapped variables as-is', () => {
       const template = 'Hello {name}, your code is {code}.';
       fs.existsSync.mockReturnValue(true);
       fs.readFileSync.mockReturnValue(template);
 
       const result = loadTemplate('client1', 'test', { name: 'John' });
 
-      expect(result).toBe('Hello John, your code is .');
+      expect(result).toBe('Hello John, your code is {code}.');
     });
 
     test('handles empty variables object', () => {

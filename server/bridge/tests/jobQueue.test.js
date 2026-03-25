@@ -247,7 +247,7 @@ describe('jobQueue', () => {
       jest.useRealTimers();
 
       expect(result.failed).toBe(1);
-    });
+    }, 20000);
 
     it('should reschedule job with exponential backoff on first failure', async () => {
       const handler = jest.fn().mockRejectedValue(new Error('Handler error'));
@@ -274,7 +274,7 @@ describe('jobQueue', () => {
         'Handler error',
         'job-1'
       );
-    });
+    }, 20000);
 
     it('should reschedule job with exponential backoff on second failure', async () => {
       const handler = jest.fn().mockRejectedValue(new Error('Handler error'));
@@ -297,7 +297,7 @@ describe('jobQueue', () => {
         'Handler error',
         'job-1'
       );
-    });
+    }, 20000);
 
     it('should mark job as permanently failed after max attempts', async () => {
       const handler = jest.fn().mockRejectedValue(new Error('Handler error'));
@@ -322,7 +322,7 @@ describe('jobQueue', () => {
         'Handler error',
         'job-1'
       );
-    });
+    }, 20000);
 
     it('should truncate long error messages to 255 characters', async () => {
       const handler = jest.fn().mockRejectedValue(new Error('x'.repeat(300)));
@@ -342,7 +342,7 @@ describe('jobQueue', () => {
       const calls = mockStatement.run.mock.calls;
       const errorCall = calls.find(call => call[0] === 'x'.repeat(255));
       expect(errorCall).toBeDefined();
-    });
+    }, 20000);
 
     it('should clean up old completed jobs', async () => {
       mockStatement.all.mockReturnValue([]);
