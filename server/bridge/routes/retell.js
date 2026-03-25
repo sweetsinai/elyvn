@@ -21,6 +21,23 @@ const retellBreaker = new CircuitBreaker(
   { failureThreshold: 3, failureWindow: 60000, cooldownPeriod: 30000, serviceName: 'Retell' }
 );
 
+// Retell webhook signature verification
+router.use((req, res, next) => {
+  const secret = process.env.RETELL_WEBHOOK_SECRET;
+  if (!secret) {
+    console.warn('[retell] RETELL_WEBHOOK_SECRET not configured — skipping signature validation');
+    return next();
+  }
+  const signature = req.headers['x-retell-signature'];
+  const payload = JSON.stringify(req.body);
+  const expected = require('crypto').createHmac('sha256', secret).update(payload).digest('hex');
+  if (signature !== expected) {
+    console.error('[retell] Invalid webhook signature');
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+  next();
+});
+
 // POST / — handles all Retell webhook events
 router.post('/', (req, res) => {
   const body = req.body || {};

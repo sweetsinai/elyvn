@@ -10,6 +10,35 @@ const path = require('path');
 
 const anthropic = new Anthropic();
 
+// Twilio webhook signature verification
+router.use((req, res, next) => {
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!authToken) {
+    console.warn('[twilio] TWILIO_AUTH_TOKEN not configured — skipping signature validation');
+    return next();
+  }
+  try {
+    const crypto = require('crypto');
+    const signature = req.headers['x-twilio-signature'];
+    if (!signature) {
+      console.error('[twilio] Missing x-twilio-signature header');
+      return res.status(401).json({ error: 'Missing signature' });
+    }
+    // Build the data string: URL + sorted POST params
+    const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+    const data = url + Object.keys(req.body || {}).sort().reduce((acc, key) => acc + key + req.body[key], '');
+    const expected = crypto.createHmac('sha1', authToken).update(Buffer.from(data, 'utf-8')).digest('base64');
+    if (signature !== expected) {
+      console.error('[twilio] Invalid webhook signature');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+    next();
+  } catch (err) {
+    console.error('[twilio] Signature validation error:', err.message);
+    next(); // Allow through on error to avoid blocking legitimate webhooks
+  }
+});
+
 // POST / — Twilio SMS webhook
 router.post('/', (req, res) => {
   const { From, To, Body, MessageSid } = req.body || {};
