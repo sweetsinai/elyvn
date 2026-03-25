@@ -1,0 +1,9 @@
+# Railway deployment config — only run the Node.js bridge server
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["cd server/bridge && npm install"]
+
+[start]
+cmd = "cd server/bridge && node index.js"

@@ -32,15 +32,18 @@ async function answerCallback(callbackQueryId, text) {
 }
 
 async function setWebhook(url) {
+  const payload = { url };
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (secret) payload.secret_token = secret;
+
   const res = await fetch(`${BASE_URL}/setWebhook`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      url,
-      secret_token: process.env.TELEGRAM_WEBHOOK_SECRET,
-    }),
+    body: JSON.stringify(payload),
   });
-  return res.json();
+  const data = await res.json();
+  console.log(`[telegram] setWebhook ${res.ok ? 'ok' : 'FAILED'}:`, JSON.stringify(data));
+  return data;
 }
 
 // --- Notification formatters ---

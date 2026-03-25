@@ -375,7 +375,7 @@ const server = app.listen(PORT, () => {
   // Start backup scheduler
   if (db) {
     const { scheduleBackups } = require('./utils/backup');
-    scheduleBackups(DB_PATH, 24); // Daily backups
+    scheduleBackups(db._path, 24); // Daily backups
   }
 
   // Run data retention daily
