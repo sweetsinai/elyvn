@@ -7,6 +7,7 @@ import {
   Send,
   Settings,
   Zap,
+  Brain,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -15,6 +16,7 @@ const navItems = [
   { path: '/calls', label: 'Calls', icon: Phone },
   { path: '/messages', label: 'Messages', icon: MessageSquare },
   { path: '/pipeline', label: 'Pipeline', icon: GitBranch },
+  { path: '/intelligence', label: 'Intelligence', icon: Brain },
   { path: '/outreach', label: 'Outreach', icon: Send },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];

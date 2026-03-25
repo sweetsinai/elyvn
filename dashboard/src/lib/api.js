@@ -128,3 +128,31 @@ export const updateClient = (clientId, data) =>
     headers: jsonHeaders(),
     body: JSON.stringify(data),
   });
+
+// Intelligence
+export const getIntelligence = (clientId, days = 30) =>
+  apiFetch(`${API_BASE}/intelligence/${clientId}?days=${days}`);
+
+export const getPeakHours = (clientId) =>
+  apiFetch(`${API_BASE}/intelligence/${clientId}/peak-hours`);
+
+export const getResponseImpact = (clientId) =>
+  apiFetch(`${API_BASE}/intelligence/${clientId}/response-impact`);
+
+// Scoring
+export const getLeadScores = (clientId) =>
+  apiFetch(`${API_BASE}/scoring/${clientId}`);
+
+export const getConversionAnalytics = (clientId) =>
+  apiFetch(`${API_BASE}/scoring/${clientId}/analytics/conversion`);
+
+// Revenue
+export const getRevenue = (clientId, days = 30) =>
+  apiFetch(`${API_BASE}/revenue/${clientId}?days=${days}`);
+
+export const getChannelPerformance = (clientId) =>
+  apiFetch(`${API_BASE}/revenue/${clientId}/channels/performance`);
+
+// Schedule
+export const getDailySchedule = (clientId) =>
+  apiFetch(`${API_BASE}/schedule/${clientId}`);

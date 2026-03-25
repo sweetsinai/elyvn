@@ -77,22 +77,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// SQLite connection
-const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, '../mcp/elyvn.db');
+// SQLite connection via database adapter
+const { createDatabase, getDatabaseHealth } = require('./utils/dbAdapter');
 let db;
 try {
-  db = new Database(DB_PATH, { verbose: process.env.NODE_ENV === 'development' ? console.log : undefined });
-  db.pragma('journal_mode = WAL');
-  db.pragma('busy_timeout = 5000');
-  db.pragma('foreign_keys = ON');
-
-  // Run all database migrations
-  const { runMigrations } = require('./utils/migrations');
-  runMigrations(db);
-
-  console.log('[server] SQLite connected:', DB_PATH);
+  db = createDatabase();
 } catch (err) {
-  console.error('[server] SQLite connection failed:', err.message);
+  console.error('[server] Database connection failed:', err.message);
+  process.exit(1);
 }
 
 // Make db available to routes
@@ -173,14 +165,15 @@ const twilioRouter = require('./routes/twilio');
 const apiRouter = require('./routes/api');
 const outreachRouter = require('./routes/outreach');
 const onboardRouter = require('./routes/onboard');
+const { enforceClientIsolation } = require('./utils/clientIsolation');
 
 app.use('/webhooks/retell', retellRouter);
 app.use('/retell-webhook', retellRouter);
 app.use('/webhooks/twilio', twilioRouter);
-app.use('/api/outreach', apiAuth, outreachRouter);
+app.use('/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
 // Mount onboard routes (before general /api to allow public access)
 app.use('/api', onboardRouter);
-app.use('/api', apiAuth, apiRouter);
+app.use('/api', apiAuth, enforceClientIsolation, apiRouter);
 
 // Telegram bot webhook
 const telegramRoutes = require('./routes/telegram');
@@ -296,10 +289,12 @@ app.get('/metrics', apiAuth, (req, res) => {
 app.get('/health', async (req, res) => {
   let dbOk = false;
   let dbCounts = {};
+  let dbHealth = { status: 'disconnected' };
 
   try {
     db.prepare('SELECT 1').get();
     dbOk = true;
+    dbHealth = getDatabaseHealth(db);
     dbCounts = {
       clients: db.prepare('SELECT COUNT(*) as c FROM clients').get().c,
       calls: db.prepare('SELECT COUNT(*) as c FROM calls').get().c,
@@ -333,6 +328,7 @@ app.get('/health', async (req, res) => {
       heap_total_mb: Math.round(mem.heapTotal / 1048576),
     },
     services: { db: dbOk },
+    database: dbHealth,
     db_counts: dbCounts,
     env_configured: envVars,
   });
@@ -363,6 +359,10 @@ app.use((err, req, res, _next) => {
 
 const server = app.listen(PORT, () => {
   console.log(`[server] ELYVN bridge running on port ${PORT}`);
+
+  // Graceful shutdown
+  const { initGracefulShutdown } = require('./utils/gracefulShutdown');
+  initGracefulShutdown(server, db);
 
   // Initialize WebSocket
   const { initWebSocket } = require('./utils/websocket');
@@ -589,19 +589,7 @@ const server = app.listen(PORT, () => {
   }
 });
 
-// Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('[server] Shutting down...');
-  if (db) db.close();
-  closeLogger();
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  console.log('[server] SIGTERM received, shutting down...');
-  if (db) db.close();
-  closeLogger();
-  process.exit(0);
-});
+// Cleanup on logger close
+// Note: Graceful shutdown is now handled by initGracefulShutdown() above
 
 module.exports = app;
