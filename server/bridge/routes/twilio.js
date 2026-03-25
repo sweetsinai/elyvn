@@ -186,9 +186,11 @@ async function handleYes(db, client, from, replyFrom) {
     const bookingLink = client.calcom_booking_link;
 
     if (bookingLink) {
-      await sendSMS(from, `Book your appointment here: ${bookingLink}`, replyFrom);
+      const msg = `Book your appointment here: ${bookingLink}`;
+      await sendSMS(from, msg.slice(0, 1600), replyFrom);
     } else {
-      await sendSMS(from, 'Please call us to schedule your appointment.', replyFrom);
+      const msg = 'Please call us to schedule your appointment.';
+      await sendSMS(from, msg.slice(0, 1600), replyFrom);
     }
   } catch (err) {
     console.error('[twilio] handleYes error:', err);

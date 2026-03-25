@@ -230,7 +230,7 @@ app.get('/t/open/:emailId', (req, res) => {
 
 app.get('/t/click/:emailId', (req, res) => {
   const { emailId } = req.params;
-  const url = req.query.url;
+  let url = req.query.url;
 
   // Validate emailId format (UUID)
   if (!emailId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(emailId)) {
@@ -249,15 +249,19 @@ app.get('/t/click/:emailId', (req, res) => {
   if (url) {
     try {
       const decodedUrl = decodeURIComponent(url);
-      // Only allow http/https URLs or relative paths (starting with /)
-      // This prevents open redirect attacks
-      if (decodedUrl.startsWith('http://') || decodedUrl.startsWith('https://') || decodedUrl.startsWith('/')) {
-        // For absolute URLs, do basic validation via URL constructor
-        if (decodedUrl.startsWith('http')) {
-          new URL(decodedUrl); // Throws if invalid
-        }
-        return res.redirect(decodedUrl);
+
+      // URL validation: block dangerous protocols
+      if (!decodedUrl || (!decodedUrl.startsWith('https://') && !decodedUrl.startsWith('http://'))) {
+        return res.status(400).send('Invalid redirect URL');
       }
+      // Block dangerous protocols
+      if (decodedUrl.match(/^(javascript|data|vbscript):/i)) {
+        return res.status(400).send('Invalid redirect URL');
+      }
+
+      // For absolute URLs, do validation via URL constructor
+      new URL(decodedUrl); // Throws if invalid
+      return res.redirect(decodedUrl);
     } catch (err) {
       // Invalid URL format or constructor error, redirect to home
     }
@@ -407,7 +411,9 @@ const server = app.listen(PORT, () => {
             return;
           }
         }
-        await sendSMS(payload.phone, payload.message, payload.from, db, payload.clientId);
+        // Truncate to Twilio max for concatenated SMS
+        const message = (payload.message || '').slice(0, 1600);
+        await sendSMS(payload.phone, message, payload.from, db, payload.clientId);
       },
       'speed_to_lead_callback': async (payload) => {
         const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(payload.clientId);
@@ -432,7 +438,8 @@ const server = app.listen(PORT, () => {
         if (!agentId || !fromPhone || !payload.phone) {
           console.warn(`[jobQueue] speed_to_lead_callback — missing agent_id (${agentId}), from (${fromPhone}), or to (${payload.phone})`);
           // Fallback: send SMS instead
-          await sendSMS(payload.phone, `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried calling you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back when you can!'}`, client.twilio_phone, db, client.id);
+          const smsMsg = `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried calling you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back when you can!'}`.slice(0, 1600);
+          await sendSMS(payload.phone, smsMsg, client.twilio_phone, db, client.id);
           return;
         }
         const RETELL_API_KEY = process.env.RETELL_API_KEY;
@@ -462,7 +469,8 @@ const server = app.listen(PORT, () => {
             const errText = await resp.text().catch(() => '');
             console.error(`[jobQueue] Retell create-phone-call failed (${resp.status}): ${errText}`);
             // Fallback SMS
-            await sendSMS(payload.phone, `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried to reach you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back!'}`, client.twilio_phone, db, client.id);
+            const fallbackMsg = `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried to reach you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back!'}`.slice(0, 1600);
+            await sendSMS(payload.phone, fallbackMsg, client.twilio_phone, db, client.id);
           }
         } catch (callErr) {
           console.error(`[jobQueue] Retell outbound call error:`, callErr.message);
@@ -480,7 +488,9 @@ const server = app.listen(PORT, () => {
             return;
           }
         }
-        await sendSMS(payload.phone || payload.to, payload.message || payload.body, payload.from, db, payload.clientId);
+        // Truncate to Twilio max for concatenated SMS
+        const message = (payload.message || payload.body || '').slice(0, 1600);
+        await sendSMS(payload.phone || payload.to, message, payload.from, db, payload.clientId);
       },
       'appointment_reminder': async (payload) => {
         // Verify appointment hasn't been cancelled
@@ -491,7 +501,9 @@ const server = app.listen(PORT, () => {
             return;
           }
         }
-        await sendSMS(payload.phone, payload.message, payload.from, db, payload.clientId);
+        // Truncate to Twilio max for concatenated SMS
+        const message = (payload.message || '').slice(0, 1600);
+        await sendSMS(payload.phone, message, payload.from, db, payload.clientId);
       },
       'interested_followup_email': async (payload) => {
         // 24h follow-up for INTERESTED prospects who haven't booked yet

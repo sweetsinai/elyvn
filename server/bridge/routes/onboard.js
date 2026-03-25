@@ -3,7 +3,7 @@ const router = express.Router();
 const { randomUUID } = require('crypto');
 const path = require('path');
 const fsPromises = require('fs').promises;
-const { isValidUUID, isValidPhone, isValidEmail, sanitizeString } = require('../utils/validate');
+const { isValidUUID, isValidPhone, isValidEmail, isValidURL, sanitizeString } = require('../utils/validate');
 
 // Rate limiting for onboarding
 const onboardRateLimits = new Map();
@@ -139,6 +139,13 @@ router.post('/onboard', onboardRateLimit, async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'booking_link must be a string'
+      });
+    }
+
+    if (booking_link && !isValidURL(booking_link)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid booking link URL'
       });
     }
 

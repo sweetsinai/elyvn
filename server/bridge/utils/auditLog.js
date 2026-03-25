@@ -8,13 +8,15 @@ const { randomUUID } = require('crypto');
 const fs = require('fs');
 
 const FALLBACK_LOG = process.env.AUDIT_FALLBACK_LOG || '/tmp/elyvn-audit-fallback.log';
+const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
 
-// Known audit actions — expandable list
-const KNOWN_ACTIONS = new Set([
+// Valid audit actions — allowlisting
+const VALID_ACTIONS = new Set([
   'auth_success', 'auth_failure', 'lead_created', 'lead_updated', 'lead_completed',
-  'call_started', 'call_ended', 'sms_sent', 'sms_received', 'email_sent',
-  'setting_changed', 'client_created', 'client_updated', 'brain_decision',
-  'speed_lead_triggered', 'webhook_received', 'isolation_violation'
+  'call_started', 'call_completed', 'sms_sent', 'sms_received', 'email_sent',
+  'settings_changed', 'client_created', 'client_updated', 'brain_decision',
+  'speed_lead_triggered', 'webhook_received', 'isolation_violation',
+  'job_completed', 'job_failed', 'rate_limited'
 ]);
 
 /**
@@ -34,26 +36,39 @@ function sanitizeDetails(details) {
 }
 
 /**
- * Validate action against known actions
+ * Validate action against allowlist
  * @param {string} action - Action name
- * @returns {string} Action name, prefixed with "unknown:" if not in allowlist
+ * @returns {object} { action, isUnknown }
  */
 function validateAction(action) {
   if (!action || typeof action !== 'string') {
-    return 'unknown:invalid_action';
+    return { action: 'unknown:invalid_action', isUnknown: true };
   }
-  if (KNOWN_ACTIONS.has(action)) {
-    return action;
+  if (VALID_ACTIONS.has(action)) {
+    return { action, isUnknown: false };
   }
-  return `unknown:${action}`;
+  return { action, isUnknown: true };
 }
 
 /**
- * Fallback file logging when DB write fails
+ * Fallback file logging when DB write fails, with rotation support
  * @param {object} entry - Audit log entry
  */
 function fallbackLog(entry) {
   try {
+    // Check if log exists and exceeds max size
+    if (fs.existsSync(FALLBACK_LOG)) {
+      const stats = fs.statSync(FALLBACK_LOG);
+      if (stats.size > MAX_LOG_SIZE) {
+        // Rotate: move current to .old, discarding previous .old
+        const oldPath = FALLBACK_LOG + '.old';
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+        }
+        fs.renameSync(FALLBACK_LOG, oldPath);
+        console.log(`[audit] Rotated fallback log at ${FALLBACK_LOG} (was ${Math.round(stats.size / 1048576)}MB)`);
+      }
+    }
     fs.appendFileSync(FALLBACK_LOG, JSON.stringify(entry) + '\n');
   } catch (e) {
     console.error('[audit] Fallback log write failed:', e.message);
@@ -95,7 +110,7 @@ function logAudit(db, { clientId, userId, action, resourceType, resourceId, ip, 
   if (!db) return;
 
   // Validate and sanitize inputs
-  const validatedAction = validateAction(action);
+  const { action: validatedAction, isUnknown } = validateAction(action);
   const sanitizedDetails = sanitizeDetails(details);
 
   const entry = {
@@ -108,8 +123,14 @@ function logAudit(db, { clientId, userId, action, resourceType, resourceId, ip, 
     ip_address: ip || null,
     user_agent: userAgent || null,
     details: sanitizedDetails,
+    _unknown_action: isUnknown || null,
     created_at: new Date().toISOString(),
   };
+
+  // Log warning if unknown action detected
+  if (isUnknown) {
+    console.warn(`[audit] Unknown action detected: ${action}`);
+  }
 
   try {
     db.prepare(`
