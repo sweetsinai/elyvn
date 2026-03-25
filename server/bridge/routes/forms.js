@@ -4,13 +4,49 @@ const { randomUUID } = require('crypto');
 const telegram = require('../utils/telegram');
 const { triggerSpeedSequence } = require('../utils/speed-to-lead');
 const { normalizePhone } = require('../utils/phone');
+const { isValidUUID, isValidPhone, isValidEmail, sanitizeString } = require('../utils/validate');
+
+// Rate limiting for form submissions
+const formRateLimits = new Map();
+const FORM_RATE_LIMIT = 10; // max submissions per minute per IP
+const FORM_RATE_WINDOW = 60000; // 1 minute
+
+function formRateLimit(req, res, next) {
+  const key = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  const record = formRateLimits.get(key);
+
+  if (record) {
+    // Clean old entries
+    record.timestamps = record.timestamps.filter(t => now - t < FORM_RATE_WINDOW);
+    if (record.timestamps.length >= FORM_RATE_LIMIT) {
+      console.warn(`[forms] Rate limit exceeded for ${key}`);
+      return res.status(429).json({ error: 'Too many submissions. Please try again later.' });
+    }
+    record.timestamps.push(now);
+  } else {
+    formRateLimits.set(key, { timestamps: [now] });
+  }
+
+  // Cleanup old entries every 5 minutes
+  if (formRateLimits.size > 5000) {
+    for (const [k, v] of formRateLimits) {
+      if (now - Math.max(...v.timestamps) > FORM_RATE_WINDOW) formRateLimits.delete(k);
+    }
+  }
+
+  next();
+}
 
 // POST /webhooks/form (no clientId in URL — reads client_id from body)
-router.post('/', async (req, res) => {
+router.post('/', formRateLimit, async (req, res) => {
   const body = req.body || {};
   const clientId = body.client_id || body.clientId;
   if (!clientId) {
     return res.status(400).json({ error: 'client_id required in body' });
+  }
+  if (!isValidUUID(clientId)) {
+    return res.status(400).json({ error: 'invalid client_id format' });
   }
   req.params = { clientId };
   // Forward to the /:clientId handler below
@@ -26,6 +62,18 @@ router.post('/', async (req, res) => {
     const name = body.name || body.first_name || body['your-name'] || body.fullName || body.full_name || null;
     const phone = normalizePhone(body.phone || body.Phone || body['your-phone'] || body.tel || body.mobile || null);
     const email = body.email || body.Email || body['your-email'] || null;
+
+    // Validate phone if provided
+    if (phone && !isValidPhone(phone)) {
+      console.warn(`[Form] Invalid phone format: ${phone}`);
+      return;
+    }
+
+    // Validate email if provided
+    if (email && !isValidEmail(email)) {
+      console.warn(`[Form] Invalid email format: ${email}`);
+      return;
+    }
     const message = body.message || body.Message || body['your-message'] || body.body || body.inquiry || '';
     const service = body.service || body.Service || null;
     const source = body.utm_source || body.source || 'website_form';
@@ -82,7 +130,7 @@ router.post('/', async (req, res) => {
 // Accepts form submissions from any source (WordPress, Typeform, Wix, Squarespace, custom HTML)
 // Supports JSON and URL-encoded bodies
 // Field aliases: Contact Form 7, Typeform, generic caps, standard
-router.post('/:clientId', async (req, res) => {
+router.post('/:clientId', formRateLimit, async (req, res) => {
   // Always 200 immediately — form builders retry on failure
   res.status(200).json({ status: 'received', message: 'Lead captured' });
 

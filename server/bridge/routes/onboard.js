@@ -4,6 +4,38 @@ const { randomUUID } = require('crypto');
 const path = require('path');
 const fsPromises = require('fs').promises;
 
+// Rate limiting for onboarding
+const onboardRateLimits = new Map();
+const ONBOARD_RATE_LIMIT = 5; // max onboards per minute per IP
+const ONBOARD_RATE_WINDOW = 60000; // 1 minute
+
+function onboardRateLimit(req, res, next) {
+  const key = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  const record = onboardRateLimits.get(key);
+
+  if (record) {
+    // Clean old entries
+    record.timestamps = record.timestamps.filter(t => now - t < ONBOARD_RATE_WINDOW);
+    if (record.timestamps.length >= ONBOARD_RATE_LIMIT) {
+      console.warn(`[onboard] Rate limit exceeded for ${key}`);
+      return res.status(429).json({ error: 'Too many onboarding requests. Please try again later.' });
+    }
+    record.timestamps.push(now);
+  } else {
+    onboardRateLimits.set(key, { timestamps: [now] });
+  }
+
+  // Cleanup old entries every 5 minutes
+  if (onboardRateLimits.size > 5000) {
+    for (const [k, v] of onboardRateLimits) {
+      if (now - Math.max(...v.timestamps) > ONBOARD_RATE_WINDOW) onboardRateLimits.delete(k);
+    }
+  }
+
+  next();
+}
+
 /**
  * Input validation helper
  */
@@ -50,7 +82,7 @@ function sanitizeString(str) {
  *     embed_code: string (HTML snippet)
  *   }
  */
-router.post('/onboard', async (req, res) => {
+router.post('/onboard', onboardRateLimit, async (req, res) => {
   try {
     const db = req.app.locals.db;
 

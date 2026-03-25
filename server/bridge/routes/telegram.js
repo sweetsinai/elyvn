@@ -1,6 +1,38 @@
 const express = require('express');
 const router = express.Router();
 const telegram = require('../utils/telegram');
+const { isValidURL } = require('../utils/validate');
+
+// Rate limiting for Telegram callback queries
+const callbackRateLimits = new Map();
+const CALLBACK_RATE_LIMIT = 10; // max callbacks per minute per chatId
+const CALLBACK_RATE_WINDOW = 60000; // 1 minute
+
+function callbackRateLimit(chatId) {
+  const now = Date.now();
+  const record = callbackRateLimits.get(chatId);
+
+  if (record) {
+    // Clean old entries
+    record.timestamps = record.timestamps.filter(t => now - t < CALLBACK_RATE_WINDOW);
+    if (record.timestamps.length >= CALLBACK_RATE_LIMIT) {
+      console.warn(`[telegram] Callback rate limit exceeded for chatId ${chatId}`);
+      return false; // Rate limited
+    }
+    record.timestamps.push(now);
+  } else {
+    callbackRateLimits.set(chatId, { timestamps: [now] });
+  }
+
+  // Cleanup old entries every 5 minutes
+  if (callbackRateLimits.size > 10000) {
+    for (const [k, v] of callbackRateLimits) {
+      if (now - Math.max(...v.timestamps) > CALLBACK_RATE_WINDOW) callbackRateLimits.delete(k);
+    }
+  }
+
+  return true; // Not rate limited
+}
 
 // Verify webhook secret (skip if not configured)
 router.use((req, res, next) => {
@@ -360,6 +392,10 @@ async function handleCommand(db, message) {
       }
 
       if (key === 'review') {
+        if (!isValidURL(value)) {
+          await telegram.sendMessage(chatId, 'Invalid URL. Must start with https:// or http://');
+          break;
+        }
         db.prepare('UPDATE clients SET google_review_link = ?, updated_at = datetime(\'now\') WHERE id = ?').run(value, client.id);
         await telegram.sendMessage(chatId, `✅ Review link updated.`);
       } else if (key === 'ticket') {
@@ -412,6 +448,12 @@ async function handleCallback(db, callbackQuery) {
   const callbackId = callbackQuery.id;
 
   if (!chatId || !data) return;
+
+  // Rate limit callback queries
+  if (!callbackRateLimit(chatId)) {
+    console.warn(`[telegram] Callback rate limited for chatId ${chatId}`);
+    return;
+  }
 
   if (data.startsWith('transcript:')) {
     const callId = data.split(':')[1];
