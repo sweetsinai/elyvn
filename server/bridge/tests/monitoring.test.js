@@ -3,9 +3,18 @@
  * Tests Sentry integration for error tracking
  */
 
-const { initMonitoring, captureException, captureMessage, expressErrorHandler } = require('../utils/monitoring');
+jest.mock('@sentry/node', () => ({
+  init: jest.fn(),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+  expressErrorHandler: jest.fn(() => (err, req, res, next) => next(err)),
+  Handlers: {
+    requestHandler: jest.fn(() => (req, res, next) => next()),
+    errorHandler: jest.fn(() => (err, req, res, next) => next(err)),
+  },
+}), { virtual: true });
 
-jest.mock('@sentry/node');
+const { initMonitoring, captureException, captureMessage, expressErrorHandler } = require('../utils/monitoring');
 
 describe('monitoring', () => {
   let mockSentry;
@@ -14,24 +23,26 @@ describe('monitoring', () => {
     jest.clearAllMocks();
     jest.resetModules();
 
-    // Mock Sentry
-    mockSentry = {
-      init: jest.fn(),
-      captureException: jest.fn(),
-      captureMessage: jest.fn(),
-      expressErrorHandler: jest.fn(() => (err, req, res, next) => next(err))
-    };
+    // Get the already-mocked Sentry module
+    const Sentry = require('@sentry/node');
+
+    // Setup default mock behaviors
+    Sentry.init.mockImplementation(() => {});
+    Sentry.captureException.mockImplementation(() => {});
+    Sentry.captureMessage.mockImplementation(() => {});
+    Sentry.expressErrorHandler.mockReturnValue((err, req, res, next) => next(err));
+    Sentry.Handlers.requestHandler.mockReturnValue((req, res, next) => next());
+    Sentry.Handlers.errorHandler.mockReturnValue((err, req, res, next) => next(err));
   });
 
   describe('initMonitoring', () => {
     test('initializes Sentry when DSN is configured', () => {
       process.env.SENTRY_DSN = 'https://key@sentry.io/project';
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
-      expect(Sentry).toHaveBeenCalled();
+      expect(Sentry.init).toHaveBeenCalled();
     });
 
     test('skips initialization when DSN not configured', () => {
@@ -50,11 +61,10 @@ describe('monitoring', () => {
       process.env.npm_package_version = '1.0.0';
 
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
-      expect(mockSentry.init).toHaveBeenCalledWith(
+      expect(Sentry.init).toHaveBeenCalledWith(
         expect.objectContaining({
           dsn: 'https://key@sentry.io/project',
           environment: 'production',
@@ -68,11 +78,10 @@ describe('monitoring', () => {
       delete process.env.npm_package_version;
 
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
-      expect(mockSentry.init).toHaveBeenCalledWith(
+      expect(Sentry.init).toHaveBeenCalledWith(
         expect.objectContaining({
           release: '1.0.0'
         })
@@ -82,7 +91,7 @@ describe('monitoring', () => {
     test('handles Sentry init errors gracefully', () => {
       process.env.SENTRY_DSN = 'https://key@sentry.io/project';
       const Sentry = require('@sentry/node');
-      Sentry.mockImplementation(() => {
+      Sentry.init.mockImplementation(() => {
         throw new Error('Sentry not installed');
       });
 
@@ -93,11 +102,10 @@ describe('monitoring', () => {
       process.env.SENTRY_DSN = 'https://key@sentry.io/project';
 
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
-      const config = mockSentry.init.mock.calls[0][0];
+      const config = Sentry.init.mock.calls[0][0];
       const event = {
         request: {
           headers: {
@@ -120,7 +128,6 @@ describe('monitoring', () => {
     test('sends exception to Sentry if initialized', () => {
       process.env.SENTRY_DSN = 'https://key@sentry.io/project';
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
@@ -129,7 +136,7 @@ describe('monitoring', () => {
 
       captureException(err, context);
 
-      expect(mockSentry.captureException).toHaveBeenCalledWith(
+      expect(Sentry.captureException).toHaveBeenCalledWith(
         err,
         expect.objectContaining({
           extra: context
@@ -142,7 +149,6 @@ describe('monitoring', () => {
 
       process.env.SENTRY_DSN = 'https://key@sentry.io/project';
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
@@ -160,7 +166,6 @@ describe('monitoring', () => {
     test('handles null context gracefully', () => {
       process.env.SENTRY_DSN = 'https://key@sentry.io/project';
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
@@ -187,13 +192,12 @@ describe('monitoring', () => {
     test('sends message to Sentry if initialized', () => {
       process.env.SENTRY_DSN = 'https://key@sentry.io/project';
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
       captureMessage('Test message', 'warning', { component: 'scheduler' });
 
-      expect(mockSentry.captureMessage).toHaveBeenCalledWith(
+      expect(Sentry.captureMessage).toHaveBeenCalledWith(
         'Test message',
         expect.objectContaining({
           level: 'warning',
@@ -205,13 +209,12 @@ describe('monitoring', () => {
     test('uses default level of info', () => {
       process.env.SENTRY_DSN = 'https://key@sentry.io/project';
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
       captureMessage('Test message');
 
-      expect(mockSentry.captureMessage).toHaveBeenCalledWith(
+      expect(Sentry.captureMessage).toHaveBeenCalledWith(
         'Test message',
         expect.objectContaining({
           level: 'info'
@@ -222,7 +225,6 @@ describe('monitoring', () => {
     test('handles different severity levels', () => {
       process.env.SENTRY_DSN = 'https://key@sentry.io/project';
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
@@ -231,7 +233,7 @@ describe('monitoring', () => {
         captureMessage('Test', level);
       }
 
-      expect(mockSentry.captureMessage).toHaveBeenCalledTimes(4);
+      expect(Sentry.captureMessage).toHaveBeenCalledTimes(4);
     });
 
     test('skips Sentry if not initialized', () => {
@@ -239,7 +241,8 @@ describe('monitoring', () => {
 
       captureMessage('Test message');
 
-      expect(mockSentry.captureMessage).not.toHaveBeenCalled();
+      const Sentry = require('@sentry/node');
+      expect(Sentry.captureMessage).not.toHaveBeenCalled();
     });
   });
 
@@ -247,7 +250,6 @@ describe('monitoring', () => {
     test('returns Sentry express error handler if initialized', () => {
       process.env.SENTRY_DSN = 'https://key@sentry.io/project';
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
@@ -288,7 +290,6 @@ describe('monitoring', () => {
 
       process.env.SENTRY_DSN = 'https://key@sentry.io/project';
       const Sentry = require('@sentry/node');
-      Sentry.mockReturnValue(mockSentry);
 
       initMonitoring();
 
@@ -297,7 +298,7 @@ describe('monitoring', () => {
 
       captureException(err, context);
 
-      expect(mockSentry.captureException).toHaveBeenCalled();
+      expect(Sentry.captureException).toHaveBeenCalled();
       expect(consoleSpy).toHaveBeenCalled();
 
       consoleSpy.mockRestore();
@@ -305,7 +306,7 @@ describe('monitoring', () => {
 
     test('can initialize and send errors without Sentry package', () => {
       const Sentry = require('@sentry/node');
-      Sentry.mockImplementation(() => {
+      Sentry.init.mockImplementation(() => {
         throw new Error('Module not found');
       });
 

@@ -3,6 +3,10 @@
  * Tests file-based logging with rotation and retention
  */
 
+const fs = require('fs');
+
+jest.mock('fs');
+
 const { setupLogger, closeLogger } = require('../utils/logger');
 
 describe('logger', () => {
@@ -11,6 +15,24 @@ describe('logger', () => {
     // Reset env vars
     delete process.env.LOG_DIR;
     delete process.env.LOG_RETENTION_DAYS;
+
+    // Mock fs.mkdirSync to do nothing
+    fs.mkdirSync.mockImplementation(() => {});
+
+    // Mock fs.createWriteStream to return a mock stream
+    const mockStream = {
+      write: jest.fn(),
+      end: jest.fn(),
+      on: jest.fn(),
+    };
+    fs.createWriteStream.mockReturnValue(mockStream);
+
+    // Mock fs.readdirSync to return empty array (no old logs to clean)
+    fs.readdirSync.mockReturnValue([]);
+  });
+
+  afterEach(() => {
+    jest.resetModules();
   });
 
   describe('setupLogger', () => {

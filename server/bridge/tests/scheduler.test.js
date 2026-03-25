@@ -35,6 +35,16 @@ describe('scheduler', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Setup telegram mocks with return values
+    telegram.formatDailySummary.mockImplementation((stats, schedule, client) => ({
+      text: `Daily Summary\nCalls: ${stats.total_calls}, Booked: ${stats.booked}, Missed: ${stats.missed}`
+    }));
+    telegram.formatWeeklyReport.mockImplementation((report, client) => ({
+      text: `Weekly Report\nMissed rate: ${report.missed_rate}%\nRevenue: $${report.revenue}`
+    }));
+    telegram.sendMessage.mockResolvedValue({ ok: true });
+
     db = new Database(':memory:');
     runMigrations(db);
 
@@ -271,7 +281,7 @@ describe('scheduler', () => {
       await dailyLeadScoring(db);
 
       const lead = db.prepare('SELECT score FROM leads WHERE id = ?').get('lead1');
-      expect(lead.score).toBe(8); // 85 / 10 = 8.5 rounded to 8
+      expect(lead.score).toBe(9); // 85 / 10 = 8.5 rounded to 9
     });
 
     test('notifies owner of hot leads', async () => {

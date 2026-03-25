@@ -406,6 +406,28 @@ const migrations = [
       db.exec('CREATE INDEX IF NOT EXISTS idx_emails_sent_campaign ON emails_sent(campaign_id, status)');
     },
   },
+  {
+    id: '016_weekly_reports_table',
+    description: 'Create weekly_reports table for storing aggregated weekly statistics',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS weekly_reports (
+          id TEXT PRIMARY KEY,
+          client_id TEXT NOT NULL,
+          week_start TEXT NOT NULL,
+          week_end TEXT NOT NULL,
+          calls_answered INTEGER DEFAULT 0,
+          appointments_booked INTEGER DEFAULT 0,
+          messages_handled INTEGER DEFAULT 0,
+          estimated_revenue REAL DEFAULT 0,
+          missed_call_rate REAL DEFAULT 0,
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (client_id) REFERENCES clients(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_weekly_reports_client_week ON weekly_reports(client_id, week_end);
+      `);
+    },
+  },
 ];
 
 /**
