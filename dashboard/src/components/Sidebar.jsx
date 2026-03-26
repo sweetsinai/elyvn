@@ -29,7 +29,7 @@ const navItems = [
 
 const connections = [
   { name: 'Retell', key: 'retell' },
-  { name: 'Twilio', key: 'twilio' },
+  { name: 'Telnyx', key: 'telnyx' },
   { name: 'Cal.com', key: 'calcom' },
   { name: 'MCP', key: 'mcp' },
 ];
@@ -48,9 +48,9 @@ export default function Sidebar() {
           setHealth({
             mcp: services.mcp || false,
             db: services.db || false,
-            retell: data.status === 'ok',
-            twilio: data.status === 'ok',
-            calcom: data.status === 'ok',
+            retell: data.env_configured?.RETELL_API_KEY || false,
+            telnyx: data.env_configured?.TELNYX_API_KEY || false,
+            calcom: data.env_configured?.CALCOM_API_KEY || false,
           });
         })
         .catch(() => setHealth({}));
