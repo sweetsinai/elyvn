@@ -104,7 +104,7 @@ describe('backup', () => {
       await backupDatabase('/data/app.db');
 
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringMatching(/\[backup\] Created backup:/)
+        expect.stringMatching(/\[backup\] Created backup using fs\.copyFileSync:/)
       );
     });
 
@@ -151,7 +151,7 @@ describe('backup', () => {
       expect(fs.unlinkSync).toHaveBeenCalledWith('/data/app.db.backup.2025-03-20-10-00-00');
     });
 
-    it('should keep default 5 backups when keepCount not specified', () => {
+    it('should keep default 7 backups when keepCount not specified', () => {
       fs.readdirSync.mockReturnValue([
         'app.db.backup.2025-03-25-10-00-00',
         'app.db.backup.2025-03-24-10-00-00',
@@ -160,6 +160,7 @@ describe('backup', () => {
         'app.db.backup.2025-03-21-10-00-00',
         'app.db.backup.2025-03-20-10-00-00',
         'app.db.backup.2025-03-19-10-00-00',
+        'app.db.backup.2025-03-18-10-00-00',
       ]);
 
       fs.statSync.mockImplementation(() => ({ mtimeMs: Date.now() }));
@@ -167,7 +168,7 @@ describe('backup', () => {
 
       cleanupOldBackups('/data/app.db');
 
-      // Should delete old backups, keeping 5
+      // Should delete old backups, keeping 7
       expect(fs.unlinkSync).toHaveBeenCalled();
     });
 
@@ -362,7 +363,7 @@ describe('backup', () => {
       scheduleBackups('/data/app.db');
 
       expect(console.log).toHaveBeenCalledWith(
-        '[backup] Backups scheduled every 24 hours'
+        '[backup] Backups scheduled every 24 hours (with WAL checkpoint and rotation)'
       );
     });
 
@@ -373,7 +374,7 @@ describe('backup', () => {
       scheduleBackups('/data/app.db', 12);
 
       expect(console.log).toHaveBeenCalledWith(
-        '[backup] Backups scheduled every 12 hours'
+        '[backup] Backups scheduled every 12 hours (with WAL checkpoint and rotation)'
       );
     });
 
@@ -458,7 +459,7 @@ describe('backup', () => {
       scheduleBackups('/data/app.db', 6);
 
       expect(console.log).toHaveBeenCalledWith(
-        '[backup] Backups scheduled every 6 hours'
+        '[backup] Backups scheduled every 6 hours (with WAL checkpoint and rotation)'
       );
     });
 

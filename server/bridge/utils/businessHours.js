@@ -58,7 +58,7 @@ function parseBusinessHours(hoursStr) {
  * @returns {boolean} True if within business hours
  */
 function isWithinBusinessHours(client) {
-  if (!client) return true; // default to open if no client
+  if (!client || !client.business_hours) return true; // default to open if no client or no business hours configured
 
   const now = new Date();
   const formatter = new Intl.DateTimeFormat('en-US', {

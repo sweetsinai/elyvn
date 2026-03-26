@@ -20,6 +20,10 @@ describe('emailGenerator', () => {
     delete process.env.CLAUDE_MODEL;
   });
 
+  afterEach(() => {
+    jest.resetModules();
+  });
+
   describe('generateColdEmail', () => {
     it('should generate email with all prospect data', async () => {
       const prospect = {
@@ -185,7 +189,12 @@ describe('emailGenerator', () => {
 
       mockCreate.mockRejectedValueOnce(new Error('API Error'));
 
-      const result = await generateColdEmail(prospect);
+      // Reload the module to pick up the new env var
+      delete require.cache[require.resolve('../utils/emailGenerator')];
+      delete require.cache[require.resolve('../utils/config')];
+      const { generateColdEmail: generateColdEmailLocal } = require('../utils/emailGenerator');
+
+      const result = await generateColdEmailLocal(prospect);
 
       expect(result.body).toContain('https://custom.booking.link');
     });
@@ -200,7 +209,12 @@ describe('emailGenerator', () => {
 
       mockCreate.mockRejectedValueOnce(new Error('API Error'));
 
-      const result = await generateColdEmail(prospect);
+      // Reload the module to pick up the new env var
+      delete require.cache[require.resolve('../utils/emailGenerator')];
+      delete require.cache[require.resolve('../utils/config')];
+      const { generateColdEmail: generateColdEmailLocal } = require('../utils/emailGenerator');
+
+      const result = await generateColdEmailLocal(prospect);
 
       expect(result.body).toContain('Jane');
     });
