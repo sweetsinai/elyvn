@@ -26,6 +26,7 @@ const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
 const Database = require('better-sqlite3');
+const { isValidUUID } = require('./utils/validate');
 
 // === STARTUP ENV VALIDATION ===
 const REQUIRED_ENV = ['ANTHROPIC_API_KEY'];
@@ -171,7 +172,12 @@ function apiAuth(req, res, next) {
       ).get(hash);
       if (keyRecord) {
         req.clientId = keyRecord.client_id;
-        req.keyPermissions = JSON.parse(keyRecord.permissions || '["read","write"]');
+        try {
+          req.keyPermissions = JSON.parse(keyRecord.permissions || '["read","write"]');
+        } catch (parseErr) {
+          console.error('[auth] Failed to parse permissions for key:', keyRecord.id, parseErr.message);
+          req.keyPermissions = ['read', 'write'];
+        }
         // Update last_used_at
         db.prepare("UPDATE client_api_keys SET last_used_at = datetime('now') WHERE id = ?").run(keyRecord.id);
         logAudit(db, { action: 'auth_success', clientId: keyRecord.client_id, ip: req.ip, userAgent: req.get('user-agent'), details: { key_id: keyRecord.id, path: req.path } });
@@ -238,7 +244,7 @@ app.get('/t/open/:emailId', (req, res) => {
   const { emailId } = req.params;
 
   // Validate emailId format (UUID)
-  if (!emailId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(emailId)) {
+  if (!isValidUUID(emailId)) {
     // Return pixel anyway (don't expose invalid ID)
     const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
     res.set({
@@ -274,7 +280,7 @@ app.get('/t/click/:emailId', (req, res) => {
   let url = req.query.url;
 
   // Validate emailId format (UUID)
-  if (!emailId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(emailId)) {
+  if (!isValidUUID(emailId)) {
     return res.redirect('/');
   }
 

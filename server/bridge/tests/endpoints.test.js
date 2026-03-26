@@ -2,7 +2,7 @@
 
 const BASE = process.env.TEST_BASE_URL || 'https://joyful-trust-production.up.railway.app';
 const API_KEY = process.env.TEST_API_KEY || '4d4def88907d8f1d9c83921384c5199c41639cb2f99d60009267b06c6508eaa9';
-const BOT_TOKEN = '8785958526:AAFrdvXSqxhYXAeijB-ftgzHA0qcijeq4aE';
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'test-bot-token';
 
 describe('API Endpoints Integration Tests', () => {
   const fetchJSON = async (url, opts = {}) => {
