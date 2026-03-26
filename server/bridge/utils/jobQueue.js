@@ -181,7 +181,7 @@ function cancelJobs(db, filter) {
 /**
  * Recover stalled jobs on startup
  * Handles two scenarios:
- * 1. Jobs stuck in 'processing' status from a crash
+ * 1. Jobs stuck in 'processing' status from a crash (>30 minutes)
  * 2. Jobs stuck in 'pending' status for > 1 hour (likely missed the processing window)
  * @param {object} db - better-sqlite3 instance
  * @returns {Promise<{recovered: number}>}
@@ -193,10 +193,11 @@ async function recoverStalledJobs(db) {
     let totalRecovered = 0;
 
     // Recover jobs stuck in 'processing' status (crash scenario)
+    // Only recover if they've been stuck for >30 minutes
     const processingResult = db.prepare(`
       UPDATE job_queue
-      SET status = 'pending', updated_at = datetime('now')
-      WHERE status = 'processing'
+      SET status = 'pending', attempts = attempts + 1, updated_at = datetime('now')
+      WHERE status = 'processing' AND updated_at < datetime('now', '-30 minutes')
     `).run();
 
     if (processingResult.changes > 0) {

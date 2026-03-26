@@ -267,22 +267,22 @@ router.post('/blast', async (req, res) => {
     const campaignId = randomUUID();
     const now = new Date().toISOString();
 
-    db.prepare(`
-      INSERT INTO campaigns (id, name, industry, city, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'draft', ?, ?)
-    `).run(campaignId, campaignName, industry, city, now, now);
+    // Wrap campaign creation and prospect linking in transaction for all-or-nothing semantics
+    const createCampaignWithProspects = db.transaction((cId, cName, ind, cty, prospectIds, timestamp) => {
+      db.prepare(`
+        INSERT INTO campaigns (id, name, industry, city, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'draft', ?, ?)
+      `).run(cId, cName, ind, cty, timestamp, timestamp);
 
-    // Link prospects to campaign
-    const linkStmt = db.prepare(
-      'INSERT INTO campaign_prospects (id, campaign_id, prospect_id, created_at) VALUES (?, ?, ?, ?)'
-    );
-
-    const linkMany = db.transaction((ids) => {
-      for (const pid of ids) {
-        linkStmt.run(randomUUID(), campaignId, pid, now);
+      const linkStmt = db.prepare(
+        'INSERT INTO campaign_prospects (id, campaign_id, prospect_id, created_at) VALUES (?, ?, ?, ?)'
+      );
+      for (const pid of prospectIds) {
+        linkStmt.run(randomUUID(), cId, pid, timestamp);
       }
     });
-    linkMany(prospects.map(p => p.id));
+
+    createCampaignWithProspects(campaignId, campaignName, industry, city, prospects.map(p => p.id), now);
 
     console.log(`[blast] Campaign created: ${campaignId}`);
 
@@ -473,22 +473,24 @@ router.post('/campaign', (req, res) => {
     const id = randomUUID();
     const now = new Date().toISOString();
 
-    db.prepare(`
-      INSERT INTO campaigns (id, name, industry, city, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'draft', ?, ?)
-    `).run(id, name, industry || null, city || null, now, now);
+    // Wrap campaign creation in transaction to ensure all-or-nothing semantics
+    const createCampaign = db.transaction((campaignId, campaignName, industryVal, cityVal, timestamp) => {
+      // Insert campaign
+      db.prepare(`
+        INSERT INTO campaigns (id, name, industry, city, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'draft', ?, ?)
+      `).run(campaignId, campaignName, industryVal, cityVal, timestamp, timestamp);
 
-    // Link prospects to campaign
-    const linkStmt = db.prepare(
-      'INSERT INTO campaign_prospects (id, campaign_id, prospect_id, created_at) VALUES (?, ?, ?, ?)'
-    );
-
-    const linkMany = db.transaction((ids) => {
-      for (const pid of ids) {
-        linkStmt.run(randomUUID(), id, pid, now);
+      // Link prospects to campaign
+      const linkStmt = db.prepare(
+        'INSERT INTO campaign_prospects (id, campaign_id, prospect_id, created_at) VALUES (?, ?, ?, ?)'
+      );
+      for (const pid of prospectIds) {
+        linkStmt.run(randomUUID(), campaignId, pid, timestamp);
       }
     });
-    linkMany(prospectIds);
+
+    createCampaign(id, name, industry || null, city || null, now);
 
     res.status(201).json({ campaign: { id, name, industry, city, status: 'draft', prospect_count: prospectIds.length } });
   } catch (err) {
