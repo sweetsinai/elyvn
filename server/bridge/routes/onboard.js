@@ -19,7 +19,8 @@ function onboardRateLimit(req, res, next) {
     // Clean old entries
     record.timestamps = record.timestamps.filter(t => now - t < ONBOARD_RATE_WINDOW);
     if (record.timestamps.length >= ONBOARD_RATE_LIMIT) {
-      console.warn(`[onboard] Rate limit exceeded for ${key}`);
+      const { logger } = require('../utils/logger');
+      logger.warn(`[onboard] Rate limit exceeded for ${key}`);
       return res.status(429).json({ error: 'Too many onboarding requests. Please try again later.' });
     }
     record.timestamps.push(now);
@@ -27,11 +28,14 @@ function onboardRateLimit(req, res, next) {
     onboardRateLimits.set(key, { timestamps: [now] });
   }
 
-  // Cleanup old entries every 5 minutes
-  if (onboardRateLimits.size > 5000) {
+  // Cleanup old entries periodically to prevent memory leak
+  if (onboardRateLimits.size > 1000) {
+    const keysToDelete = [];
     for (const [k, v] of onboardRateLimits) {
-      if (now - Math.max(...v.timestamps) > ONBOARD_RATE_WINDOW) onboardRateLimits.delete(k);
+      const latest = v.timestamps[v.timestamps.length - 1] || 0;
+      if (now - latest > ONBOARD_RATE_WINDOW) keysToDelete.push(k);
     }
+    for (const k of keysToDelete) onboardRateLimits.delete(k);
   }
 
   next();

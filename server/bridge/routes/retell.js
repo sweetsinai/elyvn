@@ -23,7 +23,7 @@ const retellBreaker = new CircuitBreaker(
   { failureThreshold: 3, failureWindow: 60000, cooldownPeriod: 30000, serviceName: 'Retell' }
 );
 
-// Retell webhook signature verification
+// Retell webhook signature verification (timing-safe comparison)
 router.use((req, res, next) => {
   const secret = process.env.RETELL_WEBHOOK_SECRET;
   if (!secret) {
@@ -31,9 +31,16 @@ router.use((req, res, next) => {
     return next();
   }
   const signature = req.headers['x-retell-signature'];
+  if (!signature) {
+    logger.warn('[retell] Missing webhook signature header');
+    return res.status(401).json({ error: 'Missing signature' });
+  }
   const payload = JSON.stringify(req.body);
   const expected = require('crypto').createHmac('sha256', secret).update(payload).digest('hex');
-  if (signature !== expected) {
+  // Use timingSafeEqual to prevent timing attacks
+  const sigBuf = Buffer.from(signature, 'utf8');
+  const expBuf = Buffer.from(expected, 'utf8');
+  if (sigBuf.length !== expBuf.length || !require('crypto').timingSafeEqual(sigBuf, expBuf)) {
     logger.warn('[retell] Invalid webhook signature');
     return res.status(401).json({ error: 'Invalid signature' });
   }

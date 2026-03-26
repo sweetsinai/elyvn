@@ -5,6 +5,11 @@
 
 'use strict';
 
+jest.mock('../utils/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+const { logger } = require('../utils/logger');
+
 describe('telegram utils', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -96,7 +101,6 @@ describe('telegram utils', () => {
     });
 
     test('logs error when response is not ok', async () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const telegram = require('../utils/telegram');
 
       global.fetch.mockResolvedValueOnce({
@@ -106,12 +110,10 @@ describe('telegram utils', () => {
 
       await telegram.sendMessage('12345', 'Test');
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('[telegram]'),
         expect.anything()
       );
-
-      consoleSpy.mockRestore();
     });
 
     test('includes chat_id in request body', async () => {
@@ -224,8 +226,6 @@ describe('telegram utils', () => {
     });
 
     test('logs success message', async () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-
       global.fetch.mockResolvedValueOnce({
         ok: true,
         json: jest.fn().mockResolvedValueOnce({ ok: true })
@@ -234,18 +234,13 @@ describe('telegram utils', () => {
       const telegram = require('../utils/telegram');
       await telegram.setWebhook('https://example.com/webhook');
 
-      const logCalls = consoleSpy.mock.calls;
-      const successCall = logCalls.find(call =>
-        String(call[0]).includes('[telegram]') && String(call[0]).includes('setWebhook ok')
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining('[telegram]'),
+        expect.anything()
       );
-      expect(successCall).toBeDefined();
-
-      consoleSpy.mockRestore();
     });
 
     test('logs failure message when response not ok', async () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-
       global.fetch.mockResolvedValueOnce({
         ok: false,
         json: jest.fn().mockResolvedValueOnce({ ok: false, error: 'Invalid URL' })
@@ -254,13 +249,10 @@ describe('telegram utils', () => {
       const telegram = require('../utils/telegram');
       await telegram.setWebhook('https://invalid.example.com');
 
-      const logCalls = consoleSpy.mock.calls;
-      const failedCall = logCalls.find(call =>
-        String(call[0]).includes('[telegram]') && String(call[0]).includes('FAILED')
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining('[telegram]'),
+        expect.anything()
       );
-      expect(failedCall).toBeDefined();
-
-      consoleSpy.mockRestore();
     });
 
     test('handles fetch error', async () => {

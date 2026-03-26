@@ -10,6 +10,30 @@ const { logger } = require('../utils/logger');
 const GOOGLE_PLACES_API_KEY = config.apis.googleMapsKey;
 const DAILY_SEND_LIMIT = config.outreach.dailySendLimit;
 
+// SSRF protection: validate URLs before fetching website content
+function isSafeURL(urlString) {
+  try {
+    const parsed = new URL(urlString);
+    // Only allow http/https
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const hostname = parsed.hostname.toLowerCase();
+    // Block internal/private IPs and localhost
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return false;
+    if (hostname === '0.0.0.0' || hostname.endsWith('.local') || hostname.endsWith('.internal')) return false;
+    // Block private IP ranges
+    if (/^10\./.test(hostname)) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
+    if (/^192\.168\./.test(hostname)) return false;
+    if (/^169\.254\./.test(hostname)) return false;
+    // Block metadata endpoints (cloud providers)
+    if (hostname === '169.254.169.254') return false;
+    if (hostname === 'metadata.google.internal') return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Helper: extract shared prospect scraping logic
 async function scrapeSingleQuery(industry, city, state, country, maxResults) {
   const query = `${industry} in ${city}${state ? ', ' + state : ''}${country ? ', ' + country : ''}`;
@@ -71,6 +95,10 @@ router.post('/scrape', async (req, res) => {
         ];
         const excludePatterns = /\.(png|jpg|jpeg|gif|svg|css|js|woff|ico)$/i;
 
+        // SSRF protection: only fetch safe external URLs
+        if (!isSafeURL(website)) {
+          logger.warn(`[scrape] Blocked unsafe URL: ${website}`);
+        } else {
         const pagesToCheck = [website];
         // Add common contact page URLs
         const baseUrl = website.replace(/\/+$/, '');
@@ -78,6 +106,7 @@ router.post('/scrape', async (req, res) => {
 
         for (const pageUrl of pagesToCheck) {
           if (email) break;
+          if (!isSafeURL(pageUrl)) continue;
           try {
             const siteResp = await fetch(pageUrl, {
               signal: AbortSignal.timeout(5000),
@@ -111,6 +140,7 @@ router.post('/scrape', async (req, res) => {
             logger.error('[outreach] Email discovery failed:', err.message);
           }
         }
+        } // end SSRF-safe check
       }
 
       const id = randomUUID();
@@ -175,12 +205,17 @@ router.post('/blast', async (req, res) => {
         ];
         const excludePatterns = /\.(png|jpg|jpeg|gif|svg|css|js|woff|ico)$/i;
 
+        // SSRF protection: only fetch safe external URLs
+        if (!isSafeURL(website)) {
+          logger.warn(`[scrape] Blocked unsafe URL: ${website}`);
+        } else {
         const pagesToCheck = [website];
         const baseUrl = website.replace(/\/+$/, '');
         pagesToCheck.push(`${baseUrl}/contact`, `${baseUrl}/contact-us`, `${baseUrl}/about`);
 
         for (const pageUrl of pagesToCheck) {
           if (email) break;
+          if (!isSafeURL(pageUrl)) continue;
           try {
             const siteResp = await fetch(pageUrl, {
               signal: AbortSignal.timeout(5000),
@@ -213,6 +248,7 @@ router.post('/blast', async (req, res) => {
             logger.error('[outreach] Email discovery failed:', err.message);
           }
         }
+        } // end SSRF-safe check
       }
 
       const id = randomUUID();

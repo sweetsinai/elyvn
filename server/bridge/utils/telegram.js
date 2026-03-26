@@ -1,5 +1,6 @@
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const TELEGRAM_TIMEOUT_MS = 15000; // 15s timeout for all Telegram API calls
 
 async function sendMessage(chatId, text, options = {}) {
   const body = {
@@ -13,9 +14,13 @@ async function sendMessage(chatId, text, options = {}) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
   });
   const data = await res.json();
-  if (!res.ok) console.error('[telegram] sendMessage failed:', JSON.stringify(data));
+  if (!res.ok) {
+    const { logger } = require('./logger');
+    logger.error('[telegram] sendMessage failed:', JSON.stringify(data));
+  }
   return data;
 }
 
@@ -27,6 +32,7 @@ async function answerCallback(callbackQueryId, text) {
       callback_query_id: callbackQueryId,
       text,
     }),
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
   });
   return res.json();
 }
@@ -40,9 +46,11 @@ async function setWebhook(url) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
   });
   const data = await res.json();
-  console.log(`[telegram] setWebhook ${res.ok ? 'ok' : 'FAILED'}:`, JSON.stringify(data));
+  const { logger } = require('./logger');
+  logger.info(`[telegram] setWebhook ${res.ok ? 'ok' : 'FAILED'}:`, JSON.stringify(data));
   return data;
 }
 
@@ -163,9 +171,13 @@ async function sendDocument(chatId, fileContent, filename, caption = '') {
   const res = await fetch(`${BASE_URL}/sendDocument`, {
     method: 'POST',
     body: formData,
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
   });
   const data = await res.json();
-  if (!res.ok) console.error('[telegram] sendDocument failed:', JSON.stringify(data));
+  if (!res.ok) {
+    const { logger } = require('./logger');
+    logger.error('[telegram] sendDocument failed:', JSON.stringify(data));
+  }
   return data;
 }
 

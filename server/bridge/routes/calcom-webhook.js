@@ -8,7 +8,7 @@ const router = express.Router();
 const { randomUUID, createHmac } = require('crypto');
 const { logger } = require('../utils/logger');
 
-// Cal.com webhook signature verification
+// Cal.com webhook signature verification (timing-safe comparison)
 router.use((req, res, next) => {
   const secret = process.env.CALCOM_WEBHOOK_SECRET;
   if (!secret) {
@@ -16,9 +16,17 @@ router.use((req, res, next) => {
     return next();
   }
   const signature = req.headers['x-cal-signature-256'];
+  if (!signature) {
+    logger.warn('[calcom-webhook] Missing webhook signature header');
+    return res.status(401).json({ error: 'Missing signature' });
+  }
   const payload = JSON.stringify(req.body);
   const expected = createHmac('sha256', secret).update(payload).digest('hex');
-  if (signature !== expected) {
+  // Use timingSafeEqual to prevent timing attacks
+  const { timingSafeEqual } = require('crypto');
+  const sigBuf = Buffer.from(signature, 'utf8');
+  const expBuf = Buffer.from(expected, 'utf8');
+  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
     logger.warn('[calcom-webhook] Invalid webhook signature');
     return res.status(401).json({ error: 'Invalid signature' });
   }

@@ -34,7 +34,10 @@ router.use((req, res, next) => {
     const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
     const data = url + Object.keys(req.body || {}).sort().reduce((acc, key) => acc + key + req.body[key], '');
     const expected = crypto.createHmac('sha1', authToken).update(Buffer.from(data, 'utf-8')).digest('base64');
-    if (signature !== expected) {
+    // Timing-safe comparison to prevent timing attacks
+    const sigBuf = Buffer.from(signature, 'utf8');
+    const expBuf = Buffer.from(expected, 'utf8');
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       logger.error('[twilio] Invalid webhook signature');
       return res.status(401).json({ error: 'Invalid signature' });
     }
@@ -330,33 +333,39 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
       }
     }
 
-    // Upsert lead
-    const existingLead = db.prepare(
-      'SELECT id FROM leads WHERE phone = ? AND client_id = ?'
-    ).get(from, client.id);
-
-    let leadId;
-    if (existingLead) {
-      leadId = existingLead.id;
-      db.prepare('UPDATE leads SET last_contact = ?, updated_at = ? WHERE id = ?')
-        .run(new Date().toISOString(), new Date().toISOString(), leadId);
-    } else {
-      leadId = randomUUID();
-      db.prepare(`
-        INSERT INTO leads (id, client_id, phone, stage, last_contact, created_at, updated_at)
-        VALUES (?, ?, ?, 'new', ?, ?, ?)
-      `).run(leadId, client.id, from, new Date().toISOString(), new Date().toISOString(), new Date().toISOString());
-    }
-
-    // Insert inbound + outbound messages in a transaction
+    // Upsert lead + record messages in a single transaction to prevent race conditions
     const inboundId = randomUUID();
     const outboundId = randomUUID();
+    const now = new Date().toISOString();
 
-    // Record inbound message
-    db.prepare(`
-      INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, confidence, created_at)
-      VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, datetime('now'))
-    `).run(inboundId, client.id, leadId, from, body, messageSid || null, confidence);
+    const upsertAndRecord = db.transaction(() => {
+      const existingLead = db.prepare(
+        'SELECT id FROM leads WHERE phone = ? AND client_id = ?'
+      ).get(from, client.id);
+
+      let leadId;
+      if (existingLead) {
+        leadId = existingLead.id;
+        db.prepare('UPDATE leads SET last_contact = ?, updated_at = ? WHERE id = ?')
+          .run(now, now, leadId);
+      } else {
+        leadId = randomUUID();
+        db.prepare(`
+          INSERT INTO leads (id, client_id, phone, stage, last_contact, created_at, updated_at)
+          VALUES (?, ?, ?, 'new', ?, ?, ?)
+        `).run(leadId, client.id, from, now, now, now);
+      }
+
+      // Record inbound message
+      db.prepare(`
+        INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, confidence, created_at)
+        VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, datetime('now'))
+      `).run(inboundId, client.id, leadId, from, body, messageSid || null, confidence);
+
+      return { leadId, isNew: !existingLead };
+    });
+
+    const { leadId, isNew: isNewLead } = upsertAndRecord();
 
     // Send reply via Twilio REST API
     // Truncate to Twilio max for concatenated SMS (1600 chars = 10 segments)
@@ -385,7 +394,7 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
     }
 
     // Schedule follow-up touch for brand-new SMS contacts
-    if (!existingLead) {
+    if (isNewLead) {
       try {
         const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
         db.prepare(`
