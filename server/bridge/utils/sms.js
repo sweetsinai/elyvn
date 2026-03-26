@@ -4,6 +4,7 @@ const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER;
 
+const { SMS_MIN_GAP_MS, SMS_RATE_LIMIT_CLEANUP_MS, SMS_MAX_RATE_LIMIT_ENTRIES, DUPLICATE_SMS_LOOKBACK_MS } = require('../config/timing');
 let client = null;
 function getClient() {
   if (!client && TWILIO_SID && TWILIO_TOKEN) {
@@ -14,8 +15,8 @@ function getClient() {
 
 // Rate limiter: track last send time per phone number (capped to prevent memory leaks)
 const lastSendTime = new Map();
-const MIN_GAP_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_RATE_LIMIT_ENTRIES = 5000;
+const MIN_GAP_MS = SMS_MIN_GAP_MS; // 5 minutes
+const MAX_RATE_LIMIT_ENTRIES = SMS_MAX_RATE_LIMIT_ENTRIES;
 
 // Periodic cleanup of stale rate limit entries
 setInterval(() => {
@@ -27,7 +28,7 @@ setInterval(() => {
     console.warn(`[sms] Rate limit map too large (${lastSendTime.size}), clearing`);
     lastSendTime.clear();
   }
-}, 10 * 60 * 1000); // Every 10 minutes
+}, SMS_RATE_LIMIT_CLEANUP_MS); // Every 10 minutes
 
 /**
  * Send SMS via Twilio REST API with retry logic.

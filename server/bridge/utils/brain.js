@@ -4,6 +4,8 @@
  * Takes any event + full lead memory, calls Claude, returns actions.
  * Uses sync better-sqlite3 for guardrails checks.
  */
+
+const { BRAIN_LOCK_TIMEOUT_MS, CIRCUIT_BREAKER_FAILURE_WINDOW_MS, CIRCUIT_BREAKER_COOLDOWN_MS } = require('../config/timing');
 const Anthropic = require('@anthropic-ai/sdk');
 const config = require('./config');
 const fs = require('fs');
@@ -15,7 +17,7 @@ const anthropic = new Anthropic();
 // Circuit breaker for Claude API — opens after 5 failures in 60s, cools down 30s
 const claudeBreaker = new CircuitBreaker(
   async (params) => anthropic.messages.create(params),
-  { failureThreshold: 5, failureWindow: 60000, cooldownPeriod: 30000, serviceName: 'Claude-Brain' }
+  { failureThreshold: 5, failureWindow: CIRCUIT_BREAKER_FAILURE_WINDOW_MS, cooldownPeriod: CIRCUIT_BREAKER_COOLDOWN_MS, serviceName: 'Claude-Brain' }
 );
 
 // Per-lead lock to prevent concurrent brain decisions on the same lead
@@ -35,7 +37,7 @@ async function think(eventType, eventData, leadMemory, db) {
   const lockKey = lead?.id;
   if (lockKey) {
     // Wait for existing lock with a 60-second timeout to prevent deadlocks
-    const LOCK_TIMEOUT_MS = 60000;
+    const LOCK_TIMEOUT_MS = BRAIN_LOCK_TIMEOUT_MS;
     if (leadLocks.has(lockKey)) {
       const existingLock = leadLocks.get(lockKey);
       const timeout = new Promise((_, reject) =>

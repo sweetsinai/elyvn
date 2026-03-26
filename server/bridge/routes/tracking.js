@@ -1,0 +1,105 @@
+const express = require('express');
+const { isValidUUID } = require('../utils/validate');
+
+const router = express.Router();
+
+// SSRF protection utility for redirect URLs
+function isSafeRedirectUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const hostname = parsed.hostname;
+    // Block internal IPs
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') return false;
+    if (hostname.startsWith('10.') || hostname.startsWith('192.168.') || hostname.startsWith('172.')) return false;
+    if (hostname === '169.254.169.254') return false; // AWS metadata
+    return true;
+  } catch { return false; }
+}
+
+// Email open tracking pixel
+router.get('/open/:emailId', (req, res) => {
+  const { emailId } = req.params;
+  const db = req.app.locals.db;
+
+  // Validate emailId format (UUID)
+  if (!isValidUUID(emailId)) {
+    // Return pixel anyway (don't expose invalid ID)
+    const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+    res.set({
+      'Content-Type': 'image/gif',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+    return res.send(pixel);
+  }
+
+  try {
+    if (db) {
+      db.prepare("UPDATE emails_sent SET opened_at = COALESCE(opened_at, ?), open_count = COALESCE(open_count, 0) + 1, updated_at = ? WHERE id = ?")
+        .run(new Date().toISOString(), new Date().toISOString(), emailId);
+    }
+  } catch (err) {
+    console.error('[server] Email open tracking failed:', err.message);
+  }
+  // Return 1x1 transparent GIF
+  const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+  res.set({
+    'Content-Type': 'image/gif',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  res.send(pixel);
+});
+
+// Email click tracking redirect
+router.get('/click/:emailId', (req, res) => {
+  const { emailId } = req.params;
+  let url = req.query.url;
+  const db = req.app.locals.db;
+
+  // Validate emailId format (UUID)
+  if (!isValidUUID(emailId)) {
+    return res.redirect('/');
+  }
+
+  try {
+    if (db) {
+      db.prepare("UPDATE emails_sent SET clicked_at = COALESCE(clicked_at, ?), click_count = COALESCE(click_count, 0) + 1, updated_at = ? WHERE id = ?")
+        .run(new Date().toISOString(), new Date().toISOString(), emailId);
+    }
+  } catch (err) {
+    console.error('[server] Email click tracking failed:', err.message);
+  }
+
+  if (url) {
+    try {
+      const decodedUrl = decodeURIComponent(url);
+
+      // URL validation: block dangerous protocols
+      if (!decodedUrl || (!decodedUrl.startsWith('https://') && !decodedUrl.startsWith('http://'))) {
+        return res.status(400).send('Invalid redirect URL');
+      }
+      // Block dangerous protocols
+      if (decodedUrl.match(/^(javascript|data|vbscript):/i)) {
+        return res.status(400).send('Invalid redirect URL');
+      }
+
+      // SSRF protection: validate redirect URL is safe
+      if (!isSafeRedirectUrl(decodedUrl)) {
+        return res.status(400).send('Invalid redirect URL');
+      }
+
+      // For absolute URLs, do validation via URL constructor
+      new URL(decodedUrl); // Throws if invalid
+      return res.redirect(decodedUrl);
+    } catch (err) {
+      // Invalid URL format or constructor error, redirect to home
+    }
+  }
+  res.redirect('/');
+});
+
+module.exports = router;

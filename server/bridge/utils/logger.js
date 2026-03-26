@@ -102,4 +102,32 @@ function closeLogger() {
   }
 }
 
-module.exports = { setupLogger, closeLogger };
+// Logger API methods (for direct use in modules)
+const logger = {
+  info: (...args) => {
+    originalLog.apply(console, args);
+    try {
+      getStream().write(formatMessage('INFO', args));
+    } catch (_) {}
+  },
+  warn: (...args) => {
+    originalWarn.apply(console, args);
+    try {
+      getStream().write(formatMessage('WARN', args));
+    } catch (_) {}
+  },
+  error: (...args) => {
+    originalError.apply(console, args);
+    try {
+      getStream().write(formatMessage('ERROR', args));
+    } catch (_) {}
+  },
+  debug: (...args) => {
+    originalLog.apply(console, args);
+    try {
+      getStream().write(formatMessage('DEBUG', args));
+    } catch (_) {}
+  },
+};
+
+module.exports = { setupLogger, closeLogger, logger };

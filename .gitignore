@@ -8,3 +8,4 @@ server/bridge/public/
 .DS_Store
 server/mcp/elyvn.db-shm
 server/mcp/elyvn.db-wal
+server/logs/

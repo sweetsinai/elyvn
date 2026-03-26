@@ -1,4 +1,5 @@
 /**
+const { WEBSOCKET_HEARTBEAT_INTERVAL_MS } = require('../config/timing');
  * WebSocket Manager — real-time updates to dashboard
  * Uses the 'ws' package (already a dependency)
  */
@@ -43,7 +44,7 @@ function initWebSocket(server) {
           clients.delete(client);
         }
       }
-    }, 30000);
+    }, WEBSOCKET_HEARTBEAT_INTERVAL_MS);
 
     console.log('[ws] WebSocket server initialized on /ws');
   } catch (err) {

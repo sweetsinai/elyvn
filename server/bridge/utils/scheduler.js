@@ -1,4 +1,5 @@
 const telegram = require('./telegram');
+const { SCHEDULER_DAILY_INTERVAL_MS, SCHEDULER_WEEKLY_INTERVAL_MS, SCHEDULER_FOLLOWUP_INTERVAL_MS, SCHEDULER_APPOINTMENT_REMINDER_INTERVAL_MS, SCHEDULER_REPLY_CHECK_INTERVAL_MS, APPOINTMENT_REMINDER_24H_MS, APPOINTMENT_REMINDER_2H_MS, BRAIN_FOLLOWUP_THROTTLE_MS, BRAIN_DAILY_REVIEW_THROTTLE_MS } = require('../config/timing');
 const config = require('./config');
 
 function sendDailySummaries(db) {
@@ -119,7 +120,7 @@ function initScheduler(db) {
       } catch (err) {
         console.error('[Scheduler] Daily summary interval error:', err);
       }
-    }, 24 * 60 * 60 * 1000);
+    }, SCHEDULER_DAILY_INTERVAL_MS);
   }, dailyDelay);
 
   console.log(`[Scheduler] Daily summary scheduled in ${Math.round(dailyDelay / 1000 / 60)} minutes (7 PM)`);
@@ -147,7 +148,7 @@ function initScheduler(db) {
       } catch (err) {
         console.error('[Scheduler] Weekly report interval error:', err);
       }
-    }, 7 * 24 * 60 * 60 * 1000);
+    }, SCHEDULER_WEEKLY_INTERVAL_MS);
   }, weeklyDelay);
 
   console.log(`[Scheduler] Weekly report scheduled in ${Math.round(weeklyDelay / 1000 / 60 / 60)} hours (Monday 8 AM)`);
@@ -155,13 +156,13 @@ function initScheduler(db) {
   // Follow-up processor — every 5 minutes
   setInterval(() => {
     processFollowups(db).catch(err => console.error('[Scheduler] followup processor error:', err));
-  }, 5 * 60 * 1000);
+  }, SCHEDULER_FOLLOWUP_INTERVAL_MS);
   console.log('[Scheduler] Follow-up processor running every 5 minutes');
 
   // Appointment reminder processor — every 2 minutes
   setInterval(() => {
     processAppointmentReminders(db).catch(err => console.error('[Scheduler] appointment reminder error:', err));
-  }, 2 * 60 * 1000);
+  }, SCHEDULER_APPOINTMENT_REMINDER_INTERVAL_MS);
   console.log('[Scheduler] Appointment reminder processor running every 2 minutes');
 
   // Daily lead review — 9 AM
@@ -174,7 +175,7 @@ function initScheduler(db) {
     dailyLeadReview(db).catch(err => console.error('[Scheduler] daily review error:', err));
     setInterval(() => {
       dailyLeadReview(db).catch(err => console.error('[Scheduler] daily review error:', err));
-    }, 24 * 60 * 60 * 1000);
+    }, SCHEDULER_DAILY_INTERVAL_MS);
   }, reviewDelay);
   console.log(`[Scheduler] Daily lead review scheduled in ${Math.round(reviewDelay / 1000 / 60)} minutes (9 AM)`);
 
@@ -188,14 +189,14 @@ function initScheduler(db) {
     dailyOutreach(db).catch(err => console.error('[Scheduler] outreach error:', err));
     setInterval(() => {
       dailyOutreach(db).catch(err => console.error('[Scheduler] outreach error:', err));
-    }, 24 * 60 * 60 * 1000);
+    }, SCHEDULER_DAILY_INTERVAL_MS);
   }, outreachDelay);
   console.log(`[Scheduler] Daily outreach scheduled in ${Math.round(outreachDelay / 1000 / 60)} minutes (10 AM)`);
 
   // Engine 2: Check replies every 30 minutes
   setInterval(() => {
     checkReplies(db).catch(err => console.error('[Scheduler] reply check error:', err));
-  }, 30 * 60 * 1000);
+  }, SCHEDULER_REPLY_CHECK_INTERVAL_MS);
   console.log('[Scheduler] Reply checker running every 30 minutes');
 
   // Predictive lead scoring — rescore all leads daily at 6 AM
@@ -208,7 +209,7 @@ function initScheduler(db) {
     dailyLeadScoring(db).catch(err => console.error('[Scheduler] lead scoring error:', err));
     setInterval(() => {
       dailyLeadScoring(db).catch(err => console.error('[Scheduler] lead scoring error:', err));
-    }, 24 * 60 * 60 * 1000);
+    }, SCHEDULER_DAILY_INTERVAL_MS);
   }, scoreDelay);
   console.log(`[Scheduler] Daily lead scoring scheduled in ${Math.round(scoreDelay / 1000 / 60)} minutes (6 AM)`);
 
@@ -229,7 +230,7 @@ function initScheduler(db) {
         const { runRetention } = require('./dataRetention');
         runRetention(db);
       } catch (err) { console.error('[Scheduler] data retention error:', err); }
-    }, 24 * 60 * 60 * 1000);
+    }, SCHEDULER_DAILY_INTERVAL_MS);
   }, retentionDelay);
   console.log(`[Scheduler] Data retention scheduled in ${Math.round(retentionDelay / 1000 / 60)} minutes (3 AM)`);
 }
@@ -275,7 +276,7 @@ async function processFollowups(db) {
       }
 
       // Rate limit between brain calls
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, BRAIN_FOLLOWUP_THROTTLE_MS));
     }
   } catch (err) {
     console.error('[Scheduler] processFollowups error:', err);
@@ -320,7 +321,7 @@ async function dailyLeadReview(db) {
         }, memory, db);
 
         await executeActions(db, decision.actions, memory);
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, BRAIN_FOLLOWUP_THROTTLE_MS));
       } catch (err) {
         console.error(`[Brain] Daily review failed for ${lead.phone}:`, err.message);
       }
@@ -354,12 +355,12 @@ function createAppointmentReminders(db, appointment, client) {
     const reminders = [
       {
         touchNumber: 10,
-        delayBefore: 24 * 60 * 60 * 1000, // 24h before
+        delayBefore: APPOINTMENT_REMINDER_24H_MS, // 24h before
         content: `Hi ${name}! Just confirming your ${service} appointment tomorrow at ${timeStr}. Reply YES to confirm or call us to reschedule.`,
       },
       {
         touchNumber: 11,
-        delayBefore: 2 * 60 * 60 * 1000, // 2h before
+        delayBefore: APPOINTMENT_REMINDER_2H_MS, // 2h before
         content: `Reminder: Your ${service} appointment is in 2 hours at ${timeStr}. See you soon! — ${businessName}`,
       },
     ];
@@ -435,7 +436,7 @@ async function dailyOutreach(db) {
         }
 
         // Wait 2 minutes between sends
-        await new Promise(r => setTimeout(r, 120000));
+        await new Promise(r => setTimeout(r, OUTREACH_COLD_EMAIL_INTERVAL_MS));
       } catch (err) {
         console.error(`[Outreach] Error for ${prospect.business_name}:`, err.message);
         failed++;

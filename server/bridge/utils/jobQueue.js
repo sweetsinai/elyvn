@@ -4,6 +4,8 @@
  */
 
 const { randomUUID } = require('crypto');
+const { JOB_HANDLER_TIMEOUT, JOB_CLEANUP_DELAY_MS, STALLED_JOB_THRESHOLD_MS, STALE_JOB_THRESHOLD_MS, JOB_RETRY_BACKOFF_BASE_MS } = require('../config/timing');
+const { logger } = require('./logger');
 
 /**
  * Enqueue a job
@@ -26,17 +28,15 @@ function enqueueJob(db, type, payload, scheduledAt = null) {
       VALUES (?, ?, ?, ?, 'pending', 0, 3)
     `).run(jobId, type, payloadStr, scheduled);
 
-    console.log(`[jobQueue] Enqueued ${type} job: ${jobId}`);
+    logger.info(`[jobQueue] Enqueued ${type} job: ${jobId}`);
     return jobId;
   } catch (err) {
-    console.error('[jobQueue] enqueueJob error:', err.message);
+    logger.error('[jobQueue] enqueueJob error:', err.message);
     throw err;
   }
 }
 
-const JOB_HANDLER_TIMEOUT = 30000;
-
-function executeWithTimeout(fn, timeoutMs = 30000) {
+function executeWithTimeout(fn, timeoutMs = JOB_HANDLER_TIMEOUT) {
   return Promise.race([
     fn(),
     new Promise((_, reject) => setTimeout(() => reject(new Error('Job handler timeout')), timeoutMs))
@@ -64,10 +64,10 @@ async function processJobs(db, handlers) {
         AND updated_at < datetime('now', '-7 days')
       `).run();
       if (result.changes > 0) {
-        console.log(`[jobQueue] Cleaned up ${result.changes} old jobs`);
+        logger.info(`[jobQueue] Cleaned up ${result.changes} old jobs`);
       }
     } catch (err) {
-      console.warn('[jobQueue] Cleanup error:', err.message);
+      logger.warn('[jobQueue] Cleanup error:', err.message);
     }
 
     const due = db.prepare(`
@@ -82,7 +82,7 @@ async function processJobs(db, handlers) {
       try {
         const handler = handlers[job.type];
         if (!handler) {
-          console.warn(`[jobQueue] No handler for job type: ${job.type}`);
+          logger.warn(`[jobQueue] No handler for job type: ${job.type}`);
           db.prepare(
             "UPDATE job_queue SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?"
           ).run('Unknown job type', job.id);
@@ -108,37 +108,37 @@ async function processJobs(db, handlers) {
         ).run(job.id);
 
         processed++;
-        console.log(`[jobQueue] Completed job ${job.id} (${job.type})`);
+        logger.info(`[jobQueue] Completed job ${job.id} (${job.type})`);
       } catch (err) {
         failed++;
         const attempts = (job.attempts || 0) + 1;
 
         if (attempts < job.max_attempts) {
           // Reschedule with exponential backoff
-          const backoffMs = Math.pow(2, attempts) * 60 * 1000; // 2^n minutes
+          const backoffMs = Math.pow(2, attempts) * JOB_RETRY_BACKOFF_BASE_MS / 60000 * 60 * 1000; // 2^n * base delay
           const nextScheduled = new Date(Date.now() + backoffMs).toISOString();
           db.prepare(
             "UPDATE job_queue SET attempts = ?, scheduled_at = ?, error = ?, updated_at = datetime('now') WHERE id = ?"
           ).run(attempts, nextScheduled, err.message.substring(0, 255), job.id);
 
-          console.warn(`[jobQueue] Job ${job.id} failed (attempt ${attempts}/${job.max_attempts}), rescheduled`);
+          logger.warn(`[jobQueue] Job ${job.id} failed (attempt ${attempts}/${job.max_attempts}), rescheduled`);
         } else {
           // Mark as permanently failed
           db.prepare(
             "UPDATE job_queue SET status = 'failed', error = ?, failed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
           ).run(err.message.substring(0, 255), job.id);
 
-          console.error(`[jobQueue] Job ${job.id} permanently failed:`, err.message);
+          logger.error(`[jobQueue] Job ${job.id} permanently failed:`, err.message);
         }
       }
 
       // Small delay between jobs
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, JOB_CLEANUP_DELAY_MS));
     }
 
     return { processed, failed };
   } catch (err) {
-    console.error('[jobQueue] processJobs error:', err.message);
+    logger.error('[jobQueue] processJobs error:', err.message);
     return { processed, failed };
   }
 }
@@ -170,10 +170,10 @@ function cancelJobs(db, filter) {
       `UPDATE job_queue SET status = 'cancelled' WHERE ${where}`
     ).run(...params);
 
-    console.log(`[jobQueue] Cancelled ${result.changes} pending jobs`);
+    logger.info(`[jobQueue] Cancelled ${result.changes} pending jobs`);
     return result.changes || 0;
   } catch (err) {
-    console.error('[jobQueue] cancelJobs error:', err.message);
+    logger.error('[jobQueue] cancelJobs error:', err.message);
     return 0;
   }
 }
@@ -193,7 +193,7 @@ async function recoverStalledJobs(db) {
     let totalRecovered = 0;
 
     // Recover jobs stuck in 'processing' status (crash scenario)
-    // Only recover if they've been stuck for >30 minutes
+    // Only recover if they've been stuck for > STALLED_JOB_THRESHOLD_MS
     const processingResult = db.prepare(`
       UPDATE job_queue
       SET status = 'pending', attempts = attempts + 1, updated_at = datetime('now')
@@ -201,11 +201,11 @@ async function recoverStalledJobs(db) {
     `).run();
 
     if (processingResult.changes > 0) {
-      console.log(`[jobQueue] Recovered ${processingResult.changes} jobs stuck in 'processing' status (crash recovery)`);
+      logger.info(`[jobQueue] Recovered ${processingResult.changes} jobs stuck in 'processing' status (crash recovery)`);
       totalRecovered += processingResult.changes;
     }
 
-    // Recover jobs stuck in 'pending' status for > 1 hour
+    // Recover jobs stuck in 'pending' status for > STALE_JOB_THRESHOLD_MS
     const staleResult = db.prepare(`
       UPDATE job_queue
       SET status = 'pending', scheduled_at = datetime('now'), updated_at = datetime('now')
@@ -214,17 +214,17 @@ async function recoverStalledJobs(db) {
     `).run();
 
     if (staleResult.changes > 0) {
-      console.log(`[jobQueue] Recovered ${staleResult.changes} jobs stalled in 'pending' for > 1 hour (rescheduled to now)`);
+      logger.info(`[jobQueue] Recovered ${staleResult.changes} jobs stalled in 'pending' for > 1 hour (rescheduled to now)`);
       totalRecovered += staleResult.changes;
     }
 
     if (totalRecovered > 0) {
-      console.log(`[jobQueue] Total jobs recovered on startup: ${totalRecovered}`);
+      logger.info(`[jobQueue] Total jobs recovered on startup: ${totalRecovered}`);
     }
 
     return { recovered: totalRecovered };
   } catch (err) {
-    console.error('[jobQueue] recoverStalledJobs error:', err.message);
+    logger.error('[jobQueue] recoverStalledJobs error:', err.message);
     return { recovered: 0 };
   }
 }

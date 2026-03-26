@@ -1,13 +1,14 @@
 const { randomUUID } = require('crypto');
 const { getTransporter } = require('./mailer');
 const config = require('./config');
+const { logger } = require('./logger');
 
 const DAILY_LIMIT = config.outreach.dailySendLimit;
 
 async function sendColdEmail(db, prospect, subject, body) {
   const transport = getTransporter();
   if (!transport) {
-    console.error('[EmailSender] SMTP not configured');
+    logger.error('[EmailSender] SMTP not configured');
     return { success: false, error: 'SMTP not configured' };
   }
 
@@ -20,7 +21,7 @@ async function sendColdEmail(db, prospect, subject, body) {
     "SELECT COUNT(*) as c FROM emails_sent WHERE status = 'sent' AND date(sent_at) = date('now')"
   ).get();
   if (todaySent.c >= DAILY_LIMIT) {
-    console.log('[EmailSender] Daily limit reached');
+    logger.info('[EmailSender] Daily limit reached');
     return { success: false, error: 'Daily limit reached' };
   }
 
@@ -50,10 +51,10 @@ async function sendColdEmail(db, prospect, subject, body) {
     // Update prospect status
     db.prepare("UPDATE prospects SET status = 'emailed', updated_at = ? WHERE id = ?").run(now, prospect.id);
 
-    console.log(`[EmailSender] Sent to ${prospect.email}: ${info.messageId}`);
+    logger.info(`[EmailSender] Sent to ${prospect.email}: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
   } catch (err) {
-    console.error(`[EmailSender] Failed to send to ${prospect.email}:`, err.message);
+    logger.error(`[EmailSender] Failed to send to ${prospect.email}:`, err.message);
 
     const now = new Date().toISOString();
 
@@ -71,7 +72,7 @@ async function sendColdEmail(db, prospect, subject, body) {
 
     if (isBounce) {
       db.prepare("UPDATE prospects SET status = 'bounced', updated_at = ? WHERE id = ?").run(now, prospect.id);
-      console.log(`[EmailSender] Bounced: ${prospect.email} — marked as bounced, will not re-email`);
+      logger.info(`[EmailSender] Bounced: ${prospect.email} — marked as bounced, will not re-email`);
     }
 
     return { success: false, error: err.message, bounced: isBounce };

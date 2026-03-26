@@ -1,14 +1,18 @@
+jest.mock('../utils/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
+
 const { withFallback, withTimeout, withRetry, CircuitBreaker } = require('../utils/resilience');
+const { logger } = require('../utils/logger');
 
 describe('withFallback', () => {
-  let consoleSpy;
-
   beforeEach(() => {
-    consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-  });
-
-  afterEach(() => {
-    consoleSpy.mockRestore();
+    jest.clearAllMocks();
   });
 
   it('should call asyncFn and return result on success', async () => {
@@ -38,9 +42,9 @@ describe('withFallback', () => {
     const fallbackFn = jest.fn().mockRejectedValue(error2);
 
     await expect(withFallback(asyncFn, fallbackFn, 'test')).rejects.toThrow('fallback failed');
-    expect(consoleSpy).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalled();
     // Should have logged both errors
-    expect(consoleSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(logger.error.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it('should pass serviceName to logs', async () => {
@@ -49,8 +53,8 @@ describe('withFallback', () => {
     const fallbackFn = jest.fn().mockResolvedValue('fallback result');
 
     await withFallback(asyncFn, fallbackFn, 'myService');
-    expect(consoleSpy).toHaveBeenCalled();
-    const serviceCall = consoleSpy.mock.calls.find(call =>
+    expect(logger.error).toHaveBeenCalled();
+    const serviceCall = logger.error.mock.calls.find(call =>
       call[0] && call[0].includes('myService')
     );
     expect(serviceCall).toBeDefined();
@@ -75,15 +79,12 @@ describe('withFallback', () => {
 });
 
 describe('withTimeout', () => {
-  let consoleSpy;
-
   beforeEach(() => {
-    consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+    jest.clearAllMocks();
     jest.useFakeTimers();
   });
 
   afterEach(() => {
-    consoleSpy.mockRestore();
     jest.useRealTimers();
   });
 
@@ -115,7 +116,7 @@ describe('withTimeout', () => {
     jest.advanceTimersByTime(100);
 
     await expect(timeoutPromise).rejects.toThrow();
-    expect(consoleSpy).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalled();
   });
 
   it('should use default serviceName in timeout message', async () => {
@@ -129,17 +130,8 @@ describe('withTimeout', () => {
 });
 
 describe('withRetry', () => {
-  let consoleWarnSpy;
-  let consoleErrorSpy;
-
   beforeEach(() => {
-    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-  });
-
-  afterEach(() => {
-    consoleWarnSpy.mockRestore();
-    consoleErrorSpy.mockRestore();
+    jest.clearAllMocks();
   });
 
   it('should return result on first try if successful', async () => {
@@ -190,8 +182,8 @@ describe('withRetry', () => {
 
     await withRetry(asyncFn, 3, 10, 'test-service');
 
-    expect(consoleWarnSpy).toHaveBeenCalled();
-    const warnCall = consoleWarnSpy.mock.calls.find(call =>
+    expect(logger.warn).toHaveBeenCalled();
+    const warnCall = logger.warn.mock.calls.find(call =>
       call[0] && call[0].includes('[resilience]') && call[0].includes('attempt')
     );
     expect(warnCall).toBeDefined();
@@ -203,8 +195,8 @@ describe('withRetry', () => {
 
     await expect(withRetry(asyncFn, 3, 10, 'test')).rejects.toThrow();
 
-    expect(consoleErrorSpy).toHaveBeenCalled();
-    const errorCall = consoleErrorSpy.mock.calls.find(call =>
+    expect(logger.error).toHaveBeenCalled();
+    const errorCall = logger.error.mock.calls.find(call =>
       call[0] && call[0].includes('[resilience]') && call[0].includes('exhausted')
     );
     expect(errorCall).toBeDefined();
@@ -230,20 +222,8 @@ describe('withRetry', () => {
 });
 
 describe('CircuitBreaker', () => {
-  let consoleLogSpy;
-  let consoleWarnSpy;
-  let consoleErrorSpy;
-
   beforeEach(() => {
-    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-  });
-
-  afterEach(() => {
-    consoleLogSpy.mockRestore();
-    consoleWarnSpy.mockRestore();
-    consoleErrorSpy.mockRestore();
+    jest.clearAllMocks();
   });
 
   it('should start in closed state', () => {
@@ -288,8 +268,8 @@ describe('CircuitBreaker', () => {
     // Third failure opens circuit
     await expect(breaker.call()).rejects.toThrow();
     expect(breaker.state).toBe('open');
-    expect(consoleErrorSpy).toHaveBeenCalled();
-    const errorCall = consoleErrorSpy.mock.calls.find(call =>
+    expect(logger.error).toHaveBeenCalled();
+    const errorCall = logger.error.mock.calls.find(call =>
       call[0] && call[0].includes('[circuit-breaker]') && call[0].includes('circuit opened')
     );
     expect(errorCall).toBeDefined();
@@ -314,8 +294,8 @@ describe('CircuitBreaker', () => {
     breaker.asyncFn = fn2;
     await expect(breaker.call()).rejects.toThrow('Circuit breaker open');
     expect(fn2).not.toHaveBeenCalled();
-    expect(consoleWarnSpy).toHaveBeenCalled();
-    const warnCall = consoleWarnSpy.mock.calls.find(call =>
+    expect(logger.warn).toHaveBeenCalled();
+    const warnCall = logger.warn.mock.calls.find(call =>
       call[0] && call[0].includes('[circuit-breaker]') && call[0].includes('circuit open')
     );
     expect(warnCall).toBeDefined();
@@ -365,8 +345,8 @@ describe('CircuitBreaker', () => {
     expect(result).toBe('success');
     expect(breaker.state).toBe('closed');
     expect(breaker.failures).toEqual([]);
-    expect(consoleLogSpy).toHaveBeenCalled();
-    const recoveryCall = consoleLogSpy.mock.calls.find(call =>
+    expect(logger.info).toHaveBeenCalled();
+    const recoveryCall = logger.info.mock.calls.find(call =>
       call[0] && call[0].includes('recovered')
     );
     expect(recoveryCall).toBeDefined();
@@ -500,13 +480,13 @@ describe('CircuitBreaker', () => {
     const fn2 = jest.fn().mockResolvedValue('success');
     breaker.asyncFn = fn2;
 
-    // Clear previous console calls
-    consoleLogSpy.mockClear();
+    // Clear previous logger calls
+    logger.info.mockClear();
 
     await breaker.call();
 
-    expect(consoleLogSpy).toHaveBeenCalled();
-    const halfOpenCall = consoleLogSpy.mock.calls.find(call =>
+    expect(logger.info).toHaveBeenCalled();
+    const halfOpenCall = logger.info.mock.calls.find(call =>
       call[0] && call[0].includes('[circuit-breaker]') && call[0].includes('half-open')
     );
     expect(halfOpenCall).toBeDefined();

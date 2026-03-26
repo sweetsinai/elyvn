@@ -1,14 +1,16 @@
 const { randomUUID } = require('crypto');
+const { SCRAPER_RETRY_DELAY_MS } = require('../config/timing');
+const { logger } = require('./logger');
 
 async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
   const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
   if (!GOOGLE_MAPS_API_KEY) {
-    console.error('[Scraper] No GOOGLE_MAPS_API_KEY');
+    logger.error('[Scraper] No GOOGLE_MAPS_API_KEY');
     return { success: false, error: 'No API key', found: 0, new: 0 };
   }
 
   const query = `${industry} in ${city}${state ? ', ' + state : ''}`.trim();
-  console.log(`[Scraper] Searching: "${query}"`);
+  logger.info(`[Scraper] Searching: "${query}"`);
 
   let results = [];
   let nextPageToken = null;
@@ -25,7 +27,7 @@ async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
       const data = await resp.json();
 
       if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-        console.error('[Scraper] API error:', data.status, data.error_message);
+        logger.error('[Scraper] API error:', data.status, data.error_message);
         break;
       }
 
@@ -34,10 +36,10 @@ async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
       if (!nextPageToken) break;
 
       // Google requires a short delay before using next_page_token
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, SCRAPER_RETRY_DELAY_MS));
     }
   } catch (err) {
-    console.error('[Scraper] Fetch error:', err.message);
+    logger.error('[Scraper] Fetch error:', err.message);
     return { success: false, error: err.message, found: 0, new: 0 };
   }
 
@@ -113,11 +115,11 @@ async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
 
       newCount++;
     } catch (err) {
-      console.error(`[Scraper] Error processing ${place.name}:`, err.message);
+      logger.error(`[Scraper] Error processing ${place.name}:`, err.message);
     }
   }
 
-  console.log(`[Scraper] Found ${results.length}, added ${newCount} new prospects`);
+  logger.info(`[Scraper] Found ${results.length}, added ${newCount} new prospects`);
   return { success: true, found: results.length, new: newCount };
 }
 

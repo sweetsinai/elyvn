@@ -7,6 +7,16 @@ const { enqueueJob, processJobs, cancelJobs } = require('../utils/jobQueue');
 const { randomUUID } = require('crypto');
 
 jest.mock('crypto');
+jest.mock('../utils/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
+
+const { logger } = require('../utils/logger');
 
 describe('jobQueue', () => {
   let mockDb;
@@ -29,9 +39,6 @@ describe('jobQueue', () => {
     };
 
     randomUUID.mockReturnValue('test-uuid-1234');
-    console.log = jest.fn();
-    console.error = jest.fn();
-    console.warn = jest.fn();
   });
 
   describe('enqueueJob', () => {
@@ -96,7 +103,7 @@ describe('jobQueue', () => {
       });
 
       expect(() => enqueueJob(mockDb, 'test_job', {})).toThrow('Database error');
-      expect(console.error).toHaveBeenCalledWith(
+      expect(logger.error).toHaveBeenCalledWith(
         '[jobQueue] enqueueJob error:',
         'Database error'
       );
@@ -107,7 +114,7 @@ describe('jobQueue', () => {
 
       enqueueJob(mockDb, 'speed_to_lead_sms', {});
 
-      expect(console.log).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('[jobQueue] Enqueued speed_to_lead_sms job')
       );
     });
@@ -215,7 +222,7 @@ describe('jobQueue', () => {
       const result = await processJobs(mockDb, {});
 
       expect(result).toEqual({ processed: 0, failed: 1 });
-      expect(console.warn).toHaveBeenCalledWith(
+      expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('[jobQueue] No handler for job type')
       );
       expect(mockPrepare).toHaveBeenCalledWith(
@@ -338,7 +345,7 @@ describe('jobQueue', () => {
       expect(mockPrepare).toHaveBeenCalledWith(
         expect.stringContaining("DELETE FROM job_queue")
       );
-      expect(console.log).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         '[jobQueue] Cleaned up 5 old jobs'
       );
     });
@@ -354,7 +361,7 @@ describe('jobQueue', () => {
       const result = await processJobs(mockDb, {});
 
       expect(result).toEqual({ processed: 0, failed: 0 });
-      expect(console.warn).toHaveBeenCalledWith(
+      expect(logger.warn).toHaveBeenCalledWith(
         '[jobQueue] Cleanup error:',
         'Cleanup failed'
       );
@@ -385,7 +392,7 @@ describe('jobQueue', () => {
       const result = await processJobs(mockDb, {});
 
       expect(result).toEqual({ processed: 0, failed: 0 });
-      expect(console.error).toHaveBeenCalledWith(
+      expect(logger.error).toHaveBeenCalledWith(
         '[jobQueue] processJobs error:',
         'Database connection lost'
       );
@@ -422,7 +429,7 @@ describe('jobQueue', () => {
 
       await processJobs(mockDb, { test_job: handler });
 
-      expect(console.log).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('[jobQueue] Completed job job-1')
       );
     });
@@ -514,7 +521,7 @@ describe('jobQueue', () => {
 
       cancelJobs(mockDb, { type: 'test_job' });
 
-      expect(console.log).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         '[jobQueue] Cancelled 5 pending jobs'
       );
     });
@@ -527,7 +534,7 @@ describe('jobQueue', () => {
       const count = cancelJobs(mockDb, { type: 'test_job' });
 
       expect(count).toBe(0);
-      expect(console.error).toHaveBeenCalledWith(
+      expect(logger.error).toHaveBeenCalledWith(
         '[jobQueue] cancelJobs error:',
         'Database error'
       );

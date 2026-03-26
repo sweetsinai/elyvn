@@ -5,6 +5,13 @@
 
 'use strict';
 
+jest.mock('../config/timing', () => ({
+  SCRAPER_RETRY_DELAY_MS: 10,  // Use tiny delay for tests
+}));
+jest.mock('../utils/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
 const Database = require('better-sqlite3');
 const { scrapeGoogleMaps } = require('../utils/scraper');
 const { runMigrations } = require('../utils/migrations');
