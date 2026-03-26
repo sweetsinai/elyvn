@@ -8,6 +8,7 @@ import {
   Settings,
   Zap,
   Brain,
+  Users,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -18,6 +19,7 @@ const navItems = [
   { path: '/pipeline', label: 'Pipeline', icon: GitBranch },
   { path: '/intelligence', label: 'Intelligence', icon: Brain },
   { path: '/outreach', label: 'Outreach', icon: Send },
+  { path: '/clients', label: 'Clients', icon: Users },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 

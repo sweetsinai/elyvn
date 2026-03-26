@@ -156,3 +156,11 @@ export const getChannelPerformance = (clientId) =>
 // Schedule
 export const getDailySchedule = (clientId) =>
   apiFetch(`${API_BASE}/schedule/${clientId}`);
+
+// Provision
+export const provisionClient = (data) =>
+  apiFetch(`${API_BASE}/provision`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(data),
+  });

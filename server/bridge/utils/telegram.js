@@ -181,11 +181,87 @@ async function sendDocument(chatId, fileContent, filename, caption = '') {
   return data;
 }
 
+// --- Plan-based command menus ---
+
+const PLAN_COMMANDS = {
+  starter: [
+    { command: 'today', description: "Today's schedule" },
+    { command: 'stats', description: 'Last 7 days stats' },
+    { command: 'calls', description: 'Recent calls' },
+    { command: 'leads', description: 'Hot leads' },
+    { command: 'complete', description: 'Mark job done (+phone)' },
+    { command: 'reviewlink', description: 'Set Google review link' },
+    { command: 'pause', description: 'Pause AI answering' },
+    { command: 'resume', description: 'Resume AI answering' },
+    { command: 'help', description: 'Show commands' },
+  ],
+  growth: [
+    { command: 'today', description: "Today's schedule" },
+    { command: 'stats', description: 'Last 7 days stats' },
+    { command: 'calls', description: 'Recent calls' },
+    { command: 'leads', description: 'Hot leads' },
+    { command: 'brain', description: 'AI Brain activity feed' },
+    { command: 'complete', description: 'Mark job done (+phone)' },
+    { command: 'reviewlink', description: 'Set Google review link' },
+    { command: 'pause', description: 'Pause AI answering' },
+    { command: 'resume', description: 'Resume AI answering' },
+    { command: 'help', description: 'Show commands' },
+  ],
+  scale: [
+    { command: 'today', description: "Today's schedule" },
+    { command: 'stats', description: 'Last 7 days stats' },
+    { command: 'calls', description: 'Recent calls' },
+    { command: 'leads', description: 'Hot leads' },
+    { command: 'brain', description: 'AI Brain activity feed' },
+    { command: 'outreach', description: 'Outreach stats (7 days)' },
+    { command: 'scrape', description: 'Scrape Google Maps (industry city)' },
+    { command: 'prospects', description: 'Top 10 prospects' },
+    { command: 'complete', description: 'Mark job done (+phone)' },
+    { command: 'reviewlink', description: 'Set Google review link' },
+    { command: 'pause', description: 'Pause AI answering' },
+    { command: 'resume', description: 'Resume AI answering' },
+    { command: 'help', description: 'Show commands' },
+  ],
+};
+
+async function setClientCommands(chatId, plan) {
+  const commands = PLAN_COMMANDS[plan] || PLAN_COMMANDS.starter;
+  try {
+    const res = await fetch(`${BASE_URL}/setMyCommands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        commands,
+        scope: { type: 'chat', chat_id: chatId },
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) console.error('[telegram] setMyCommands failed:', JSON.stringify(data));
+    return data;
+  } catch (err) {
+    console.error('[telegram] setMyCommands error:', err.message);
+  }
+}
+
+function getOnboardingLink(clientId) {
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'ElyvnBot';
+  return `https://t.me/${botUsername}?start=${clientId}`;
+}
+
+function getHelpText(plan) {
+  const commands = PLAN_COMMANDS[plan] || PLAN_COMMANDS.starter;
+  return '<b>Commands</b>\n\n' + commands.map(c => `/${c.command} - ${c.description}`).join('\n');
+}
+
 module.exports = {
   sendMessage,
   sendDocument,
   answerCallback,
   setWebhook,
+  setClientCommands,
+  getOnboardingLink,
+  getHelpText,
+  PLAN_COMMANDS,
   formatCallNotification,
   formatTransferAlert,
   formatMessageNotification,

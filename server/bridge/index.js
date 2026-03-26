@@ -204,6 +204,7 @@ const twilioRouter = require('./routes/twilio');
 const apiRouter = require('./routes/api');
 const outreachRouter = require('./routes/outreach');
 const onboardRouter = require('./routes/onboard');
+const provisionRouter = require('./routes/provision');
 const trackingRouter = require('./routes/tracking');
 const { enforceClientIsolation } = require('./utils/clientIsolation');
 
@@ -213,6 +214,7 @@ app.use('/webhooks/twilio', twilioRouter);
 app.use('/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
 // Mount onboard routes (before general /api to allow public access)
 app.use('/api', onboardRouter);
+app.use('/api/provision', apiAuth, provisionRouter);
 app.use('/api', apiAuth, enforceClientIsolation, apiRouter);
 
 // Email tracking routes (no auth required)
