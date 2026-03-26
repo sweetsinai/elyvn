@@ -474,13 +474,25 @@ async function handleCallback(db, callbackQuery) {
 
   if (data.startsWith('transcript:')) {
     const callId = data.split(':')[1];
-    const call = db.prepare('SELECT transcript FROM calls WHERE call_id = ?').get(callId);
+    const call = db.prepare('SELECT transcript, caller_phone, created_at, summary FROM calls WHERE call_id = ?').get(callId);
     if (call && call.transcript) {
-      let transcript = call.transcript;
+      const transcript = call.transcript;
       if (transcript.length > 3500) {
-        transcript = transcript.substring(0, 3500) + '\n\n... (truncated)';
+        // Send as downloadable .txt file for long transcripts
+        const header = [
+          `ELYVN Call Transcript`,
+          `Call ID: ${callId}`,
+          `Caller: ${call.caller_phone || 'unknown'}`,
+          `Date: ${call.created_at || 'unknown'}`,
+          call.summary ? `Summary: ${call.summary}` : '',
+          '─'.repeat(50),
+          '',
+        ].filter(Boolean).join('\n');
+        const filename = `transcript-${callId.substring(0, 8)}.txt`;
+        await telegram.sendDocument(chatId, header + transcript, filename, `<b>Full transcript</b> (${transcript.length} chars)`);
+      } else {
+        await telegram.sendMessage(chatId, `<b>Transcript</b>\n\n${transcript}`);
       }
-      await telegram.sendMessage(chatId, `<b>Transcript</b>\n\n${transcript}`);
     } else {
       await telegram.sendMessage(chatId, 'Transcript not available.');
     }

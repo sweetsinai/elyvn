@@ -206,6 +206,67 @@ router.get('/calls/:clientId/:callId/transcript', async (req, res) => {
   }
 });
 
+// GET /calls/:clientId/:callId/transcript/download — download as .txt file
+router.get('/calls/:clientId/:callId/transcript/download', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId, callId } = req.params;
+
+    // Try local DB first (faster), fallback to Retell API
+    const localCall = db.prepare(
+      'SELECT transcript, caller_phone, created_at, summary FROM calls WHERE call_id = ? AND client_id = ?'
+    ).get(callId, clientId);
+
+    let transcriptText = '';
+    let callerPhone = localCall?.caller_phone || 'unknown';
+    let callDate = localCall?.created_at || new Date().toISOString();
+    let summary = localCall?.summary || '';
+
+    if (localCall?.transcript && localCall.transcript.trim().length > 10) {
+      transcriptText = localCall.transcript;
+    } else {
+      // Fallback: fetch from Retell
+      const retellResp = await fetch(`https://api.retellai.com/v2/get-call/${callId}`, {
+        headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` }
+      });
+      if (retellResp.ok) {
+        const callData = await retellResp.json();
+        const raw = callData.transcript || '';
+        transcriptText = typeof raw === 'string'
+          ? raw
+          : Array.isArray(raw)
+            ? raw.map(t => `${t.role}: ${t.content}`).join('\n')
+            : JSON.stringify(raw, null, 2);
+      }
+    }
+
+    if (!transcriptText) {
+      return res.status(404).json({ error: 'No transcript available for this call' });
+    }
+
+    // Format as readable text file
+    const header = [
+      `ELYVN Call Transcript`,
+      `Call ID: ${callId}`,
+      `Caller: ${callerPhone}`,
+      `Date: ${callDate}`,
+      summary ? `Summary: ${summary}` : '',
+      '─'.repeat(50),
+      '',
+    ].filter(Boolean).join('\n');
+
+    const fileContent = header + transcriptText;
+    const filename = `transcript-${callId.substring(0, 8)}-${callDate.split('T')[0]}.txt`;
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(fileContent);
+  } catch (err) {
+    logger.error('[api] transcript download error:', err);
+    res.status(500).json({ error: 'Failed to download transcript' });
+  }
+});
+
 // GET /messages/:clientId
 router.get('/messages/:clientId', (req, res) => {
   try {

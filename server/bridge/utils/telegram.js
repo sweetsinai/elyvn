@@ -152,8 +152,26 @@ function formatWeeklyReport(report, client) {
   return { text };
 }
 
+async function sendDocument(chatId, fileContent, filename, caption = '') {
+  const blob = new Blob([fileContent], { type: 'text/plain' });
+  const formData = new FormData();
+  formData.append('chat_id', chatId);
+  formData.append('document', blob, filename);
+  if (caption) formData.append('caption', caption.substring(0, 1024));
+  formData.append('parse_mode', 'HTML');
+
+  const res = await fetch(`${BASE_URL}/sendDocument`, {
+    method: 'POST',
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok) console.error('[telegram] sendDocument failed:', JSON.stringify(data));
+  return data;
+}
+
 module.exports = {
   sendMessage,
+  sendDocument,
   answerCallback,
   setWebhook,
   formatCallNotification,
