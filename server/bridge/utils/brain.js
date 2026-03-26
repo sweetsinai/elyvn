@@ -72,10 +72,18 @@ async function _think(eventType, eventData, leadMemory, db) {
   if (client) {
     try {
       const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
-      const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
-      knowledgeBase = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
-      if (knowledgeBase.length > MAX_KB_SIZE) {
-        knowledgeBase = knowledgeBase.substring(0, MAX_KB_SIZE) + '\n[...truncated]';
+      // Verify path doesn't escape knowledge_bases directory (path traversal protection)
+      const resolvedPath = path.resolve(kbPath);
+      const kbDir = path.resolve(path.join(__dirname, '../../mcp/knowledge_bases'));
+      if (!resolvedPath.startsWith(kbDir)) {
+        // Path traversal attempt detected, skip KB load
+        console.error('[brain] KB path traversal attempt detected');
+      } else {
+        const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
+        knowledgeBase = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
+        if (knowledgeBase.length > MAX_KB_SIZE) {
+          knowledgeBase = knowledgeBase.substring(0, MAX_KB_SIZE) + '\n[...truncated]';
+        }
       }
     } catch (_) {}
   }

@@ -39,7 +39,22 @@ router.use((req, res, next) => {
   const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (expectedSecret) {
     const secret = req.headers['x-telegram-bot-api-secret-token'];
-    if (secret !== expectedSecret) {
+    if (!secret) {
+      return res.sendStatus(403);
+    }
+    // Use timing-safe comparison to prevent timing attacks
+    try {
+      const crypto = require('crypto');
+      if (secret.length === expectedSecret.length) {
+        if (!crypto.timingSafeEqual(Buffer.from(secret), Buffer.from(expectedSecret))) {
+          return res.sendStatus(403);
+        }
+      } else {
+        // Different lengths — fail securely
+        return res.sendStatus(403);
+      }
+    } catch (err) {
+      // Comparison error — fail closed
       return res.sendStatus(403);
     }
   }
@@ -341,7 +356,8 @@ async function handleCommand(db, message) {
           ? `Thanks for choosing ${client.business_name || 'us'}! If you were happy with the service, a quick review would mean the world to us: ${reviewLink}`
           : `Thanks for choosing ${client.business_name || 'us'}! We appreciate your business.`;
 
-        db.transaction(() => {
+        // Use transaction to ensure atomicity
+        const transaction = db.transaction(() => {
           db.prepare(
             `UPDATE appointments SET status = 'completed', updated_at = datetime('now')
              WHERE phone = ? AND client_id = ? AND status IN ('confirmed', 'pending')`
@@ -361,7 +377,8 @@ async function handleCommand(db, message) {
               VALUES (?, ?, ?, 20, 'review_request', ?, 'template', ?, 'scheduled')
             `).run(randomUUID(), lead.id, client.id, reviewMsg, scheduledAt);
           }
-        })();
+        });
+        transaction();
 
         await telegram.sendMessage(chatId,
           `✅ Done for ${phone}.\nReminders cancelled. Review request in 2h.${reviewLink ? '' : '\n\n⚠️ Set a Google review link: /set review YOUR_LINK'}`

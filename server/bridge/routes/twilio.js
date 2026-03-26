@@ -218,9 +218,13 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
       // Notify owner via Telegram
       if (client.telegram_chat_id) {
         const tg = require('../utils/telegram');
+        // Escape message body to prevent XSS in Telegram HTML
+        const escapedBody = (body || '').substring(0, 200).replace(/[&<>"]/g, c => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'
+        }[c]));
         tg.sendMessage(
           client.telegram_chat_id,
-          `⏸ <b>AI paused</b> — message received (no auto-reply)\n\nFrom: ${from}\nMessage: "${(body || '').substring(0, 200)}"`
+          `⏸ <b>AI paused</b> — message received (no auto-reply)\n\nFrom: ${from}\nMessage: "${escapedBody}"`
         ).catch(() => {});
       }
       return;
@@ -250,9 +254,16 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
     } else {
       const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
       try {
-        const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
-        kb = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
-        if (kb.length > 5000) kb = kb.substring(0, 5000) + '\n[...truncated]';
+        // Verify path doesn't escape knowledge_bases directory (path traversal protection)
+        const resolvedPath = path.resolve(kbPath);
+        const kbDir = path.resolve(path.join(__dirname, '../../mcp/knowledge_bases'));
+        if (!resolvedPath.startsWith(kbDir)) {
+          logger.error('[twilio] KB path traversal attempt detected');
+        } else {
+          const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
+          kb = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
+          if (kb.length > 5000) kb = kb.substring(0, 5000) + '\n[...truncated]';
+        }
       } catch (err) {
         logger.error(`[twilio] KB load failed for client ${client.id}:`, err.message);
       }
@@ -309,9 +320,12 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
       reply = 'Great question! Let me check with the team and get back to you shortly.';
 
       if (client.owner_phone) {
-        sendSMS(
-          client.owner_phone,
-          `[ELYVN] Question from ${from} that needs your input:\n"${body}"`
+        // Fire and forget with error handling
+        Promise.resolve().then(() =>
+          sendSMS(
+            client.owner_phone,
+            `[ELYVN] Question from ${from} that needs your input:\n"${body}"`
+          )
         ).catch(err => logger.error('[twilio] Owner notification failed:', err.message));
       }
     }

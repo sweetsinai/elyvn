@@ -5,6 +5,7 @@ const telegram = require('../utils/telegram');
 const { triggerSpeedSequence } = require('../utils/speed-to-lead');
 const { normalizePhone } = require('../utils/phone');
 const { isValidUUID, isValidPhone, isValidEmail, sanitizeString } = require('../utils/validate');
+const { logger } = require('../utils/logger');
 
 // Speed-to-lead deduplication store: tracks recent speed-to-lead jobs by phone+email within 5 minutes
 const speedToLeadStore = new Map();
@@ -79,7 +80,7 @@ function cleanupFormTimers() {
 function formRateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress;
   if (!checkFormRateLimit(ip)) {
-    console.warn(`[forms] Rate limit exceeded for ${ip}`);
+    logger.warn(`[forms] Rate limit exceeded for ${ip}`);
     return res.status(429).json({ error: 'Too many submissions. Please try again later.' });
   }
   next();
@@ -104,7 +105,7 @@ router.post('/', formRateLimit, async (req, res) => {
 
   try {
     const client = db.prepare('SELECT * FROM clients WHERE id = ? AND is_active = 1').get(clientId);
-    if (!client) { console.error(`[Form] Unknown client: ${clientId}`); return; }
+    if (!client) { logger.error(`[Form] Unknown client: ${clientId}`); return; }
 
     const name = body.name || body.first_name || body['your-name'] || body.fullName || body.full_name || null;
     const phone = normalizePhone(body.phone || body.Phone || body['your-phone'] || body.tel || body.mobile || null);
@@ -112,13 +113,13 @@ router.post('/', formRateLimit, async (req, res) => {
 
     // Validate phone if provided
     if (phone && !isValidPhone(phone)) {
-      console.warn(`[Form] Invalid phone format: ${phone}`);
+      logger.warn(`[Form] Invalid phone format: ${phone}`);
       return;
     }
 
     // Validate email if provided
     if (email && !isValidEmail(email)) {
-      console.warn(`[Form] Invalid email format: ${email}`);
+      logger.warn(`[Form] Invalid email format: ${email}`);
       return;
     }
     const message = body.message || body.Message || body['your-message'] || body.body || body.inquiry || '';
@@ -131,11 +132,15 @@ router.post('/', formRateLimit, async (req, res) => {
         db.prepare(`INSERT INTO leads (id, client_id, name, phone, source, score, stage, last_contact, created_at, updated_at)
           VALUES (?, ?, ?, '', ?, 5, 'new', datetime('now'), datetime('now'), datetime('now'))`).run(leadId, clientId, name, source);
         if (client.telegram_chat_id) {
+          // Escape form fields to prevent XSS in Telegram HTML
+          const escapeHtml = (str) => (str || '').replace(/[&<>"]/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'
+          }[c]));
           telegram.sendMessage(client.telegram_chat_id,
-            `&#128203; <b>New form submission (no phone)</b>\n\n` +
-            (name ? `<b>Name:</b> ${name}\n` : '') + `<b>Email:</b> ${email}\n` +
-            (message ? `<b>Message:</b> "${message.substring(0, 200)}"\n` : '') +
-            `\n&#9888;&#65039; No phone — can't auto-call or text.`
+            `📋 <b>New form submission (no phone)</b>\n\n` +
+            (name ? `<b>Name:</b> ${escapeHtml(name)}\n` : '') + `<b>Email:</b> ${escapeHtml(email)}\n` +
+            (message ? `<b>Message:</b> "${escapeHtml(message.substring(0, 200))}"\n` : '') +
+            `\n⚠️ No phone — can't auto-call or text.`
           ).catch(() => {});
         }
       }
@@ -162,7 +167,7 @@ router.post('/', formRateLimit, async (req, res) => {
     if (!isDuplicateSpeedToLead(phone, email)) {
       await triggerSpeedSequence(db, { leadId, clientId, phone, name, email, message, service, source: 'form', client });
     } else {
-      console.log(`[Form] Speed-to-lead deduplicated for ${phone}/${email}`);
+      logger.info(`[Form] Speed-to-lead deduplicated for ${phone}/${email}`);
     }
 
     try {
@@ -174,10 +179,10 @@ router.post('/', formRateLimit, async (req, res) => {
         const decision = await think('form_submitted', { name, phone, email, message, service, source }, memory, db);
         await executeActions(db, decision.actions, memory);
       }
-    } catch (brainErr) { console.error('[Brain] Form error:', brainErr.message); }
+    } catch (brainErr) { logger.error('[Brain] Form error:', brainErr.message); }
 
-    console.log(`[Form] Processed: ${name || phone} → ${client.business_name}`);
-  } catch (err) { console.error('[Form] Error:', err.message); }
+    logger.info(`[Form] Processed: ${name || phone} → ${client.business_name}`);
+  } catch (err) { logger.error('[Form] Error:', err.message); }
 });
 
 // POST /webhooks/form/:clientId
@@ -190,21 +195,21 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
 
   const db = req.app.locals.db;
   if (!db) {
-    console.error('[Form] No database connection');
+    logger.error('[Form] No database connection');
     return;
   }
   const clientId = req.params.clientId;
 
   // Validate clientId format
   if (!isValidUUID(clientId)) {
-    console.error(`[Form] Invalid clientId format: ${clientId}`);
+    logger.error(`[Form] Invalid clientId format: ${clientId}`);
     return;
   }
 
   try {
     const client = db.prepare('SELECT * FROM clients WHERE id = ? AND is_active = 1').get(clientId);
     if (!client) {
-      console.error(`[Form] Unknown or inactive client: ${clientId}`);
+      logger.error(`[Form] Unknown or inactive client: ${clientId}`);
       return;
     }
 
@@ -225,13 +230,13 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
 
     // Validate phone if provided
     if (phone && !isValidPhone(phone)) {
-      console.warn(`[Form] Invalid phone format: ${phone}`);
+      logger.warn(`[Form] Invalid phone format: ${phone}`);
       return;
     }
 
     // Validate email if provided
     if (email && !isValidEmail(email)) {
-      console.warn(`[Form] Invalid email format: ${email}`);
+      logger.warn(`[Form] Invalid email format: ${email}`);
       return;
     }
 
@@ -245,7 +250,7 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
 
     // No phone — create lead with email only + notify client
     if (!phone) {
-      console.log(`[Form] No phone in submission for ${clientId}`);
+      logger.info(`[Form] No phone in submission for ${clientId}`);
       if (email) {
         const leadId = randomUUID();
         db.prepare(`
@@ -254,12 +259,16 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
         `).run(leadId, clientId, name, source);
 
         if (client.telegram_chat_id) {
+          // Escape form fields to prevent XSS in Telegram HTML
+          const escapeHtml = (str) => (str || '').replace(/[&<>"]/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'
+          }[c]));
           telegram.sendMessage(
             client.telegram_chat_id,
             `📋 <b>New form submission (no phone)</b>\n\n` +
-            (name ? `<b>Name:</b> ${name}\n` : '') +
-            `<b>Email:</b> ${email}\n` +
-            (message ? `<b>Message:</b> "${message.substring(0, 200)}"\n` : '') +
+            (name ? `<b>Name:</b> ${escapeHtml(name)}\n` : '') +
+            `<b>Email:</b> ${escapeHtml(email)}\n` +
+            (message ? `<b>Message:</b> "${escapeHtml(message.substring(0, 200))}"\n` : '') +
             `\n⚠️ No phone — can't auto-call or text.`
           ).catch(() => {});
         }
@@ -295,7 +304,7 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
         client
       });
     } else {
-      console.log(`[Form] Speed-to-lead deduplicated for ${phone}/${email}`);
+      logger.info(`[Form] Speed-to-lead deduplicated for ${phone}/${email}`);
     }
 
     // Brain: form submission analysis
@@ -311,12 +320,12 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
         await executeActions(db, decision.actions, memory);
       }
     } catch (brainErr) {
-      console.error('[Brain] Form submission error:', brainErr.message);
+      logger.error('[Brain] Form submission error:', brainErr.message);
     }
 
-    console.log(`[Form] Speed sequence triggered: ${name || phone} → ${client.business_name}`);
+    logger.info(`[Form] Speed sequence triggered: ${name || phone} → ${client.business_name}`);
   } catch (err) {
-    console.error('[Form] Error processing submission:', err.message);
+    logger.error('[Form] Error processing submission:', err.message);
   }
 });
 

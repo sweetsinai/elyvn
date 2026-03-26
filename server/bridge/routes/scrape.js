@@ -4,35 +4,11 @@ const router = express.Router();
 const { randomUUID } = require('crypto');
 const { getTransporter } = require('../utils/mailer');
 const config = require('../utils/config');
+const { normalizePhone } = require('../utils/phone');
+const { logger } = require('../utils/logger');
 
 const GOOGLE_PLACES_API_KEY = config.apis.googleMapsKey;
 const DAILY_SEND_LIMIT = config.outreach.dailySendLimit;
-
-/**
- * Normalize a phone number to E.164 format.
- * Handles US numbers: (555) 123-4567 → +15551234567
- */
-function normalizePhoneE164(raw, defaultCountryCode = '1') {
-  if (!raw) return null;
-  // Strip everything except digits and leading +
-  let digits = raw.replace(/[^\d+]/g, '');
-  if (digits.startsWith('+')) {
-    digits = digits.slice(1);
-  }
-  // If 10 digits, assume US/CA and prepend country code
-  if (digits.length === 10) {
-    digits = defaultCountryCode + digits;
-  }
-  // If 11 digits starting with 1, it's already US format
-  if (digits.length === 11 && digits.startsWith('1')) {
-    // good
-  }
-  // Validate: must be 10-15 digits
-  if (digits.length < 10 || digits.length > 15) {
-    return null; // Invalid
-  }
-  return '+' + digits;
-}
 
 // Helper: extract shared prospect scraping logic
 async function scrapeSingleQuery(industry, city, state, country, maxResults) {
@@ -69,7 +45,7 @@ router.post('/scrape', async (req, res) => {
     }
 
     const query = `${industry} in ${city}${country ? ', ' + country : ''}`;
-    console.log(`[outreach] Scraping: ${query}`);
+    logger.info(`[outreach] Scraping: ${query}`);
 
     const placesData = await scrapeSingleQuery(industry, city, country, null, maxResults);
     const places = placesData.places || [];
@@ -80,7 +56,7 @@ router.post('/scrape', async (req, res) => {
     for (const place of places) {
       const name = place.displayName?.text || '';
       const rawPhone = place.nationalPhoneNumber || place.internationalPhoneNumber || null;
-      const phone = normalizePhoneE164(rawPhone);
+      const phone = normalizePhone(rawPhone);
       const website = place.websiteUri || null;
       const address = place.formattedAddress || null;
       const rating = place.rating || null;
@@ -132,7 +108,7 @@ router.post('/scrape', async (req, res) => {
               }
             }
           } catch (err) {
-            console.error('[outreach] Email discovery failed:', err.message);
+            logger.error('[outreach] Email discovery failed:', err.message);
           }
         }
       }
@@ -148,7 +124,7 @@ router.post('/scrape', async (req, res) => {
       } catch (err) {
         // Duplicate or constraint error — skip
         if (!err.message.includes('UNIQUE')) {
-          console.error('[outreach] Insert prospect error:', err.message);
+          logger.error('[outreach] Insert prospect error:', err.message);
         }
         continue;
       }
@@ -156,10 +132,10 @@ router.post('/scrape', async (req, res) => {
       prospects.push({ id, business_name: name, phone, email, website, address, rating, review_count: reviewCount });
     }
 
-    console.log(`[outreach] Scraped ${prospects.length} prospects, ${withEmails} with emails`);
+    logger.info(`[outreach] Scraped ${prospects.length} prospects, ${withEmails} with emails`);
     res.json({ scraped: prospects.length, withEmails, prospects });
   } catch (err) {
-    console.error('[outreach] scrape error:', err);
+    logger.error('[outreach] scrape error:', err);
     res.status(500).json({ error: 'Failed to scrape prospects' });
   }
 });
@@ -175,7 +151,7 @@ router.post('/blast', async (req, res) => {
     }
 
     // ===== STEP 1: SCRAPE =====
-    console.log(`[blast] Scraping ${industry} in ${city}, ${state || 'US'}`);
+    logger.info(`[blast] Scraping ${industry} in ${city}, ${state || 'US'}`);
     const placesData = await scrapeSingleQuery(industry, city, state, 'US', maxResults);
     const places = placesData.places || [];
 
@@ -185,7 +161,7 @@ router.post('/blast', async (req, res) => {
     for (const place of places) {
       const name = place.displayName?.text || '';
       const rawPhone = place.nationalPhoneNumber || place.internationalPhoneNumber || null;
-      const phone = normalizePhoneE164(rawPhone);
+      const phone = normalizePhone(rawPhone);
       const website = place.websiteUri || null;
       const address = place.formattedAddress || null;
       const rating = place.rating || null;
@@ -234,7 +210,7 @@ router.post('/blast', async (req, res) => {
               }
             }
           } catch (err) {
-            console.error('[outreach] Email discovery failed:', err.message);
+            logger.error('[outreach] Email discovery failed:', err.message);
           }
         }
       }
@@ -249,7 +225,7 @@ router.post('/blast', async (req, res) => {
         `).run(id, name, phone, email, website, address, industry, city, state || null, rating, reviewCount, now, now);
       } catch (err) {
         if (!err.message.includes('UNIQUE')) {
-          console.error('[blast] Insert prospect error:', err.message);
+          logger.error('[blast] Insert prospect error:', err.message);
         }
         continue;
       }
@@ -257,7 +233,7 @@ router.post('/blast', async (req, res) => {
       prospects.push({ id, business_name: name, phone, email, website, address, rating, review_count: reviewCount, industry, city, state });
     }
 
-    console.log(`[blast] Scraped ${prospects.length}, ${withEmails} with emails`);
+    logger.info(`[blast] Scraped ${prospects.length}, ${withEmails} with emails`);
 
     // ===== STEP 2: CREATE CAMPAIGN =====
     const campaignName = `${industry} in ${city} - ${new Date().toLocaleDateString()}`;
@@ -283,7 +259,7 @@ router.post('/blast', async (req, res) => {
 
     createCampaign(campaignId, campaignName, industry || null, city || null, now);
 
-    console.log(`[blast] Created campaign ${campaignId}`);
+    logger.info(`[blast] Created campaign ${campaignId}`);
 
     // ===== STEP 3: GENERATE EMAILS =====
     const { generateColdEmail, pickVariant } = require('../utils/emailGenerator');
@@ -308,12 +284,12 @@ router.post('/blast', async (req, res) => {
 
         emails.push({ id: emailId, prospect_id: prospect.id, to_email: prospect.email, subject, variant, status: 'draft' });
       } catch (err) {
-        console.error(`[blast] Generate failed for ${prospect.business_name}:`, err.message);
+        logger.error(`[blast] Generate failed for ${prospect.business_name}:`, err.message);
         generateFailed++;
       }
     }
 
-    console.log(`[blast] Generated ${emails.length} emails`);
+    logger.info(`[blast] Generated ${emails.length} emails`);
 
     // ===== STEP 4: SEND EMAILS =====
     const today = new Date().toISOString().split('T')[0];
@@ -358,7 +334,7 @@ router.post('/blast', async (req, res) => {
       try {
         const verification = await verifyEmail(email.to_email);
         if (!verification.valid) {
-          console.log(`[blast] Skipping invalid email ${email.to_email}: ${verification.reason} (${verification.method})`);
+          logger.info(`[blast] Skipping invalid email ${email.to_email}: ${verification.reason} (${verification.method})`);
           db.prepare("UPDATE emails_sent SET status = 'invalid', error = ?, updated_at = ? WHERE id = ?")
             .run(`verification_failed: ${verification.reason}`, new Date().toISOString(), email.id);
           db.prepare("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?")
@@ -368,7 +344,7 @@ router.post('/blast', async (req, res) => {
         }
       } catch (verifyErr) {
         // Verification failed — send anyway rather than block
-        console.warn(`[blast] Email verification error for ${email.to_email}: ${verifyErr.message} — sending anyway`);
+        logger.warn(`[blast] Email verification error for ${email.to_email}: ${verifyErr.message} — sending anyway`);
       }
 
       try {
@@ -409,7 +385,7 @@ router.post('/blast', async (req, res) => {
             day: 3,
           }, new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString());
         } catch (err) {
-          console.error('[blast] Failed to schedule follow-up:', err.message);
+          logger.error('[blast] Failed to schedule follow-up:', err.message);
         }
 
         sent++;
@@ -419,7 +395,7 @@ router.post('/blast', async (req, res) => {
           await new Promise(resolve => setTimeout(resolve, SCRAPER_RETRY_DELAY_MS));
         }
       } catch (err) {
-        console.error(`[blast] Failed to send to ${email.to_email}:`, err.message);
+        logger.error(`[blast] Failed to send to ${email.to_email}:`, err.message);
 
         const isBounce = err.responseCode >= 550 || err.message.includes('rejected') ||
           err.message.includes('not exist') || err.message.includes('undeliverable');
@@ -444,7 +420,7 @@ router.post('/blast', async (req, res) => {
       "UPDATE campaigns SET status = 'active', updated_at = ? WHERE id = ?"
     ).run(new Date().toISOString(), campaignId);
 
-    console.log(`[blast] Campaign ${campaignId}: sent=${sent} failed=${failed} invalid=${skippedInvalid}`);
+    logger.info(`[blast] Campaign ${campaignId}: sent=${sent} failed=${failed} invalid=${skippedInvalid}`);
 
     res.json({
       campaign_id: campaignId,
@@ -457,7 +433,7 @@ router.post('/blast', async (req, res) => {
       prospects: prospects.slice(0, 5)
     });
   } catch (err) {
-    console.error('[outreach] blast error:', err);
+    logger.error('[outreach] blast error:', err);
     res.status(500).json({ error: 'Failed to blast prospects' });
   }
 });

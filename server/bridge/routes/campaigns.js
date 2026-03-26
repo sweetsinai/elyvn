@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { randomUUID } = require('crypto');
 const config = require('../utils/config');
+const { logger } = require('../utils/logger');
 
 // POST /campaign
 router.post('/campaign', (req, res) => {
@@ -37,7 +38,7 @@ router.post('/campaign', (req, res) => {
 
     res.status(201).json({ campaign: { id, name, industry, city, status: 'draft', prospect_count: prospectIds.length } });
   } catch (err) {
-    console.error('[outreach] campaign create error:', err);
+    logger.error('[outreach] campaign create error:', err);
     res.status(500).json({ error: 'Failed to create campaign' });
   }
 });
@@ -90,13 +91,13 @@ router.post('/campaign/:campaignId/generate', async (req, res) => {
 
         emails.push({ id: emailId, prospect_id: prospect.id, to_email: prospect.email, subject, body: emailGen.body, variant, status: 'draft' });
       } catch (err) {
-        console.error(`[outreach] Failed to generate email for ${prospect.business_name}:`, err.message);
+        logger.error(`[outreach] Failed to generate email for ${prospect.business_name}:`, err.message);
       }
     }
 
     res.json({ generated: emails.length, emails });
   } catch (err) {
-    console.error('[outreach] generate error:', err);
+    logger.error('[outreach] generate error:', err);
     res.status(500).json({ error: 'Failed to generate emails' });
   }
 });
@@ -172,7 +173,7 @@ router.get('/campaign/:campaignId/ab-results', (req, res) => {
       winner
     });
   } catch (err) {
-    console.error('[outreach] ab-results error:', err);
+    logger.error('[outreach] ab-results error:', err);
     res.status(500).json({ error: 'Failed to get A/B results' });
   }
 });

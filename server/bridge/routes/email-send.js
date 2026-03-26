@@ -3,6 +3,7 @@ const { OUTREACH_BATCH_DELAY_MS, OUTREACH_INITIAL_REPLY_TIMEOUT_MS, OUTREACH_IMA
 const router = express.Router();
 const { getTransporter } = require('../utils/mailer');
 const config = require('../utils/config');
+const { logger } = require('../utils/logger');
 
 const DAILY_SEND_LIMIT = config.outreach.dailySendLimit;
 
@@ -25,7 +26,7 @@ router.put('/campaign/:campaignId/email/:emailId', (req, res) => {
     const email = db.prepare('SELECT * FROM emails_sent WHERE id = ?').get(emailId);
     res.json({ email });
   } catch (err) {
-    console.error('[outreach] edit email error:', err);
+    logger.error('[outreach] edit email error:', err);
     res.status(500).json({ error: 'Failed to update email' });
   }
 });
@@ -77,7 +78,7 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
         try {
           const verification = await verifyEmail(email.to_email);
           if (!verification.valid) {
-            console.log(`[outreach] Skipping invalid email ${email.to_email}: ${verification.reason}`);
+            logger.info(`[outreach] Skipping invalid email ${email.to_email}: ${verification.reason}`);
             db.prepare("UPDATE emails_sent SET status = 'invalid', error = ?, updated_at = ? WHERE id = ?")
               .run(`verification_failed: ${verification.reason}`, new Date().toISOString(), email.id);
             db.prepare("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?")
@@ -85,7 +86,7 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
             return { status: 'invalid', email_id: email.id, prospect_id: email.prospect_id };
           }
         } catch (verifyErr) {
-          console.warn(`[outreach] Verification error for ${email.to_email}: ${verifyErr.message} — sending anyway`);
+          logger.warn(`[outreach] Verification error for ${email.to_email}: ${verifyErr.message} — sending anyway`);
         }
 
         // Generate HTML with tracking
@@ -131,12 +132,12 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
             day: 3,
           }, new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString());
         } catch (err) {
-          console.error('[outreach] Failed to schedule follow-up:', err.message);
+          logger.error('[outreach] Failed to schedule follow-up:', err.message);
         }
 
         return { status: 'sent', email_id: email.id, prospect_id: email.prospect_id };
       } catch (err) {
-        console.error(`[outreach] Failed to send to ${email.to_email}:`, err.message);
+        logger.error(`[outreach] Failed to send to ${email.to_email}:`, err.message);
 
         // Detect bounces
         const isBounce = err.responseCode >= 550 || err.message.includes('rejected') ||
@@ -161,7 +162,7 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
     // Process emails in batches with concurrent sending
     for (let i = 0; i < drafts.length; i += BATCH_SIZE) {
       const batch = drafts.slice(i, i + BATCH_SIZE);
-      console.log(`[outreach] Processing batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} emails)`);
+      logger.info(`[outreach] Processing batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} emails)`);
 
       // Send all emails in batch concurrently
       const results = await Promise.allSettled(
@@ -181,14 +182,14 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
           }
         } else {
           // Promise rejected (shouldn't happen due to try-catch in sendEmailAsync)
-          console.error('[outreach] Unexpected error in batch processing:', result.reason);
+          logger.error('[outreach] Unexpected error in batch processing:', result.reason);
           failed++;
         }
       }
 
       // Rate limit pause between batches to avoid SMTP rate limits
       if (i + BATCH_SIZE < drafts.length) {
-        console.log(`[outreach] Batch complete. Pausing ${BATCH_DELAY_MS}ms before next batch...`);
+        logger.info(`[outreach] Batch complete. Pausing ${BATCH_DELAY_MS}ms before next batch...`);
         await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
       }
     }
@@ -198,10 +199,10 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
       "UPDATE campaigns SET status = 'active', updated_at = ? WHERE id = ?"
     ).run(new Date().toISOString(), campaignId);
 
-    console.log(`[outreach] Campaign ${campaignId}: sent=${sent} failed=${failed} invalid=${skippedInvalid}`);
+    logger.info(`[outreach] Campaign ${campaignId}: sent=${sent} failed=${failed} invalid=${skippedInvalid}`);
     res.json({ sent, failed, skipped_invalid: skippedInvalid, remaining: remaining - sent });
   } catch (err) {
-    console.error('[outreach] send error:', err);
+    logger.error('[outreach] send error:', err);
     res.status(500).json({ error: 'Failed to send emails' });
   }
 });

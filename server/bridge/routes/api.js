@@ -28,6 +28,15 @@ const ALLOWED_CLIENT_FIELDS = new Set([
   'avg_ticket', 'is_active'
 ]);
 
+// Helper to safely build SQL where clauses with parameterized queries
+function buildWhereClause(conditions) {
+  if (conditions.length === 0) return { where: '1=1', params: [] };
+  return {
+    where: conditions.map(c => c.condition).join(' AND '),
+    params: conditions.flatMap(c => c.params)
+  };
+}
+
 // GET /stats/:clientId
 router.get('/stats/:clientId', (req, res) => {
   try {
@@ -124,12 +133,19 @@ router.get('/calls/:clientId', (req, res) => {
     }
 
     const { outcome, startDate, endDate, minScore } = req.query;
-    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
+    const pageNum = Math.max(1, Math.min(10000, parseInt(req.query.page) || 1));
     const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    if (isNaN(pageNum) || isNaN(limitNum)) {
+      return res.status(400).json({ error: 'Invalid pagination parameters' });
+    }
     const offset = (pageNum - 1) * limitNum;
-    const conditions = ['client_id = ?'];
+    const conditions = [];
     const params = [clientId];
 
+    // Start with clientId
+    conditions.push('client_id = ?');
+
+    // Add optional filters
     if (outcome) {
       conditions.push('outcome = ?');
       params.push(outcome);
@@ -152,12 +168,14 @@ router.get('/calls/:clientId', (req, res) => {
 
     const where = conditions.join(' AND ');
 
-    const total = db.prepare(`SELECT COUNT(*) as count FROM calls WHERE ${where}`).get(...params).count;
+    const countParams = [...params];
+    const total = db.prepare(`SELECT COUNT(*) as count FROM calls WHERE ${where}`).get(...countParams).count;
 
+    const queryParams = [...params, limitNum, offset];
     const calls = db.prepare(
       `SELECT id, call_id, caller_phone, direction, duration, outcome, summary, score, sentiment, created_at
        FROM calls WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, limitNum, offset);
+    ).all(...queryParams);
 
     const totalPages = Math.ceil(total / limitNum);
     res.json({ calls, total, page: pageNum, limit: limitNum, total_pages: totalPages });
@@ -200,11 +218,16 @@ router.get('/messages/:clientId', (req, res) => {
     }
 
     const { status, startDate, endDate } = req.query;
-    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
+    const pageNum = Math.max(1, Math.min(10000, parseInt(req.query.page) || 1));
     const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    if (isNaN(pageNum) || isNaN(limitNum)) {
+      return res.status(400).json({ error: 'Invalid pagination parameters' });
+    }
     const offset = (pageNum - 1) * limitNum;
-    const conditions = ['client_id = ?'];
+    const conditions = [];
     const params = [clientId];
+
+    conditions.push('client_id = ?');
 
     if (status) {
       conditions.push('direction = ?');
@@ -221,11 +244,13 @@ router.get('/messages/:clientId', (req, res) => {
 
     const where = conditions.join(' AND ');
 
-    const total = db.prepare(`SELECT COUNT(*) as count FROM messages WHERE ${where}`).get(...params).count;
+    const countParams = [...params];
+    const total = db.prepare(`SELECT COUNT(*) as count FROM messages WHERE ${where}`).get(...countParams).count;
 
+    const queryParams = [...params, limitNum, offset];
     const messages = db.prepare(
       `SELECT * FROM messages WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, limitNum, offset);
+    ).all(...queryParams);
 
     const totalPages = Math.ceil(total / limitNum);
     res.json({ messages, total, page: pageNum, limit: limitNum, total_pages: totalPages });
@@ -247,11 +272,16 @@ router.get('/leads/:clientId', (req, res) => {
     }
 
     const { stage, minScore, search } = req.query;
-    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
+    const pageNum = Math.max(1, Math.min(10000, parseInt(req.query.page) || 1));
     const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    if (isNaN(pageNum) || isNaN(limitNum)) {
+      return res.status(400).json({ error: 'Invalid pagination parameters' });
+    }
     const offset = (pageNum - 1) * limitNum;
-    const conditions = ['client_id = ?'];
+    const conditions = [];
     const params = [clientId];
+
+    conditions.push('client_id = ?');
 
     if (stage) {
       conditions.push('stage = ?');
@@ -273,32 +303,37 @@ router.get('/leads/:clientId', (req, res) => {
 
     const where = conditions.join(' AND ');
 
-    const total = db.prepare(`SELECT COUNT(*) as count FROM leads WHERE ${where}`).get(...params).count;
+    const countParams = [...params];
+    const total = db.prepare(`SELECT COUNT(*) as count FROM leads WHERE ${where}`).get(...countParams).count;
 
+    const queryParams = [...params, limitNum, offset];
     const leads = db.prepare(
       `SELECT * FROM leads WHERE ${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, limitNum, offset);
+    ).all(...queryParams);
 
     // Batch-load recent interactions for all leads in a single query per table
-    const leadIds = leads.map(l => l.id);
+    // Build parameterized IN clause to prevent SQL injection
+    let allCalls = [];
+    let allMessages = [];
 
-    // Get all recent calls for these leads in one query
-    const allCallsStmt = `
-      SELECT id, call_id, duration, outcome, summary, score, created_at, caller_phone
-      FROM calls
-      WHERE client_id = ? AND caller_phone IN (${leads.map(() => '?').join(',')})
-      ORDER BY created_at DESC
-    `;
-    const allCalls = leads.length > 0 ? db.prepare(allCallsStmt).all(clientId, ...leads.map(l => l.phone)) : [];
+    if (leads.length > 0) {
+      const placeholders = leads.map(() => '?').join(',');
+      const callParams = [clientId, ...leads.map(l => l.phone)];
+      allCalls = db.prepare(`
+        SELECT id, call_id, duration, outcome, summary, score, created_at, caller_phone
+        FROM calls
+        WHERE client_id = ? AND caller_phone IN (${placeholders})
+        ORDER BY created_at DESC LIMIT 500
+      `).all(...callParams);
 
-    // Get all recent messages for these leads in one query
-    const allMessagesStmt = `
-      SELECT id, direction, body, created_at, phone
-      FROM messages
-      WHERE client_id = ? AND phone IN (${leads.map(() => '?').join(',')})
-      ORDER BY created_at DESC
-    `;
-    const allMessages = leads.length > 0 ? db.prepare(allMessagesStmt).all(clientId, ...leads.map(l => l.phone)) : [];
+      const messageParams = [clientId, ...leads.map(l => l.phone)];
+      allMessages = db.prepare(`
+        SELECT id, direction, body, created_at, phone
+        FROM messages
+        WHERE client_id = ? AND phone IN (${placeholders})
+        ORDER BY created_at DESC LIMIT 500
+      `).all(...messageParams);
+    }
 
     // Group results by lead phone and limit to 3 per lead
     const callsByPhone = {};
@@ -551,12 +586,21 @@ router.post('/chat', async (req, res) => {
         systemPrompt += `\n\nYou are assisting with ${client.business_name}.`;
       }
 
-      const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${clientId}.json`);
-      try {
-        const kbData = fs.readFileSync(kbPath, 'utf8');
-        systemPrompt += `\n\nBusiness Knowledge Base:\n${kbData}`;
-      } catch (err) {
-        logger.error('[api] Failed to load knowledge base:', err.message);
+      if (isValidUUID(clientId)) {
+        const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${clientId}.json`);
+        try {
+          // Verify path doesn't escape knowledge_bases directory
+          const resolvedPath = path.resolve(kbPath);
+          const kbDir = path.resolve(path.join(__dirname, '../../mcp/knowledge_bases'));
+          if (!resolvedPath.startsWith(kbDir)) {
+            logger.error('[api] KB path traversal attempted');
+          } else {
+            const kbData = fs.readFileSync(kbPath, 'utf8');
+            systemPrompt += `\n\nBusiness Knowledge Base:\n${kbData}`;
+          }
+        } catch (err) {
+          logger.error('[api] Failed to load knowledge base:', err.message);
+        }
       }
 
       // Add recent stats context
