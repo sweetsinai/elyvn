@@ -54,34 +54,32 @@ function httpsRequest(options, data = null) {
 }
 
 /**
- * Search for available Twilio phone numbers
+ * Search for available Telnyx phone numbers
  */
-async function searchTwilioNumber(areaCode) {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
+async function searchTelnyxNumber(areaCode) {
+  const apiKey = process.env.TELNYX_API_KEY;
 
-  if (!accountSid || !authToken) {
-    throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required');
+  if (!apiKey) {
+    throw new Error('TELNYX_API_KEY is required');
   }
 
-  const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
   const options = {
-    hostname: 'api.twilio.com',
+    hostname: 'api.telnyx.com',
     port: 443,
-    path: `/2010-04-01/Accounts/${accountSid}/AvailablePhoneNumbers/US/Local.json?AreaCode=${areaCode}&VoiceEnabled=true&SmsEnabled=true&Limit=1`,
+    path: `/v2/available_phone_numbers?filter[country_code]=US&filter[national_destination_code]=${areaCode}&filter[features][]=sms&filter[features][]=voice&filter[limit]=1`,
     method: 'GET',
     headers: {
-      'Authorization': `Basic ${auth}`,
+      'Authorization': `Bearer ${apiKey}`,
       'Accept': 'application/json',
     },
   };
 
   const response = await httpsRequest(options);
   if (response.status !== 200) {
-    throw new Error(`Twilio search failed (${response.status}): ${JSON.stringify(response.body || response.parseError)}`);
+    throw new Error(`Telnyx search failed (${response.status}): ${JSON.stringify(response.body || response.parseError)}`);
   }
 
-  const available = response.body.available_phone_numbers || [];
+  const available = response.body?.data || [];
   if (available.length === 0) {
     throw new Error(`No available phone numbers in area code ${areaCode}`);
   }
@@ -90,49 +88,47 @@ async function searchTwilioNumber(areaCode) {
 }
 
 /**
- * Purchase a Twilio phone number
+ * Purchase a Telnyx phone number
  */
-async function purchaseTwilioNumber(phoneNumber) {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
+async function purchaseTelnyxNumber(phoneNumber) {
+  const apiKey = process.env.TELNYX_API_KEY;
+  const messagingProfileId = process.env.TELNYX_MESSAGING_PROFILE_ID;
 
-  if (!accountSid || !authToken) {
-    throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required');
+  if (!apiKey) {
+    throw new Error('TELNYX_API_KEY is required');
   }
 
-  const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
-  const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
-    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-    : process.env.BASE_URL || 'http://localhost:3001';
+  const payload = {
+    phone_numbers: [{ phone_number: phoneNumber }]
+  };
 
-  const bodyData = new URLSearchParams({
-    PhoneNumber: phoneNumber,
-    VoiceUrl: `${baseUrl}/webhooks/retell`,
-    VoiceMethod: 'POST',
-    SmsUrl: `${baseUrl}/webhooks/twilio/sms`,
-    SmsMethod: 'POST',
-    FriendlyName: 'Elyvn AI Receptionist',
-  }).toString();
+  if (messagingProfileId) {
+    payload.messaging_profile_id = messagingProfileId;
+  }
 
   const options = {
-    hostname: 'api.twilio.com',
+    hostname: 'api.telnyx.com',
     port: 443,
-    path: `/2010-04-01/Accounts/${accountSid}/IncomingPhoneNumbers.json`,
+    path: '/v2/number_orders',
     method: 'POST',
     headers: {
-      'Authorization': `Basic ${auth}`,
+      'Authorization': `Bearer ${apiKey}`,
       'Accept': 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Content-Length': Buffer.byteLength(bodyData),
+      'Content-Type': 'application/json',
     },
   };
 
-  const response = await httpsRequest(options, bodyData);
-  if (response.status !== 201) {
-    throw new Error(`Twilio purchase failed (${response.status}): ${JSON.stringify(response.body || response.parseError)}`);
+  const response = await httpsRequest(options, payload);
+  if (response.status !== 200 && response.status !== 201) {
+    throw new Error(`Telnyx purchase failed (${response.status}): ${JSON.stringify(response.body || response.parseError)}`);
   }
 
-  return response.body.phone_number;
+  const phoneNumbers = response.body?.data?.phone_numbers || [];
+  if (phoneNumbers.length === 0) {
+    throw new Error('No phone numbers returned from Telnyx order');
+  }
+
+  return phoneNumbers[0].phone_number;
 }
 
 /**
@@ -215,8 +211,8 @@ router.post('/', async (req, res) => {
     const now = new Date().toISOString();
     const provisioning_status = {
       client_id: clientId,
-      twilio_phone: null,
-      twilio_error: null,
+      telnyx_phone: null,
+      telnyx_error: null,
       retell_agent_id: null,
       retell_error: null,
       db_save: null,
@@ -227,24 +223,24 @@ router.post('/', async (req, res) => {
 
     console.log(`[provision] Starting provisioning for ${business_name} (${clientId})`);
 
-    // Step 1: Buy Twilio number (skip if no area_code provided)
-    let twilioPhone = null;
+    // Step 1: Buy Telnyx number (skip if no area_code provided)
+    let telnyxPhone = null;
     try {
       if (!area_code) {
-        provisioning_status.twilio_error = 'area_code is required to provision Twilio number';
-        console.warn(`[provision] ${provisioning_status.twilio_error}`);
+        provisioning_status.telnyx_error = 'area_code is required to provision Telnyx number';
+        console.warn(`[provision] ${provisioning_status.telnyx_error}`);
       } else {
-        console.log(`[provision] Searching Twilio numbers in area code ${area_code}...`);
-        const availableNumber = await searchTwilioNumber(area_code);
+        console.log(`[provision] Searching Telnyx numbers in area code ${area_code}...`);
+        const availableNumber = await searchTelnyxNumber(area_code);
         console.log(`[provision] Found number: ${availableNumber}, purchasing...`);
-        twilioPhone = await purchaseTwilioNumber(availableNumber);
-        provisioning_status.twilio_phone = twilioPhone;
-        console.log(`[provision] Successfully purchased Twilio number: ${twilioPhone}`);
+        telnyxPhone = await purchaseTelnyxNumber(availableNumber);
+        provisioning_status.telnyx_phone = telnyxPhone;
+        console.log(`[provision] Successfully purchased Telnyx number: ${telnyxPhone}`);
       }
     } catch (err) {
-      provisioning_status.twilio_error = err.message;
-      console.error(`[provision] Twilio provisioning failed: ${err.message}`);
-      // Continue with provisioning even if Twilio fails
+      provisioning_status.telnyx_error = err.message;
+      console.error(`[provision] Telnyx provisioning failed: ${err.message}`);
+      // Continue with provisioning even if Telnyx fails
     }
 
     // Step 2: Create Retell agent (optional, don't fail overall provisioning if this fails)
@@ -269,9 +265,9 @@ router.post('/', async (req, res) => {
       db.prepare(`
         INSERT INTO clients (
           id, business_name, owner_name, owner_phone, owner_email,
-          retell_agent_id, twilio_phone, industry, timezone,
+          retell_agent_id, telnyx_phone, twilio_phone, industry, timezone,
           avg_ticket, plan, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         clientId,
         business_name,
@@ -279,7 +275,8 @@ router.post('/', async (req, res) => {
         owner_phone,
         owner_email || null,
         retellAgentId || null,
-        twilioPhone || null,
+        telnyxPhone || null,
+        telnyxPhone || null,
         industry || null,
         timezone || 'UTC',
         avg_ticket || 0,

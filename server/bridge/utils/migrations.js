@@ -519,6 +519,16 @@ const migrations = [
       }
     },
   },
+  {
+    id: '020_telnyx_phone_column',
+    description: 'Add telnyx_phone to clients for Telnyx SMS provider migration',
+    up(db) {
+      const clientCols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+      if (!clientCols.includes('telnyx_phone')) {
+        db.exec('ALTER TABLE clients ADD COLUMN telnyx_phone TEXT');
+      }
+    },
+  },
 ];
 
 /**

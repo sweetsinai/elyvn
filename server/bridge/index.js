@@ -31,7 +31,7 @@ const { isValidUUID } = require('./utils/validate');
 
 // === STARTUP ENV VALIDATION ===
 const REQUIRED_ENV = ['ANTHROPIC_API_KEY'];
-const RECOMMENDED_ENV = ['RETELL_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'ELYVN_API_KEY'];
+const RECOMMENDED_ENV = ['RETELL_API_KEY', 'TELNYX_API_KEY', 'TELNYX_PHONE_NUMBER', 'TELNYX_MESSAGING_PROFILE_ID', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'ELYVN_API_KEY'];
 const missingRequired = REQUIRED_ENV.filter(v => !process.env[v]);
 if (missingRequired.length > 0) {
   logger.error(`[FATAL] Missing required env vars: ${missingRequired.join(', ')}`);
@@ -208,6 +208,10 @@ const provisionRouter = require('./routes/provision');
 const trackingRouter = require('./routes/tracking');
 const { enforceClientIsolation } = require('./utils/clientIsolation');
 
+// Telnyx inbound SMS webhook
+const telnyxRouter = require('./routes/telnyx');
+app.use('/webhooks/telnyx', telnyxRouter);
+
 app.use('/webhooks/retell', retellRouter);
 app.use('/retell-webhook', retellRouter);
 app.use('/webhooks/twilio', twilioRouter);
@@ -284,6 +288,9 @@ app.get('/health', async (req, res) => {
   const envVars = {
     ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY,
     RETELL_API_KEY: !!process.env.RETELL_API_KEY,
+    TELNYX_API_KEY: !!process.env.TELNYX_API_KEY,
+    TELNYX_PHONE_NUMBER: !!process.env.TELNYX_PHONE_NUMBER,
+    TELNYX_MESSAGING_PROFILE_ID: !!process.env.TELNYX_MESSAGING_PROFILE_ID,
     TWILIO_ACCOUNT_SID: !!process.env.TWILIO_ACCOUNT_SID,
     TWILIO_AUTH_TOKEN: !!process.env.TWILIO_AUTH_TOKEN,
     TWILIO_PHONE_NUMBER: !!process.env.TWILIO_PHONE_NUMBER,
