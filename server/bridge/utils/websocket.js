@@ -1,9 +1,9 @@
 /**
-const { WEBSOCKET_HEARTBEAT_INTERVAL_MS } = require('../config/timing');
  * WebSocket Manager — real-time updates to dashboard
  * Uses the 'ws' package (already a dependency)
  */
 
+const { WEBSOCKET_HEARTBEAT_INTERVAL_MS } = require('../config/timing');
 const WebSocket = require('ws');
 
 let wss = null;

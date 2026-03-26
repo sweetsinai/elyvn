@@ -1,7 +1,7 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 
 // Initialize file-based logging (must be before any console.log calls)
-const { setupLogger, closeLogger } = require('./utils/logger');
+const { setupLogger, closeLogger, logger } = require('./utils/logger');
 setupLogger();
 
 // Initialize monitoring & error tracking
