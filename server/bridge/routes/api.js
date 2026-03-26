@@ -573,14 +573,16 @@ router.post('/chat', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const streamPromise = anthropic.messages.stream({
-      model: config.ai.model,
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages
-    });
-
-    const stream = await withTimeout(streamPromise, ANTHROPIC_TIMEOUT, 'Anthropic streaming chat');
+    const stream = await withTimeout(
+      (signal) => anthropic.messages.stream({
+        model: config.ai.model,
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages
+      }),
+      ANTHROPIC_TIMEOUT,
+      'Anthropic streaming chat'
+    );
 
     stream.on('text', (text) => {
       res.write(`data: ${JSON.stringify({ type: 'text', text })}\n\n`);

@@ -262,20 +262,22 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
     let confidence = 'medium';
 
     try {
-      const respPromise = anthropic.messages.create({
-        model: config.ai.model,
-        max_tokens: 300,
-        system: `You are a helpful SMS assistant for ${client.business_name || 'our business'}. Answer the customer's question using ONLY the following knowledge base information. Do not make up information not found in the knowledge base.
+      const resp = await withTimeout(
+        (signal) => anthropic.messages.create({
+          model: config.ai.model,
+          max_tokens: 300,
+          system: `You are a helpful SMS assistant for ${client.business_name || 'our business'}. Answer the customer's question using ONLY the following knowledge base information. Do not make up information not found in the knowledge base.
 
 Knowledge Base:
 ${kb || 'No knowledge base available.'}
 
 Reply in JSON format: {"reply": "your reply text (keep under 160 chars for SMS)", "confidence": "high" | "medium" | "low"}
 If you cannot answer from the knowledge base, set confidence to "low".`,
-        messages: [{ role: 'user', content: body }]
-      });
-
-      const resp = await withTimeout(respPromise, ANTHROPIC_TIMEOUT, 'Claude SMS reply generation');
+          messages: [{ role: 'user', content: body }]
+        }),
+        ANTHROPIC_TIMEOUT,
+        'Claude SMS reply generation'
+      );
 
       const rawText = resp.content[0]?.text || '';
       try {
