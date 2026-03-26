@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { isValidUUID } = require('../utils/validate');
 const { withTimeout } = require('../utils/resilience');
+const { logger } = require('../utils/logger');
 
 const anthropic = new Anthropic();
 
@@ -19,14 +20,14 @@ const ANTHROPIC_TIMEOUT = 30000;
 router.use((req, res, next) => {
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   if (!authToken) {
-    console.warn('[twilio] TWILIO_AUTH_TOKEN not configured — skipping signature validation');
+    logger.warn('[twilio] TWILIO_AUTH_TOKEN not configured — skipping signature validation');
     return next();
   }
   try {
     const crypto = require('crypto');
     const signature = req.headers['x-twilio-signature'];
     if (!signature) {
-      console.error('[twilio] Missing x-twilio-signature header');
+      logger.error('[twilio] Missing x-twilio-signature header');
       return res.status(401).json({ error: 'Missing signature' });
     }
     // Build the data string: URL + sorted POST params
@@ -34,12 +35,12 @@ router.use((req, res, next) => {
     const data = url + Object.keys(req.body || {}).sort().reduce((acc, key) => acc + key + req.body[key], '');
     const expected = crypto.createHmac('sha1', authToken).update(Buffer.from(data, 'utf-8')).digest('base64');
     if (signature !== expected) {
-      console.error('[twilio] Invalid webhook signature');
+      logger.error('[twilio] Invalid webhook signature');
       return res.status(401).json({ error: 'Invalid signature' });
     }
     next();
   } catch (err) {
-    console.error('[twilio] Signature validation error:', err.message);
+    logger.error('[twilio] Signature validation error:', err.message);
     next(); // Allow through on error to avoid blocking legitimate webhooks
   }
 });
@@ -54,12 +55,12 @@ router.post('/', (req, res) => {
 
   const db = req.app.locals.db;
   if (!db) {
-    console.error('[twilio] No database connection');
+    logger.error('[twilio] No database connection');
     return;
   }
 
   if (!From || !To) {
-    console.warn('[twilio] Missing From or To in SMS webhook');
+    logger.warn('[twilio] Missing From or To in SMS webhook');
     return;
   }
 
@@ -68,20 +69,20 @@ router.post('/', (req, res) => {
     try {
       handleInboundSMS(db, { from: From, to: To, body: Body, messageSid: MessageSid });
     } catch (err) {
-      console.error('[twilio] setImmediate error:', err);
+      logger.error('[twilio] setImmediate error:', err);
     }
   });
 });
 
 async function handleInboundSMS(db, { from, to, body, messageSid }) {
   try {
-    console.log(`[twilio] SMS from ${from ? from.replace(/\d(?=\d{4})/g, '*') : '?'} to ${to} (${(body || '').length} chars)`);
+    logger.info(`[twilio] SMS from ${from ? from.replace(/\d(?=\d{4})/g, '*') : '?'} to ${to} (${(body || '').length} chars)`);
 
     // Idempotency: skip if this MessageSid was already processed (webhook retry)
     if (messageSid) {
       const dup = db.prepare('SELECT id FROM messages WHERE message_sid = ?').get(messageSid);
       if (dup) {
-        console.log(`[twilio] Duplicate MessageSid ${messageSid}, skipping`);
+        logger.info(`[twilio] Duplicate MessageSid ${messageSid}, skipping`);
         return;
       }
     }
@@ -92,7 +93,7 @@ async function handleInboundSMS(db, { from, to, body, messageSid }) {
     ).get(to, to);
 
     if (!client) {
-      console.error(`[twilio] No client found for number ${to}`);
+      logger.error(`[twilio] No client found for number ${to}`);
       return;
     }
 
@@ -112,7 +113,7 @@ async function handleInboundSMS(db, { from, to, body, messageSid }) {
       await handleNormalMessage(db, client, from, to, body, messageSid);
     }
   } catch (err) {
-    console.error('[twilio] handleInboundSMS error:', err);
+    logger.error('[twilio] handleInboundSMS error:', err);
   }
 }
 
@@ -125,9 +126,9 @@ async function handleOptOut(db, client, from, to, keyword) {
     const msg = `You've been unsubscribed from ${client.business_name || 'our'} messages. Reply START to resubscribe.`;
     await sendSMS(from, msg.slice(0, 1600), to);
 
-    console.log(`[twilio] Recorded opt-out for ${from} (${keyword})`);
+    logger.info(`[twilio] Recorded opt-out for ${from} (${keyword})`);
   } catch (err) {
-    console.error('[twilio] handleOptOut error:', err);
+    logger.error('[twilio] handleOptOut error:', err);
   }
 }
 
@@ -139,9 +140,9 @@ async function handleOptIn(db, client, from, to) {
     const msg = `Welcome back! You're now subscribed to ${client.business_name || 'our'} messages.`;
     await sendSMS(from, msg.slice(0, 1600), to);
 
-    console.log(`[twilio] Recorded opt-in for ${from}`);
+    logger.info(`[twilio] Recorded opt-in for ${from}`);
   } catch (err) {
-    console.error('[twilio] handleOptIn error:', err);
+    logger.error('[twilio] handleOptIn error:', err);
   }
 }
 
@@ -166,12 +167,12 @@ async function handleCancel(db, client, from, replyFrom) {
       ).run(new Date().toISOString(), from, client.id);
 
       await sendSMS(from, 'Your appointment has been cancelled.', replyFrom);
-      console.log(`[twilio] Booking ${lead.calcom_booking_id} cancelled for ${from}`);
+      logger.info(`[twilio] Booking ${lead.calcom_booking_id} cancelled for ${from}`);
     } else {
       await sendSMS(from, 'Sorry, we couldn\'t cancel your appointment right now. Please call us directly.', replyFrom);
     }
   } catch (err) {
-    console.error('[twilio] handleCancel error:', err);
+    logger.error('[twilio] handleCancel error:', err);
     await sendSMS(from, 'Sorry, something went wrong. Please call us directly.', replyFrom).catch(() => {});
   }
 }
@@ -188,7 +189,7 @@ async function handleYes(db, client, from, replyFrom) {
       await sendSMS(from, msg.slice(0, 1600), replyFrom);
     }
   } catch (err) {
-    console.error('[twilio] handleYes error:', err);
+    logger.error('[twilio] handleYes error:', err);
   }
 }
 
@@ -196,7 +197,7 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
   try {
     // Check if AI is paused — log message but do not auto-reply
     if (!client.is_active) {
-      console.log(`[twilio] AI paused for client ${client.id} — logging message from ${from} without reply`);
+      logger.info(`[twilio] AI paused for client ${client.id} — logging message from ${from} without reply`);
       // Upsert lead so the message is tracked
       const existingLead = db.prepare('SELECT id FROM leads WHERE phone = ? AND client_id = ?').get(from, client.id);
       let leadId;
@@ -230,7 +231,7 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
       "SELECT COUNT(*) as c FROM messages WHERE phone = ? AND direction = 'outbound' AND created_at >= datetime('now','-5 minutes')"
     ).get(from);
     if (recentOutbound.c > 0) {
-      console.log(`[twilio] Rate limited outbound to ${from} — already replied within 5 min`);
+      logger.info(`[twilio] Rate limited outbound to ${from} — already replied within 5 min`);
       // Still log the inbound message
       const existingLead2 = db.prepare('SELECT id FROM leads WHERE phone = ? AND client_id = ?').get(from, client.id);
       if (existingLead2) {
@@ -245,7 +246,7 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
     // Load client knowledge base
     let kb = '';
     if (!isValidUUID(client.id)) {
-      console.warn('[twilio] Invalid client UUID, skipping KB load');
+      logger.warn('[twilio] Invalid client UUID, skipping KB load');
     } else {
       const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
       try {
@@ -253,7 +254,7 @@ async function handleNormalMessage(db, client, from, to, body, messageSid) {
         kb = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
         if (kb.length > 5000) kb = kb.substring(0, 5000) + '\n[...truncated]';
       } catch (err) {
-        console.error(`[twilio] KB load failed for client ${client.id}:`, err.message);
+        logger.error(`[twilio] KB load failed for client ${client.id}:`, err.message);
       }
     }
 
@@ -293,12 +294,12 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
         }
       } catch (parseErr) {
         // JSON.parse failed — use raw text as fallback
-        console.warn('[twilio] Claude response JSON parse failed, using raw text:', parseErr.message);
+        logger.warn('[twilio] Claude response JSON parse failed, using raw text:', parseErr.message);
         reply = rawText;
         confidence = 'medium';
       }
     } catch (err) {
-      console.error('[twilio] Claude reply generation failed:', err.message);
+      logger.error('[twilio] Claude reply generation failed:', err.message);
       reply = 'Thanks for your message! We\'ll get back to you shortly.';
       confidence = 'low';
     }
@@ -311,7 +312,7 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
         sendSMS(
           client.owner_phone,
           `[ELYVN] Question from ${from} that needs your input:\n"${body}"`
-        ).catch(err => console.error('[twilio] Owner notification failed:', err.message));
+        ).catch(err => logger.error('[twilio] Owner notification failed:', err.message));
       }
     }
 
@@ -366,7 +367,7 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
         lead_id: leadId
       });
     } catch (err) {
-      console.warn('[twilio] WebSocket broadcast error:', err.message);
+      logger.warn('[twilio] WebSocket broadcast error:', err.message);
     }
 
     // Schedule follow-up touch for brand-new SMS contacts
@@ -378,7 +379,7 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
           VALUES (?, ?, ?, 2, 'nudge', NULL, 'pending', ?, 'scheduled')
         `).run(randomUUID(), leadId, client.id, tomorrow);
       } catch (fuErr) {
-        console.error('[twilio] Follow-up scheduling error:', fuErr.message);
+        logger.error('[twilio] Follow-up scheduling error:', fuErr.message);
       }
     }
 
@@ -404,10 +405,10 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
         }
       }
     } catch (tgErr) {
-      console.error('[twilio] Telegram notification failed:', tgErr.message);
+      logger.error('[twilio] Telegram notification failed:', tgErr.message);
     }
 
-    console.log(`[twilio] Replied to ${from ? from.replace(/\d(?=\d{4})/g, '*') : '?'}: ${reply.substring(0, 50)}...`);
+    logger.info(`[twilio] Replied to ${from ? from.replace(/\d(?=\d{4})/g, '*') : '?'}: ${reply.substring(0, 50)}...`);
 
     // === BRAIN — autonomous post-SMS decisions ===
     try {
@@ -424,10 +425,10 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
         await executeActions(db, decision.actions, memory);
       }
     } catch (brainErr) {
-      console.error('[Brain] Post-SMS error:', brainErr.message);
+      logger.error('[Brain] Post-SMS error:', brainErr.message);
     }
   } catch (err) {
-    console.error('[twilio] handleNormalMessage error:', err);
+    logger.error('[twilio] handleNormalMessage error:', err);
   }
 }
 

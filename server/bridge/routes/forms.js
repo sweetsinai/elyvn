@@ -36,7 +36,7 @@ function isDuplicateSpeedToLead(phone, email) {
 }
 
 // Cleanup dedup store every 10 minutes
-setInterval(() => {
+const dedupsCleanupInterval = setInterval(() => {
   const now = Date.now();
   for (const [key, timestamp] of speedToLeadStore) {
     if (now - timestamp > SPEED_TO_LEAD_DEDUP_WINDOW * 2) {
@@ -63,12 +63,18 @@ function checkFormRateLimit(ip) {
 }
 
 // Cleanup every 5 minutes
-setInterval(() => {
+const rateLimitCleanupInterval = setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of formRateLimitStore) {
     if (now - entry.start > FORM_RATE_WINDOW * 2) formRateLimitStore.delete(ip);
   }
 }, 300000);
+
+// Export cleanup function for tests
+function cleanupFormTimers() {
+  if (dedupsCleanupInterval) clearInterval(dedupsCleanupInterval);
+  if (rateLimitCleanupInterval) clearInterval(rateLimitCleanupInterval);
+}
 
 function formRateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress;
@@ -315,3 +321,4 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.cleanupFormTimers = cleanupFormTimers;

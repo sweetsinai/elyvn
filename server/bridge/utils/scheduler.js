@@ -1,6 +1,7 @@
 const telegram = require('./telegram');
 const { SCHEDULER_DAILY_INTERVAL_MS, SCHEDULER_WEEKLY_INTERVAL_MS, SCHEDULER_FOLLOWUP_INTERVAL_MS, SCHEDULER_APPOINTMENT_REMINDER_INTERVAL_MS, SCHEDULER_REPLY_CHECK_INTERVAL_MS, APPOINTMENT_REMINDER_24H_MS, APPOINTMENT_REMINDER_2H_MS, BRAIN_FOLLOWUP_THROTTLE_MS, BRAIN_DAILY_REVIEW_THROTTLE_MS } = require('../config/timing');
 const config = require('./config');
+const { logger } = require('./logger');
 
 function sendDailySummaries(db) {
   const clients = db.prepare(
@@ -40,7 +41,7 @@ function sendDailySummaries(db) {
 
     const formatted = telegram.formatDailySummary(stats, tomorrowSchedule, client);
     telegram.sendMessage(client.telegram_chat_id, formatted.text).catch(err =>
-      console.error(`Daily summary failed for client ${client.id}:`, err)
+      logger.error(`Daily summary failed for client ${client.id}:`, err)
     );
   }
 }
@@ -93,7 +94,7 @@ function sendWeeklyReports(db) {
 
     const formatted = telegram.formatWeeklyReport(report, client);
     telegram.sendMessage(client.telegram_chat_id, formatted.text).catch(err =>
-      console.error(`Weekly report failed for client ${client.id}:`, err)
+      logger.error(`Weekly report failed for client ${client.id}:`, err)
     );
   }
 }
@@ -108,22 +109,22 @@ function initScheduler(db) {
 
   setTimeout(() => {
     try {
-      console.log('[Scheduler] Sending daily summaries');
+      logger.info('[Scheduler] Sending daily summaries');
       sendDailySummaries(db);
     } catch (err) {
-      console.error('[Scheduler] Daily summary error:', err);
+      logger.error('[Scheduler] Daily summary error:', err);
     }
     setInterval(() => {
       try {
-        console.log('[Scheduler] Sending daily summaries');
+        logger.info('[Scheduler] Sending daily summaries');
         sendDailySummaries(db);
       } catch (err) {
-        console.error('[Scheduler] Daily summary interval error:', err);
+        logger.error('[Scheduler] Daily summary interval error:', err);
       }
     }, SCHEDULER_DAILY_INTERVAL_MS);
   }, dailyDelay);
 
-  console.log(`[Scheduler] Daily summary scheduled in ${Math.round(dailyDelay / 1000 / 60)} minutes (7 PM)`);
+  logger.info(`[Scheduler] Daily summary scheduled in ${Math.round(dailyDelay / 1000 / 60)} minutes (7 PM)`);
 
   // Weekly report Monday 8 AM
   const weekly = new Date(now);
@@ -136,34 +137,34 @@ function initScheduler(db) {
 
   setTimeout(() => {
     try {
-      console.log('[Scheduler] Sending weekly reports');
+      logger.info('[Scheduler] Sending weekly reports');
       sendWeeklyReports(db);
     } catch (err) {
-      console.error('[Scheduler] Weekly report error:', err);
+      logger.error('[Scheduler] Weekly report error:', err);
     }
     setInterval(() => {
       try {
-        console.log('[Scheduler] Sending weekly reports');
+        logger.info('[Scheduler] Sending weekly reports');
         sendWeeklyReports(db);
       } catch (err) {
-        console.error('[Scheduler] Weekly report interval error:', err);
+        logger.error('[Scheduler] Weekly report interval error:', err);
       }
     }, SCHEDULER_WEEKLY_INTERVAL_MS);
   }, weeklyDelay);
 
-  console.log(`[Scheduler] Weekly report scheduled in ${Math.round(weeklyDelay / 1000 / 60 / 60)} hours (Monday 8 AM)`);
+  logger.info(`[Scheduler] Weekly report scheduled in ${Math.round(weeklyDelay / 1000 / 60 / 60)} hours (Monday 8 AM)`);
 
   // Follow-up processor — every 5 minutes
   setInterval(() => {
-    processFollowups(db).catch(err => console.error('[Scheduler] followup processor error:', err));
+    processFollowups(db).catch(err => logger.error('[Scheduler] followup processor error:', err));
   }, SCHEDULER_FOLLOWUP_INTERVAL_MS);
-  console.log('[Scheduler] Follow-up processor running every 5 minutes');
+  logger.info('[Scheduler] Follow-up processor running every 5 minutes');
 
   // Appointment reminder processor — every 2 minutes
   setInterval(() => {
-    processAppointmentReminders(db).catch(err => console.error('[Scheduler] appointment reminder error:', err));
+    processAppointmentReminders(db).catch(err => logger.error('[Scheduler] appointment reminder error:', err));
   }, SCHEDULER_APPOINTMENT_REMINDER_INTERVAL_MS);
-  console.log('[Scheduler] Appointment reminder processor running every 2 minutes');
+  logger.info('[Scheduler] Appointment reminder processor running every 2 minutes');
 
   // Daily lead review — 9 AM
   const review = new Date(now);
@@ -172,12 +173,12 @@ function initScheduler(db) {
   const reviewDelay = review.getTime() - now.getTime();
 
   setTimeout(() => {
-    dailyLeadReview(db).catch(err => console.error('[Scheduler] daily review error:', err));
+    dailyLeadReview(db).catch(err => logger.error('[Scheduler] daily review error:', err));
     setInterval(() => {
-      dailyLeadReview(db).catch(err => console.error('[Scheduler] daily review error:', err));
+      dailyLeadReview(db).catch(err => logger.error('[Scheduler] daily review error:', err));
     }, SCHEDULER_DAILY_INTERVAL_MS);
   }, reviewDelay);
-  console.log(`[Scheduler] Daily lead review scheduled in ${Math.round(reviewDelay / 1000 / 60)} minutes (9 AM)`);
+  logger.info(`[Scheduler] Daily lead review scheduled in ${Math.round(reviewDelay / 1000 / 60)} minutes (9 AM)`);
 
   // Engine 2: Daily outreach at 10 AM
   const outreach = new Date(now);
@@ -186,18 +187,18 @@ function initScheduler(db) {
   const outreachDelay = outreach.getTime() - now.getTime();
 
   setTimeout(() => {
-    dailyOutreach(db).catch(err => console.error('[Scheduler] outreach error:', err));
+    dailyOutreach(db).catch(err => logger.error('[Scheduler] outreach error:', err));
     setInterval(() => {
-      dailyOutreach(db).catch(err => console.error('[Scheduler] outreach error:', err));
+      dailyOutreach(db).catch(err => logger.error('[Scheduler] outreach error:', err));
     }, SCHEDULER_DAILY_INTERVAL_MS);
   }, outreachDelay);
-  console.log(`[Scheduler] Daily outreach scheduled in ${Math.round(outreachDelay / 1000 / 60)} minutes (10 AM)`);
+  logger.info(`[Scheduler] Daily outreach scheduled in ${Math.round(outreachDelay / 1000 / 60)} minutes (10 AM)`);
 
   // Engine 2: Check replies every 30 minutes
   setInterval(() => {
-    checkReplies(db).catch(err => console.error('[Scheduler] reply check error:', err));
+    checkReplies(db).catch(err => logger.error('[Scheduler] reply check error:', err));
   }, SCHEDULER_REPLY_CHECK_INTERVAL_MS);
-  console.log('[Scheduler] Reply checker running every 30 minutes');
+  logger.info('[Scheduler] Reply checker running every 30 minutes');
 
   // Predictive lead scoring — rescore all leads daily at 6 AM
   const scoreTime = new Date(now);
@@ -206,12 +207,12 @@ function initScheduler(db) {
   const scoreDelay = scoreTime.getTime() - now.getTime();
 
   setTimeout(() => {
-    dailyLeadScoring(db).catch(err => console.error('[Scheduler] lead scoring error:', err));
+    dailyLeadScoring(db).catch(err => logger.error('[Scheduler] lead scoring error:', err));
     setInterval(() => {
-      dailyLeadScoring(db).catch(err => console.error('[Scheduler] lead scoring error:', err));
+      dailyLeadScoring(db).catch(err => logger.error('[Scheduler] lead scoring error:', err));
     }, SCHEDULER_DAILY_INTERVAL_MS);
   }, scoreDelay);
-  console.log(`[Scheduler] Daily lead scoring scheduled in ${Math.round(scoreDelay / 1000 / 60)} minutes (6 AM)`);
+  logger.info(`[Scheduler] Daily lead scoring scheduled in ${Math.round(scoreDelay / 1000 / 60)} minutes (6 AM)`);
 
   // Data retention cleanup — daily at 3 AM
   const retentionTime = new Date(now);
@@ -223,16 +224,16 @@ function initScheduler(db) {
     try {
       const { runRetention } = require('./dataRetention');
       const result = runRetention(db);
-      console.log(`[Scheduler] Data retention completed: ${JSON.stringify(result)}`);
-    } catch (err) { console.error('[Scheduler] data retention error:', err); }
+      logger.info(`[Scheduler] Data retention completed: ${JSON.stringify(result)}`);
+    } catch (err) { logger.error('[Scheduler] data retention error:', err); }
     setInterval(() => {
       try {
         const { runRetention } = require('./dataRetention');
         runRetention(db);
-      } catch (err) { console.error('[Scheduler] data retention error:', err); }
+      } catch (err) { logger.error('[Scheduler] data retention error:', err); }
     }, SCHEDULER_DAILY_INTERVAL_MS);
   }, retentionDelay);
-  console.log(`[Scheduler] Data retention scheduled in ${Math.round(retentionDelay / 1000 / 60)} minutes (3 AM)`);
+  logger.info(`[Scheduler] Data retention scheduled in ${Math.round(retentionDelay / 1000 / 60)} minutes (3 AM)`);
 }
 
 // === BRAIN-POWERED: Process due follow-ups ===
@@ -247,7 +248,7 @@ async function processFollowups(db) {
     ).all();
 
     if (due.length === 0) return;
-    console.log(`[Scheduler] Processing ${due.length} due follow-ups`);
+    logger.info(`[Scheduler] Processing ${due.length} due follow-ups`);
 
     const { getLeadMemory } = require('./leadMemory');
     const { think } = require('./brain');
@@ -271,7 +272,7 @@ async function processFollowups(db) {
         await executeActions(db, decision.actions, memory);
         db.prepare("UPDATE followups SET status = 'sent', sent_at = datetime('now') WHERE id = ?").run(followup.id);
       } catch (err) {
-        console.error(`[Scheduler] Follow-up ${followup.id} failed:`, err.message);
+        logger.error(`[Scheduler] Follow-up ${followup.id} failed:`, err.message);
         db.prepare("UPDATE followups SET status = 'failed' WHERE id = ?").run(followup.id);
       }
 
@@ -279,7 +280,7 @@ async function processFollowups(db) {
       await new Promise(r => setTimeout(r, BRAIN_FOLLOWUP_THROTTLE_MS));
     }
   } catch (err) {
-    console.error('[Scheduler] processFollowups error:', err);
+    logger.error('[Scheduler] processFollowups error:', err);
   }
 }
 
@@ -299,11 +300,11 @@ async function dailyLeadReview(db) {
     `).all();
 
     if (stale.length === 0) {
-      console.log('[Brain] Daily review: no stale leads');
+      logger.info('[Brain] Daily review: no stale leads');
       return;
     }
 
-    console.log(`[Brain] Daily review: ${stale.length} stale leads`);
+    logger.info(`[Brain] Daily review: ${stale.length} stale leads`);
 
     const { getLeadMemory } = require('./leadMemory');
     const { think } = require('./brain');
@@ -323,11 +324,11 @@ async function dailyLeadReview(db) {
         await executeActions(db, decision.actions, memory);
         await new Promise(r => setTimeout(r, BRAIN_FOLLOWUP_THROTTLE_MS));
       } catch (err) {
-        console.error(`[Brain] Daily review failed for ${lead.phone}:`, err.message);
+        logger.error(`[Brain] Daily review failed for ${lead.phone}:`, err.message);
       }
     }
   } catch (err) {
-    console.error('[Brain] dailyLeadReview error:', err);
+    logger.error('[Brain] dailyLeadReview error:', err);
   }
 }
 
@@ -335,13 +336,13 @@ async function dailyLeadReview(db) {
 function createAppointmentReminders(db, appointment, client) {
   try {
     if (!appointment || !appointment.id || !appointment.datetime) {
-      console.warn('[Scheduler] createAppointmentReminders: missing appointment data');
+      logger.warn('[Scheduler] createAppointmentReminders: missing appointment data');
       return;
     }
 
     const apptTime = new Date(appointment.datetime);
     if (isNaN(apptTime.getTime())) {
-      console.warn('[Scheduler] Invalid appointment datetime:', appointment.datetime);
+      logger.warn('[Scheduler] Invalid appointment datetime:', appointment.datetime);
       return;
     }
 
@@ -384,9 +385,9 @@ function createAppointmentReminders(db, appointment, client) {
       `).run(randomUUID(), leadId, clientId, r.touchNumber, r.content, scheduledAt.toISOString());
     }
 
-    console.log(`[Scheduler] Appointment reminders created for ${appointment.phone || name}`);
+    logger.info(`[Scheduler] Appointment reminders created for ${appointment.phone || name}`);
   } catch (err) {
-    console.error('[Scheduler] createAppointmentReminders error:', err.message);
+    logger.error('[Scheduler] createAppointmentReminders error:', err.message);
   }
 }
 
@@ -405,11 +406,11 @@ async function dailyOutreach(db) {
     `).all(DAILY_LIMIT);
 
     if (prospects.length === 0) {
-      console.log('[Outreach] No new prospects to email');
+      logger.info('[Outreach] No new prospects to email');
       return;
     }
 
-    console.log(`[Outreach] Starting daily outreach: ${prospects.length} prospects`);
+    logger.info(`[Outreach] Starting daily outreach: ${prospects.length} prospects`);
     let sent = 0, failed = 0;
 
     const { verifyEmail } = require('./emailVerifier');
@@ -419,7 +420,7 @@ async function dailyOutreach(db) {
         // Verify email before generating + sending
         const verification = await verifyEmail(prospect.email);
         if (!verification.valid) {
-          console.log(`[Outreach] Skipping invalid email ${prospect.email}: ${verification.reason}`);
+          logger.info(`[Outreach] Skipping invalid email ${prospect.email}: ${verification.reason}`);
           db.prepare("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?")
             .run(new Date().toISOString(), prospect.id);
           continue;
@@ -438,7 +439,7 @@ async function dailyOutreach(db) {
         // Wait 2 minutes between sends
         await new Promise(r => setTimeout(r, OUTREACH_COLD_EMAIL_INTERVAL_MS));
       } catch (err) {
-        console.error(`[Outreach] Error for ${prospect.business_name}:`, err.message);
+        logger.error(`[Outreach] Error for ${prospect.business_name}:`, err.message);
         failed++;
       }
     }
@@ -451,9 +452,9 @@ async function dailyOutreach(db) {
       ).catch(() => {});
     }
 
-    console.log(`[Outreach] Done: ${sent} sent, ${failed} failed`);
+    logger.info(`[Outreach] Done: ${sent} sent, ${failed} failed`);
   } catch (err) {
-    console.error('[Outreach] dailyOutreach error:', err);
+    logger.error('[Outreach] dailyOutreach error:', err);
   }
 }
 
@@ -525,7 +526,7 @@ async function checkReplies(db) {
                     // Fallback: try matching by prospects.email (in case reply came from a different address)
                     const fallbackProspect = db.prepare('SELECT * FROM prospects WHERE email = ?').get(from);
                     if (!fallbackProspect) {
-                      console.log(`[Replies] No matching email found for reply from: ${from}`);
+                      logger.info(`[Replies] No matching email found for reply from: ${from}`);
                       continue;
                     }
                     // Try to find the sent email via prospect_id
@@ -552,7 +553,7 @@ async function checkReplies(db) {
 
                   // Classify the reply
                   const result = await classifyReply(body, subject);
-                  console.log(`[Replies] ${from}: ${result.classification} -- ${result.summary}`);
+                  logger.info(`[Replies] ${from}: ${result.classification} -- ${result.summary}`);
 
                   // Update the emails_sent record with reply data
                   db.prepare(`
@@ -577,7 +578,7 @@ async function checkReplies(db) {
                     }
                   }
                 } catch (parseErr) {
-                  console.error('[Replies] Error processing reply:', parseErr.message);
+                  logger.error('[Replies] Error processing reply:', parseErr.message);
                 }
               }
 
@@ -588,11 +589,11 @@ async function checkReplies(db) {
         });
       });
 
-      imap.once('error', (err) => { console.error('[IMAP] Error:', err.message); reject(err); });
+      imap.once('error', (err) => { logger.error('[IMAP] Error:', err.message); reject(err); });
       imap.connect();
     });
   } catch (err) {
-    console.error('[Replies] checkReplies error:', err.message);
+    logger.error('[Replies] checkReplies error:', err.message);
   }
 }
 
@@ -608,7 +609,7 @@ async function processAppointmentReminders(db) {
       return sendSMS(phone, message, from, db);
     });
   } catch (err) {
-    console.error('[Scheduler] processAppointmentReminders error:', err.message);
+    logger.error('[Scheduler] processAppointmentReminders error:', err.message);
   }
 }
 
@@ -645,13 +646,13 @@ async function dailyLeadScoring(db) {
           ).catch(() => {});
         }
 
-        console.log(`[Scheduler] Scored ${scores.length} leads for client ${client.id}, ${hotLeads.length} hot`);
+        logger.info(`[Scheduler] Scored ${scores.length} leads for client ${client.id}, ${hotLeads.length} hot`);
       } catch (err) {
-        console.error(`[Scheduler] Lead scoring failed for client ${client.id}:`, err.message);
+        logger.error(`[Scheduler] Lead scoring failed for client ${client.id}:`, err.message);
       }
     }
   } catch (err) {
-    console.error('[Scheduler] dailyLeadScoring error:', err);
+    logger.error('[Scheduler] dailyLeadScoring error:', err);
   }
 }
 
@@ -667,3 +668,14 @@ module.exports = {
   checkReplies,
   dailyLeadScoring,
 };
+
+function stopScheduler() {
+  for (const handle of timerHandles) {
+    clearTimeout(handle);
+    clearInterval(handle);
+  }
+  timerHandles.length = 0;
+  logger.info('[Scheduler] All timers cleared');
+}
+
+module.exports.stopScheduler = stopScheduler;

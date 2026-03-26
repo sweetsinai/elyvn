@@ -6,19 +6,20 @@
 const express = require('express');
 const router = express.Router();
 const { randomUUID, createHmac } = require('crypto');
+const { logger } = require('../utils/logger');
 
 // Cal.com webhook signature verification
 router.use((req, res, next) => {
   const secret = process.env.CALCOM_WEBHOOK_SECRET;
   if (!secret) {
-    console.warn('[calcom-webhook] Webhook signature validation disabled - set CALCOM_WEBHOOK_SECRET');
+    logger.warn('[calcom-webhook] Webhook signature validation disabled - set CALCOM_WEBHOOK_SECRET');
     return next();
   }
   const signature = req.headers['x-cal-signature-256'];
   const payload = JSON.stringify(req.body);
   const expected = createHmac('sha256', secret).update(payload).digest('hex');
   if (signature !== expected) {
-    console.warn('[calcom-webhook] Invalid webhook signature');
+    logger.warn('[calcom-webhook] Invalid webhook signature');
     return res.status(401).json({ error: 'Invalid signature' });
   }
   next();
@@ -34,11 +35,11 @@ router.post('/', async (req, res) => {
     const { triggerEvent, payload } = req.body;
 
     if (!triggerEvent || !payload) {
-      console.log('[calcom-webhook] Missing triggerEvent or payload');
+      logger.info('[calcom-webhook] Missing triggerEvent or payload');
       return;
     }
 
-    console.log(`[calcom-webhook] Event: ${triggerEvent}`);
+    logger.info(`[calcom-webhook] Event: ${triggerEvent}`);
 
     if (triggerEvent === 'BOOKING_CREATED') {
       await handleBookingCreated(db, payload);
@@ -48,7 +49,7 @@ router.post('/', async (req, res) => {
       await handleBookingRescheduled(db, payload);
     }
   } catch (err) {
-    console.error('[calcom-webhook] Error processing event:', err);
+    logger.error('[calcom-webhook] Error processing event:', err);
   }
 });
 
@@ -69,7 +70,7 @@ async function handleBookingCreated(db, payload) {
   const name = attendee.name || '';
   const phone = attendee.phone || metadata?.phone || null;
 
-  console.log(`[calcom-webhook] Booking created: ${name} (${email}) at ${startTime}`);
+  logger.info(`[calcom-webhook] Booking created: ${name} (${email}) at ${startTime}`);
 
   const now = new Date().toISOString();
   const calcomBookingId = String(bookingId || uid || '');
@@ -78,7 +79,7 @@ async function handleBookingCreated(db, payload) {
   if (calcomBookingId) {
     const existing = db.prepare('SELECT id FROM appointments WHERE calcom_booking_id = ?').get(calcomBookingId);
     if (existing) {
-      console.log(`[calcom-webhook] Booking ${calcomBookingId} already processed (idempotent skip)`);
+      logger.info(`[calcom-webhook] Booking ${calcomBookingId} already processed (idempotent skip)`);
       return;
     }
   }
@@ -95,7 +96,7 @@ async function handleBookingCreated(db, payload) {
   }
 
   if (!client) {
-    console.error('[calcom-webhook] No matching client found for booking');
+    logger.error('[calcom-webhook] No matching client found for booking');
     return;
   }
 
@@ -108,7 +109,7 @@ async function handleBookingCreated(db, payload) {
     `).run(appointmentId, client.id, phone, name, title || 'Demo', startTime, calcomBookingId, now, now);
   } catch (err) {
     if (!err.message.includes('UNIQUE')) {
-      console.error('[calcom-webhook] Insert appointment error:', err.message);
+      logger.error('[calcom-webhook] Insert appointment error:', err.message);
     }
   }
 
@@ -127,14 +128,14 @@ async function handleBookingCreated(db, payload) {
         name = COALESCE(?, name), email = COALESCE(?, email), phone = COALESCE(?, phone),
         last_contact = ?, updated_at = ? WHERE id = ?
       `).run(calcomBookingId, name || null, email || null, phone || null, now, now, existingLead.id);
-      console.log(`[calcom-webhook] Lead ${existingLead.id} updated to booked`);
+      logger.info(`[calcom-webhook] Lead ${existingLead.id} updated to booked`);
     } else if (phone) {
       const leadId = randomUUID();
       db.prepare(`
         INSERT INTO leads (id, client_id, name, phone, email, source, score, stage, calcom_booking_id, last_contact, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 'calcom', 9, 'booked', ?, ?, ?, ?)
       `).run(leadId, client.id, name, phone, email, calcomBookingId, now, now, now);
-      console.log(`[calcom-webhook] New lead ${leadId} created from Cal.com booking`);
+      logger.info(`[calcom-webhook] New lead ${leadId} created from Cal.com booking`);
     }
   }
 
@@ -164,7 +165,7 @@ async function handleBookingCreated(db, payload) {
 
   if (prospect) {
     db.prepare("UPDATE prospects SET status = 'booked', updated_at = ? WHERE id = ?").run(now, prospect.id);
-    console.log(`[calcom-webhook] Prospect ${prospect.id} (${prospect.business_name}) booked!`);
+    logger.info(`[calcom-webhook] Prospect ${prospect.id} (${prospect.business_name}) booked!`);
 
     // Link the lead to the prospect if a lead was just created/updated
     try {
@@ -176,7 +177,7 @@ async function handleBookingCreated(db, payload) {
           .run(prospect.id, now, lead.id);
       }
     } catch (err) {
-      console.error('[calcom-webhook] Failed to link prospect to lead:', err.message);
+      logger.error('[calcom-webhook] Failed to link prospect to lead:', err.message);
     }
 
     // Cancel any pending follow-up jobs for this prospect
@@ -185,7 +186,7 @@ async function handleBookingCreated(db, payload) {
       cancelJobs(db, { payloadContains: `"prospect_id":"${prospect.id}"` });
       cancelJobs(db, { type: 'noreply_followup', payloadContains: prospect.id });
     } catch (err) {
-      console.error('[calcom-webhook] Failed to cancel jobs:', err.message);
+      logger.error('[calcom-webhook] Failed to cancel jobs:', err.message);
     }
   }
 
@@ -197,9 +198,9 @@ async function handleBookingCreated(db, payload) {
       const timeStr = startDate.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
       const smsText = `Confirmed! Your appointment with ${client.business_name} is on ${timeStr}. We'll send you a reminder beforehand. Reply CANCEL to reschedule.`;
       await sendSMS(db, phone, smsText, client.id);
-      console.log(`[calcom-webhook] Confirmation SMS sent to ${phone}`);
+      logger.info(`[calcom-webhook] Confirmation SMS sent to ${phone}`);
     } catch (err) {
-      console.error('[calcom-webhook] Confirmation SMS failed:', err.message);
+      logger.error('[calcom-webhook] Confirmation SMS failed:', err.message);
     }
   }
 
@@ -214,9 +215,9 @@ async function handleBookingCreated(db, payload) {
       datetime: startTime,
       service: title || 'Demo',
     });
-    console.log(`[calcom-webhook] Reminders scheduled for appointment ${appointmentId}`);
+    logger.info(`[calcom-webhook] Reminders scheduled for appointment ${appointmentId}`);
   } catch (err) {
-    console.error('[calcom-webhook] Failed to schedule reminders:', err.message);
+    logger.error('[calcom-webhook] Failed to schedule reminders:', err.message);
   }
 
   // Notify owner via Telegram
@@ -227,7 +228,7 @@ async function handleBookingCreated(db, payload) {
     const msg = `📅 *New Booking!*\n\n*${name || 'Someone'}* just booked!\n📧 ${email || 'No email'}\n📱 ${phone || 'No phone'}\n📋 ${title || 'Demo'}\n🕐 ${timeStr}\n\nConfirmation SMS sent automatically.`;
     await sendTelegramNotification(msg, client.telegram_chat_id);
   } catch (err) {
-    console.error('[calcom-webhook] Telegram notification failed:', err.message);
+    logger.error('[calcom-webhook] Telegram notification failed:', err.message);
   }
 }
 
@@ -242,7 +243,7 @@ async function handleBookingCancelled(db, payload) {
   // Update lead stage back to contacted
   db.prepare("UPDATE leads SET stage = 'contacted', updated_at = ? WHERE calcom_booking_id = ?").run(now, calcomBookingId);
 
-  console.log(`[calcom-webhook] Booking ${calcomBookingId} cancelled`);
+  logger.info(`[calcom-webhook] Booking ${calcomBookingId} cancelled`);
 }
 
 async function handleBookingRescheduled(db, payload) {
@@ -252,7 +253,7 @@ async function handleBookingRescheduled(db, payload) {
 
   db.prepare("UPDATE appointments SET datetime = ?, updated_at = ? WHERE calcom_booking_id = ?").run(startTime, now, calcomBookingId);
 
-  console.log(`[calcom-webhook] Booking ${calcomBookingId} rescheduled to ${startTime}`);
+  logger.info(`[calcom-webhook] Booking ${calcomBookingId} rescheduled to ${startTime}`);
 }
 
 module.exports = router;

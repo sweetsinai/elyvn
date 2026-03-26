@@ -17,6 +17,16 @@ jest.mock('../utils/telegram', () => ({
 jest.mock('../utils/appointmentReminders');
 jest.mock('../utils/sms');
 jest.mock('../utils/dataRetention');
+jest.mock('../utils/logger', () => ({
+  setupLogger: jest.fn(),
+  closeLogger: jest.fn(),
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
 
 describe('scheduler branch coverage', () => {
   let db;
@@ -204,7 +214,7 @@ describe('scheduler branch coverage', () => {
     });
 
     test('skips reminders for invalid datetime', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const { logger } = require('../utils/logger');
       const { createAppointmentReminders } = require('../utils/scheduler');
 
       const appointment = {
@@ -215,25 +225,21 @@ describe('scheduler branch coverage', () => {
 
       createAppointmentReminders(db, appointment, {});
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('Invalid appointment datetime'),
         'invalid-date'
       );
-
-      consoleSpy.mockRestore();
     });
 
     test('skips reminders for missing appointment data', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const { logger } = require('../utils/logger');
       const { createAppointmentReminders } = require('../utils/scheduler');
 
       createAppointmentReminders(db, null, {});
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('missing appointment data')
       );
-
-      consoleSpy.mockRestore();
     });
 
     test('deduplicates reminders', () => {
@@ -300,7 +306,7 @@ describe('scheduler branch coverage', () => {
     });
 
     test('logs appointment reminder creation', () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const { logger } = require('../utils/logger');
       const { createAppointmentReminders } = require('../utils/scheduler');
 
       db.prepare(`
@@ -318,17 +324,15 @@ describe('scheduler branch coverage', () => {
 
       createAppointmentReminders(db, appointment, {});
 
-      const logCalls = consoleSpy.mock.calls;
+      const logCalls = logger.info.mock.calls;
       const createdCall = logCalls.find(call =>
         String(call[0]).includes('[Scheduler]') && String(call[0]).includes('reminders created')
       );
       expect(createdCall).toBeDefined();
-
-      consoleSpy.mockRestore();
     });
 
     test('handles error in createAppointmentReminders', () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger } = require('../utils/logger');
       const { createAppointmentReminders } = require('../utils/scheduler');
 
       const appointment = {
@@ -340,9 +344,7 @@ describe('scheduler branch coverage', () => {
       createAppointmentReminders(db, appointment, {});
 
       // Should handle error gracefully
-      expect(consoleSpy.mock.calls.length >= 0).toBe(true);
-
-      consoleSpy.mockRestore();
+      expect(logger.error.mock.calls.length >= 0).toBe(true);
     });
   });
 
@@ -383,55 +385,47 @@ describe('scheduler branch coverage', () => {
 
     test('calculates correct delay for daily summary', () => {
       const { initScheduler } = require('../utils/scheduler');
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const { logger } = require('../utils/logger');
 
       initScheduler(db);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('Daily summary scheduled')
       );
-
-      consoleSpy.mockRestore();
     });
 
     test('handles Monday calculation when today is Monday before 8 AM', () => {
       const { initScheduler } = require('../utils/scheduler');
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const { logger } = require('../utils/logger');
 
       initScheduler(db);
 
       // Should have scheduled reports
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('Weekly report scheduled')
       );
-
-      consoleSpy.mockRestore();
     });
 
     test('sets up appointment reminder processor', () => {
       const { initScheduler } = require('../utils/scheduler');
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const { logger } = require('../utils/logger');
 
       initScheduler(db);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('Appointment reminder processor')
       );
-
-      consoleSpy.mockRestore();
     });
 
     test('sets up follow-up processor every 5 minutes', () => {
       const { initScheduler } = require('../utils/scheduler');
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const { logger } = require('../utils/logger');
 
       initScheduler(db);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('Follow-up processor')
       );
-
-      consoleSpy.mockRestore();
     });
   });
 

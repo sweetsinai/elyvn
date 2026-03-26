@@ -16,6 +16,14 @@ function initGracefulShutdown(server, db) {
     isShuttingDown = true;
     console.log(`\n[shutdown] ${signal} received — starting graceful shutdown...`);
 
+    // 0. Clear all timers and cleanup resources
+    try {
+      const { cleanupWebSocket } = require('./websocket');
+      cleanupWebSocket();
+    } catch (err) {
+      console.error('[shutdown] WebSocket cleanup error:', err.message);
+    }
+
     // 1. Stop accepting new connections
     if (server) {
       server.close(() => {

@@ -19,7 +19,7 @@ const MIN_GAP_MS = SMS_MIN_GAP_MS; // 5 minutes
 const MAX_RATE_LIMIT_ENTRIES = SMS_MAX_RATE_LIMIT_ENTRIES;
 
 // Periodic cleanup of stale rate limit entries
-setInterval(() => {
+const smsRateLimitCleanupInterval = setInterval(() => {
   const cutoff = Date.now() - MIN_GAP_MS;
   for (const [phone, time] of lastSendTime) {
     if (time < cutoff) lastSendTime.delete(phone);
@@ -160,4 +160,8 @@ async function sendSMSToOwner(db, clientId, body) {
   }
 }
 
-module.exports = { sendSMS, sendSMSToOwner };
+function cleanupSMSTimers() {
+  if (smsRateLimitCleanupInterval) clearInterval(smsRateLimitCleanupInterval);
+}
+
+module.exports = { sendSMS, sendSMSToOwner, cleanupSMSTimers };

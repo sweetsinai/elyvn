@@ -342,8 +342,16 @@ router.post('/blast', async (req, res) => {
     const sanitizeHeader = s => String(s || '').replace(/[\r\n]/g, '');
     const { wrapWithCTA } = require('../utils/emailTemplates');
 
+    // Batch-load all emails to avoid N+1 queries
+    const emailIds = emails.slice(0, remaining).map(e => e.id);
+    const placeholders = emailIds.map(() => '?').join(',');
+    const allEmails = emailIds.length > 0
+      ? db.prepare(`SELECT * FROM emails_sent WHERE id IN (${placeholders})`).all(...emailIds)
+      : [];
+    const emailsMap = new Map(allEmails.map(e => [e.id, e]));
+
     for (let i = 0; i < emails.length && i < remaining; i++) {
-      const email = db.prepare('SELECT * FROM emails_sent WHERE id = ?').get(emails[i].id);
+      const email = emailsMap.get(emails[i].id);
       if (!email) continue;
 
       // Verify email before sending to prevent bounces

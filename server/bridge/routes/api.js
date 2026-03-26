@@ -9,6 +9,7 @@ const fsPromises = require('fs').promises;
 const path = require('path');
 const { isValidUUID, escapeLikePattern } = require('../utils/validate');
 const { withTimeout } = require('../utils/resilience');
+const { logger } = require('../utils/logger');
 
 const anthropic = new Anthropic();
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
@@ -106,7 +107,7 @@ router.get('/stats/:clientId', (req, res) => {
       leads_by_stage: leadsByStage
     });
   } catch (err) {
-    console.error('[api] stats error:', err);
+    logger.error('[api] stats error:', err);
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
@@ -161,7 +162,7 @@ router.get('/calls/:clientId', (req, res) => {
     const totalPages = Math.ceil(total / limitNum);
     res.json({ calls, total, page: pageNum, limit: limitNum, total_pages: totalPages });
   } catch (err) {
-    console.error('[api] calls error:', err);
+    logger.error('[api] calls error:', err);
     res.status(500).json({ error: 'Failed to fetch calls' });
   }
 });
@@ -182,7 +183,7 @@ router.get('/calls/:clientId/:callId/transcript', async (req, res) => {
     const callData = await retellResp.json();
     res.json({ transcript: callData.transcript || [] });
   } catch (err) {
-    console.error('[api] transcript error:', err);
+    logger.error('[api] transcript error:', err);
     res.status(500).json({ error: 'Failed to fetch transcript' });
   }
 });
@@ -229,7 +230,7 @@ router.get('/messages/:clientId', (req, res) => {
     const totalPages = Math.ceil(total / limitNum);
     res.json({ messages, total, page: pageNum, limit: limitNum, total_pages: totalPages });
   } catch (err) {
-    console.error('[api] messages error:', err);
+    logger.error('[api] messages error:', err);
     res.status(500).json({ error: 'Failed to fetch messages' });
   }
 });
@@ -327,7 +328,7 @@ router.get('/leads/:clientId', (req, res) => {
     const totalPages = Math.ceil(total / limitNum);
     res.json({ leads: leadsWithInteractions, total, page: pageNum, limit: limitNum, total_pages: totalPages });
   } catch (err) {
-    console.error('[api] leads error:', err);
+    logger.error('[api] leads error:', err);
     res.status(500).json({ error: 'Failed to fetch leads' });
   }
 });
@@ -360,7 +361,7 @@ router.put('/leads/:clientId/:leadId', (req, res) => {
 
     res.json({ success: true, stage });
   } catch (err) {
-    console.error('[api] update lead error:', err);
+    logger.error('[api] update lead error:', err);
     res.status(500).json({ error: 'Failed to update lead' });
   }
 });
@@ -386,7 +387,7 @@ router.get('/bookings/:clientId', async (req, res) => {
     const bookings = await getBookings(client.calcom_event_type_id, startDate, endDate);
     res.json({ bookings });
   } catch (err) {
-    console.error('[api] bookings error:', err);
+    logger.error('[api] bookings error:', err);
     res.status(500).json({ error: 'Failed to fetch bookings' });
   }
 });
@@ -408,7 +409,7 @@ router.get('/reports/:clientId', (req, res) => {
 
     res.json({ reports });
   } catch (err) {
-    console.error('[api] reports error:', err);
+    logger.error('[api] reports error:', err);
     res.status(500).json({ error: 'Failed to fetch reports' });
   }
 });
@@ -420,7 +421,7 @@ router.get('/clients', (req, res) => {
     const clients = db.prepare('SELECT * FROM clients ORDER BY created_at DESC LIMIT 100').all();
     res.json({ clients });
   } catch (err) {
-    console.error('[api] clients error:', err);
+    logger.error('[api] clients error:', err);
     res.status(500).json({ error: 'Failed to fetch clients' });
   }
 });
@@ -464,14 +465,14 @@ router.post('/clients', async (req, res) => {
         await fsPromises.mkdir(kbDir, { recursive: true });
         await fsPromises.writeFile(path.join(kbDir, `${id}.json`), JSON.stringify(knowledge_base, null, 2));
       } catch (err) {
-        console.error('[api] Failed to save KB:', err.message);
+        logger.error('[api] Failed to save KB:', err.message);
       }
     }
 
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
     res.status(201).json({ client });
   } catch (err) {
-    console.error('[api] create client error:', err);
+    logger.error('[api] create client error:', err);
     res.status(500).json({ error: 'Failed to create client' });
   }
 });
@@ -519,14 +520,14 @@ router.put('/clients/:clientId', async (req, res) => {
         await fsPromises.mkdir(kbDir, { recursive: true });
         await fsPromises.writeFile(path.join(kbDir, `${clientId}.json`), JSON.stringify(updates.knowledge_base, null, 2));
       } catch (err) {
-        console.error('[api] Failed to save KB:', err.message);
+        logger.error('[api] Failed to save KB:', err.message);
       }
     }
 
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
     res.json({ client });
   } catch (err) {
-    console.error('[api] update client error:', err);
+    logger.error('[api] update client error:', err);
     res.status(500).json({ error: 'Failed to update client' });
   }
 });
@@ -555,7 +556,7 @@ router.post('/chat', async (req, res) => {
         const kbData = fs.readFileSync(kbPath, 'utf8');
         systemPrompt += `\n\nBusiness Knowledge Base:\n${kbData}`;
       } catch (err) {
-        console.error('[api] Failed to load knowledge base:', err.message);
+        logger.error('[api] Failed to load knowledge base:', err.message);
       }
 
       // Add recent stats context
@@ -564,7 +565,7 @@ router.post('/chat', async (req, res) => {
         const leadCount = db.prepare('SELECT COUNT(*) as count FROM leads WHERE client_id = ?').get(clientId).count;
         systemPrompt += `\n\nCurrent stats: ${callCount} total calls, ${leadCount} total leads.`;
       } catch (err) {
-        console.error('[api] Failed to load stats:', err.message);
+        logger.error('[api] Failed to load stats:', err.message);
       }
     }
 
@@ -594,12 +595,12 @@ router.post('/chat', async (req, res) => {
     });
 
     stream.on('error', (err) => {
-      console.error('[api] chat stream error:', err);
+      logger.error('[api] chat stream error:', err);
       res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
       res.end();
     });
   } catch (err) {
-    console.error('[api] chat error:', err);
+    logger.error('[api] chat error:', err);
     res.status(500).json({ error: 'Failed to process chat' });
   }
 });
@@ -619,7 +620,7 @@ router.get('/intelligence/:clientId', (req, res) => {
     const report = getConversationIntelligence(db, clientId, days);
     res.json(report);
   } catch (err) {
-    console.error('[api] intelligence error:', err);
+    logger.error('[api] intelligence error:', err);
     res.status(500).json({ error: 'Failed to generate intelligence report' });
   }
 });
@@ -634,7 +635,7 @@ router.get('/intelligence/:clientId/peak-hours', (req, res) => {
     const peakHours = getPeakHours(db, clientId);
     res.json({ peak_hours: peakHours });
   } catch (err) {
-    console.error('[api] peak-hours error:', err);
+    logger.error('[api] peak-hours error:', err);
     res.status(500).json({ error: 'Failed to get peak hours' });
   }
 });
@@ -649,7 +650,7 @@ router.get('/intelligence/:clientId/response-impact', (req, res) => {
     const analysis = analyzeResponseTimeImpact(db, clientId);
     res.json(analysis);
   } catch (err) {
-    console.error('[api] response-impact error:', err);
+    logger.error('[api] response-impact error:', err);
     res.status(500).json({ error: 'Failed to analyze response time impact' });
   }
 });
@@ -664,7 +665,7 @@ router.get('/scoring/:clientId', (req, res) => {
     const scores = batchScoreLeads(db, clientId);
     res.json({ leads: scores, total: scores.length });
   } catch (err) {
-    console.error('[api] scoring error:', err);
+    logger.error('[api] scoring error:', err);
     res.status(500).json({ error: 'Failed to score leads' });
   }
 });
@@ -679,7 +680,7 @@ router.get('/scoring/:clientId/:leadId', (req, res) => {
     const score = predictLeadScore(db, leadId, clientId);
     res.json(score);
   } catch (err) {
-    console.error('[api] lead score error:', err);
+    logger.error('[api] lead score error:', err);
     res.status(500).json({ error: 'Failed to score lead' });
   }
 });
@@ -694,7 +695,7 @@ router.get('/scoring/:clientId/analytics/conversion', (req, res) => {
     const analytics = getConversionAnalytics(db, clientId);
     res.json(analytics);
   } catch (err) {
-    console.error('[api] conversion analytics error:', err);
+    logger.error('[api] conversion analytics error:', err);
     res.status(500).json({ error: 'Failed to get conversion analytics' });
   }
 });
@@ -710,7 +711,7 @@ router.get('/revenue/:clientId', (req, res) => {
     const metrics = getROIMetrics(db, clientId, days);
     res.json(metrics);
   } catch (err) {
-    console.error('[api] revenue error:', err);
+    logger.error('[api] revenue error:', err);
     res.status(500).json({ error: 'Failed to get revenue metrics' });
   }
 });
@@ -725,7 +726,7 @@ router.get('/revenue/:clientId/:leadId', (req, res) => {
     const attribution = getAttribution(db, leadId, clientId);
     res.json(attribution);
   } catch (err) {
-    console.error('[api] attribution error:', err);
+    logger.error('[api] attribution error:', err);
     res.status(500).json({ error: 'Failed to get lead attribution' });
   }
 });
@@ -740,7 +741,7 @@ router.get('/revenue/:clientId/channels/performance', (req, res) => {
     const channels = getChannelPerformance(db, clientId);
     res.json(channels);
   } catch (err) {
-    console.error('[api] channel performance error:', err);
+    logger.error('[api] channel performance error:', err);
     res.status(500).json({ error: 'Failed to get channel performance' });
   }
 });
@@ -755,7 +756,7 @@ router.get('/schedule/:clientId', (req, res) => {
     const schedule = generateDailySchedule(db, clientId);
     res.json({ schedule, total: schedule.length });
   } catch (err) {
-    console.error('[api] schedule error:', err);
+    logger.error('[api] schedule error:', err);
     res.status(500).json({ error: 'Failed to generate schedule' });
   }
 });
@@ -770,7 +771,7 @@ router.get('/schedule/:clientId/time-slots', (req, res) => {
     const analysis = analyzeTimeSlotSuccess(db, clientId);
     res.json(analysis);
   } catch (err) {
-    console.error('[api] time-slots error:', err);
+    logger.error('[api] time-slots error:', err);
     res.status(500).json({ error: 'Failed to analyze time slots' });
   }
 });

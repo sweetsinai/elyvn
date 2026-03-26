@@ -12,13 +12,13 @@ initMonitoring();
 process.on('unhandledRejection', (reason, promise) => {
   const err = reason instanceof Error ? reason : new Error(String(reason));
   captureException(err, { type: 'unhandledRejection' });
-  console.error('[CRASH] UNHANDLED REJECTION:', reason);
+  logger.error('[CRASH] UNHANDLED REJECTION:', reason);
 });
 
 // Catch uncaught exceptions — don't exit
 process.on('uncaughtException', (error) => {
   captureException(error, { type: 'uncaughtException' });
-  console.error('[CRASH] UNCAUGHT EXCEPTION:', error);
+  logger.error('[CRASH] UNCAUGHT EXCEPTION:', error);
 });
 
 const express = require('express');
@@ -34,16 +34,16 @@ const REQUIRED_ENV = ['ANTHROPIC_API_KEY'];
 const RECOMMENDED_ENV = ['RETELL_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'ELYVN_API_KEY'];
 const missingRequired = REQUIRED_ENV.filter(v => !process.env[v]);
 if (missingRequired.length > 0) {
-  console.error(`[FATAL] Missing required env vars: ${missingRequired.join(', ')}`);
-  console.error('[FATAL] Server cannot start without these. Check your .env file.');
+  logger.error(`[FATAL] Missing required env vars: ${missingRequired.join(', ')}`);
+  logger.error('[FATAL] Server cannot start without these. Check your .env file.');
   process.exit(1);
 }
 const missingRecommended = RECOMMENDED_ENV.filter(v => !process.env[v]);
 if (missingRecommended.length > 0) {
-  console.warn(`[WARN] Missing recommended env vars: ${missingRecommended.join(', ')} — some features will be disabled`);
+  logger.warn(`[WARN] Missing recommended env vars: ${missingRecommended.join(', ')} — some features will be disabled`);
 }
 if (!process.env.ELYVN_API_KEY) {
-  console.warn('[WARN] ELYVN_API_KEY not set — API endpoints are UNPROTECTED. Set this before going live!');
+  logger.warn('[WARN] ELYVN_API_KEY not set — API endpoints are UNPROTECTED. Set this before going live!');
 }
 
 const app = express();
@@ -64,11 +64,11 @@ const corsOrigins = process.env.CORS_ORIGINS
     : '*');
 
 if (!process.env.CORS_ORIGINS && process.env.NODE_ENV === 'production') {
-  console.warn('[WARN] CORS_ORIGINS not set — using Railway production domain. Override with CORS_ORIGINS for custom origins.');
+  logger.warn('[WARN] CORS_ORIGINS not set — using Railway production domain. Override with CORS_ORIGINS for custom origins.');
 }
 
 if (corsOrigins === '*') {
-  console.warn('[WARN] CORS_ORIGINS not set in development — allowing all origins. Set CORS_ORIGINS for production!');
+  logger.warn('[WARN] CORS_ORIGINS not set in development — allowing all origins. Set CORS_ORIGINS for production!');
 }
 
 app.use(cors({
@@ -91,7 +91,7 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     const ms = Date.now() - start;
     if (res.statusCode >= 400 || ms > 5000) {
-      console.log(`[REQ] ${req.method} ${req.path} → ${res.statusCode} (${ms}ms)`);
+      logger.info(`[REQ] ${req.method} ${req.path} → ${res.statusCode} (${ms}ms)`);
     }
   });
   next();
@@ -103,7 +103,7 @@ let db;
 try {
   db = createDatabase();
 } catch (err) {
-  console.error('[server] Database connection failed:', err.message);
+  logger.error('[server] Database connection failed:', err.message);
   process.exit(1);
 }
 
@@ -116,10 +116,10 @@ app.locals.db = db;
     const { recoverStalledJobs } = require('./utils/jobQueue');
     const result = await recoverStalledJobs(db);
     if (result.recovered > 0) {
-      console.log(`[server] Job recovery complete: ${result.recovered} jobs recovered`);
+      logger.info(`[server] Job recovery complete: ${result.recovered} jobs recovered`);
     }
   } catch (err) {
-    console.error('[server] Job recovery failed:', err.message);
+    logger.error('[server] Job recovery failed:', err.message);
     // Non-fatal error — continue startup
   }
 })();
@@ -145,7 +145,7 @@ function rateLimiter(req, res, next) {
 app.use(rateLimiter);
 
 // Periodic cleanup
-setInterval(() => limiter.cleanup(), RATE_LIMIT_CLEANUP_MS);
+const rateLimiterInterval = setInterval(() => limiter.cleanup(), RATE_LIMIT_CLEANUP_MS);
 
 // --- API auth middleware (skip webhooks + health) ---
 const API_KEY = process.env.ELYVN_API_KEY;
@@ -176,7 +176,7 @@ function apiAuth(req, res, next) {
         try {
           req.keyPermissions = JSON.parse(keyRecord.permissions || '["read","write"]');
         } catch (parseErr) {
-          console.error('[auth] Failed to parse permissions for key:', keyRecord.id, parseErr.message);
+          logger.error('[auth] Failed to parse permissions for key:', keyRecord.id, parseErr.message);
           req.keyPermissions = ['read', 'write'];
         }
         // Update last_used_at
@@ -185,7 +185,7 @@ function apiAuth(req, res, next) {
         return next();
       }
     } catch (err) {
-      console.error('[auth] Client key lookup error:', err.message);
+      logger.error('[auth] Client key lookup error:', err.message);
     }
   }
 
@@ -250,7 +250,7 @@ app.get('/metrics', apiAuth, (req, res) => {
     const metrics = getMetrics();
     res.json(metrics);
   } catch (err) {
-    console.error('[metrics] Error:', err.message);
+    logger.error('[metrics] Error:', err.message);
     res.status(500).json({ error: 'Failed to get metrics' });
   }
 });
@@ -274,7 +274,7 @@ app.get('/health', async (req, res) => {
       pending_jobs: db.prepare('SELECT COUNT(*) as c FROM job_queue WHERE status = ?').get('pending').c,
     };
   } catch (err) {
-    console.error('[server] Failed to load database counts:', err.message);
+    logger.error('[server] Failed to load database counts:', err.message);
   }
 
   const mem = process.memoryUsage();
@@ -315,7 +315,7 @@ app.get('*', (req, res) => {
   try {
     res.sendFile(indexPath);
   } catch (err) {
-    console.error('[server] SPA index file not found:', err.message);
+    logger.error('[server] SPA index file not found:', err.message);
     res.status(404).json({ error: 'Not found' });
   }
 });
@@ -326,12 +326,12 @@ app.use((err, req, res, _next) => {
   if (err.type === 'entity.parse.failed' || (err instanceof SyntaxError && err.status === 400)) {
     return res.status(400).json({ error: 'Invalid JSON' });
   }
-  console.error('[server] Unhandled error:', err);
+  logger.error('[server] Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
 const server = app.listen(PORT, () => {
-  console.log(`[server] ELYVN bridge running on port ${PORT}`);
+  logger.info(`[server] ELYVN bridge running on port ${PORT}`);
 
   // Graceful shutdown
   const { initGracefulShutdown } = require('./utils/gracefulShutdown');
@@ -352,14 +352,16 @@ const server = app.listen(PORT, () => {
   }
 
   // Run data retention daily
+  let dataRetentionInterval;
   if (db) {
     const { runRetention } = require('./utils/dataRetention');
-    setInterval(() => {
+    dataRetentionInterval = setInterval(() => {
       runRetention(db);
     }, DATA_RETENTION_DAILY_INTERVAL_MS); // Every 24 hours
   }
 
   // Start job queue processor
+  let jobProcessorInterval;
   if (db) {
     const { processJobs } = require('./utils/jobQueue');
     const { sendSMS } = require('./utils/sms');
@@ -368,17 +370,17 @@ const server = app.listen(PORT, () => {
 
     const jobHandlers = createJobHandlers(db, sendSMS, captureException);
 
-    setInterval(() => {
+    jobProcessorInterval = setInterval(() => {
       try {
         processJobs(db, jobHandlers).catch(err => {
-          console.error('[jobQueue] Processing error:', err.message);
+          logger.error('[jobQueue] Processing error:', err.message);
           // Log to monitoring if available
           if (captureException) {
             captureException(err, { context: 'jobQueue.processJobs' });
           }
         });
       } catch (err) {
-        console.error('[jobQueue] Unexpected error in setInterval:', err.message);
+        logger.error('[jobQueue] Unexpected error in setInterval:', err.message);
         if (captureException) {
           captureException(err, { context: 'jobQueue.setInterval' });
         }
@@ -389,31 +391,58 @@ const server = app.listen(PORT, () => {
   // Auto-classify replies every 5 minutes
   // Direct function call instead of HTTP self-request (fixes anti-pattern)
   const { autoClassifyReplies } = require('./utils/autoClassify');
-  setInterval(async () => {
+  const autoClassifyInterval = setInterval(async () => {
     try {
       const unclassified = db.prepare(`
         SELECT COUNT(*) as c FROM emails_sent
         WHERE reply_text IS NOT NULL AND reply_classification IS NULL
       `).get();
       if (unclassified.c > 0) {
-        console.log(`[auto-classify] Found ${unclassified.c} unclassified replies, triggering...`);
+        logger.info(`[auto-classify] Found ${unclassified.c} unclassified replies, triggering...`);
         try {
           const result = await autoClassifyReplies(db);
-          console.log(`[auto-classify] Completed: ${result.classified} classified`);
+          logger.info(`[auto-classify] Completed: ${result.classified} classified`);
         } catch (err) {
-          console.error('[auto-classify] Processing error:', err.message);
+          logger.error('[auto-classify] Processing error:', err.message);
           if (captureException) {
             captureException(err, { context: 'auto-classify.processing' });
           }
         }
       }
     } catch (err) {
-      console.error('[auto-classify] Periodic check error:', err.message);
+      logger.error('[auto-classify] Periodic check error:', err.message);
       if (captureException) {
         captureException(err, { context: 'auto-classify.periodic' });
       }
     }
   }, AUTO_CLASSIFY_INTERVAL_MS); // Every 5 minutes
+
+  // Register timers for graceful shutdown
+  const { onShutdown } = require('./utils/gracefulShutdown');
+  onShutdown(async () => {
+    if (rateLimiterInterval) clearInterval(rateLimiterInterval);
+    if (dataRetentionInterval) clearInterval(dataRetentionInterval);
+    if (jobProcessorInterval) clearInterval(jobProcessorInterval);
+    if (autoClassifyInterval) clearInterval(autoClassifyInterval);
+    try {
+      const { stopScheduler } = require('./utils/scheduler');
+      stopScheduler();
+    } catch (err) {
+      logger.error('[shutdown] Error stopping scheduler:', err.message);
+    }
+    try {
+      const { cleanupFormTimers } = require('./routes/forms');
+      cleanupFormTimers();
+    } catch (err) {
+      logger.error('[shutdown] Error cleaning up form timers:', err.message);
+    }
+    try {
+      const { cleanupSMSTimers } = require('./utils/sms');
+      cleanupSMSTimers();
+    } catch (err) {
+      logger.error('[shutdown] Error cleaning up SMS timers:', err.message);
+    }
+  });
 
   // Set Telegram webhook on startup
   if (process.env.TELEGRAM_BOT_TOKEN) {

@@ -5,6 +5,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { sendSMS, sendSMSToOwner } = require('../utils/sms');
 const telegram = require('../utils/telegram');
 const config = require('../utils/config');
+const { logger } = require('../utils/logger');
 
 const anthropic = new Anthropic();
 const { normalizePhone } = require('../utils/phone');
@@ -26,14 +27,14 @@ const retellBreaker = new CircuitBreaker(
 router.use((req, res, next) => {
   const secret = process.env.RETELL_WEBHOOK_SECRET;
   if (!secret) {
-    console.warn('[retell] Webhook signature validation disabled - set RETELL_WEBHOOK_SECRET');
+    logger.warn('[retell] Webhook signature validation disabled - set RETELL_WEBHOOK_SECRET');
     return next();
   }
   const signature = req.headers['x-retell-signature'];
   const payload = JSON.stringify(req.body);
   const expected = require('crypto').createHmac('sha256', secret).update(payload).digest('hex');
   if (signature !== expected) {
-    console.warn('[retell] Invalid webhook signature');
+    logger.warn('[retell] Invalid webhook signature');
     return res.status(401).json({ error: 'Invalid signature' });
   }
   next();
@@ -49,13 +50,13 @@ router.post('/', (req, res) => {
   res.status(200).json({ received: true });
 
   if (!event) {
-    console.log('[retell] No event in payload');
+    logger.info('[retell] No event in payload');
     return;
   }
 
   const db = req.app.locals.db;
   if (!db) {
-    console.error('[retell] No database connection');
+    logger.error('[retell] No database connection');
     return;
   }
 
@@ -80,10 +81,10 @@ router.post('/', (req, res) => {
           if (call && call.digit === '*') handleTransfer(db, call);
           break;
         default:
-          console.log(`[retell] Unhandled event: ${event}`);
+          logger.info(`[retell] Unhandled event: ${event}`);
       }
     } catch (err) {
-      console.error(`[retell] Error processing ${event}:`, err);
+      logger.error(`[retell] Error processing ${event}:`, err);
     }
   });
 });
@@ -91,7 +92,7 @@ router.post('/', (req, res) => {
 function handleCallStarted(db, call) {
   try {
     if (!call || !call.call_id) {
-      console.warn('[retell] call_started missing call or call_id');
+      logger.warn('[retell] call_started missing call or call_id');
       return;
     }
     const callId = call.call_id;
@@ -111,7 +112,7 @@ function handleCallStarted(db, call) {
     const clientId = client?.id || null;
 
     if (!clientId) {
-      console.warn(`[retell] call_started: no matching client for ${callId} toNumber=${toNumber}`);
+      logger.warn(`[retell] call_started: no matching client for ${callId} toNumber=${toNumber}`);
       return;
     }
 
@@ -120,20 +121,20 @@ function handleCallStarted(db, call) {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(randomUUID(), callId, clientId, callerPhone, direction, new Date().toISOString());
 
-    console.log(`[retell] call_started: ${callId} client=${clientId} from=${callerPhone ? callerPhone.replace(/\d(?=\d{4})/g, '*') : '?'}`);
+    logger.info(`[retell] call_started: ${callId} client=${clientId} from=${callerPhone ? callerPhone.replace(/\d(?=\d{4})/g, '*') : '?'}`);
   } catch (err) {
-    console.error('[retell] call_started error:', err);
+    logger.error('[retell] call_started error:', err);
   }
 }
 
 async function handleCallEnded(db, call) {
   try {
     if (!call || !call.call_id) {
-      console.warn('[retell] call_ended missing call or call_id');
+      logger.warn('[retell] call_ended missing call or call_id');
       return;
     }
     const callId = call.call_id;
-    console.log(`[retell] call_ended: ${callId}`);
+    logger.info(`[retell] call_ended: ${callId}`);
 
     // Idempotency: skip if this call_ended was already processed (webhook retry)
     // Check outcome (not summary) because call_analyzed can set summary before call_ended arrives
@@ -141,7 +142,7 @@ async function handleCallEnded(db, call) {
       "SELECT id FROM calls WHERE call_id = ? AND outcome IS NOT NULL"
     ).get(callId);
     if (alreadyProcessed) {
-      console.log(`[retell] call_ended: ${callId} already processed, skipping (idempotent)`);
+      logger.info(`[retell] call_ended: ${callId} already processed, skipping (idempotent)`);
       return;
     }
 
@@ -156,13 +157,13 @@ async function handleCallEnded(db, call) {
         if (retellResp.ok) {
           callData = await retellResp.json();
         } else {
-          console.warn(`[retell] Retell API fetch failed for ${callId} (${retellResp.status}), using webhook payload`);
+          logger.warn(`[retell] Retell API fetch failed for ${callId} (${retellResp.status}), using webhook payload`);
         }
       } catch (fetchErr) {
-        console.warn(`[retell] Retell API fetch error for ${callId}:`, fetchErr.message, '— using webhook payload');
+        logger.warn(`[retell] Retell API fetch error for ${callId}:`, fetchErr.message, '— using webhook payload');
       }
     } else {
-      console.warn('[retell] No RETELL_API_KEY — using webhook payload data only');
+      logger.warn('[retell] No RETELL_API_KEY — using webhook payload data only');
     }
 
     const transcript = callData.transcript || '';
@@ -173,7 +174,7 @@ async function handleCallEnded(db, call) {
     // 2. Get existing call record (or create one if call_started was missed)
     let callRecord = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(callId);
     if (!callRecord) {
-      console.warn(`[retell] No call record for ${callId} — inserting from call_ended payload`);
+      logger.warn(`[retell] No call record for ${callId} — inserting from call_ended payload`);
       const toNumber = callData.to_number || call.to_number;
       const fromNumber = normalizePhone(callData.from_number || call.from_number);
       const agentId = callData.agent_id || call.agent_id;
@@ -188,7 +189,7 @@ async function handleCallEnded(db, call) {
       const insertedClientId = client?.id || null;
 
       if (!insertedClientId) {
-        console.warn(`[retell] No matching client for call ${callId} — cannot insert (client_id NOT NULL)`);
+        logger.warn(`[retell] No matching client for call ${callId} — cannot insert (client_id NOT NULL)`);
         return;
       }
 
@@ -199,7 +200,7 @@ async function handleCallEnded(db, call) {
 
       callRecord = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(callId);
       if (!callRecord) {
-        console.error(`[retell] Failed to create call record for ${callId}`);
+        logger.error(`[retell] Failed to create call record for ${callId}`);
         return;
       }
     }
@@ -234,7 +235,7 @@ async function handleCallEnded(db, call) {
         });
         summary = summaryResp.content[0]?.text || analysisSummary;
       } catch (err) {
-        console.error('[retell] Summary generation failed:', err.message);
+        logger.error('[retell] Summary generation failed:', err.message);
         summary = analysisSummary || 'Summary unavailable';
       }
 
@@ -248,7 +249,7 @@ async function handleCallEnded(db, call) {
         const parsed = parseInt(scoreResp.content[0]?.text?.trim(), 10);
         if (parsed >= 1 && parsed <= 10) score = parsed;
       } catch (err) {
-        console.error('[retell] Lead scoring failed:', err.message);
+        logger.error('[retell] Lead scoring failed:', err.message);
       }
     } else {
       // No transcript, no analysis summary — use what we have
@@ -280,7 +281,7 @@ async function handleCallEnded(db, call) {
       const { recordMetric } = require('../utils/metrics');
       recordMetric('total_calls', 1, 'counter');
     } catch (err) {
-      console.error('[retell] Failed to record metric:', err.message);
+      logger.error('[retell] Failed to record metric:', err.message);
     }
 
     const sentiment = callAnalysis.user_sentiment || 'neutral';
@@ -310,7 +311,7 @@ async function handleCallEnded(db, call) {
         summary
       });
     } catch (err) {
-      console.warn('[retell] WebSocket broadcast error:', err.message);
+      logger.warn('[retell] WebSocket broadcast error:', err.message);
     }
 
     // 7. Upsert lead
@@ -369,7 +370,7 @@ async function handleCallEnded(db, call) {
           if (voicemailClient) {
             const voicemailMsg = `Hi, we noticed you called ${voicemailClient.business_name}. Sorry we missed you! Book an appointment: ${voicemailClient.calcom_booking_link || '(booking link not set)'} or we'll call you back during business hours.`;
             sendSMS(callerPhone, voicemailMsg, voicemailClient.twilio_phone, db, clientId)
-              .catch(err => console.error('[retell] Voicemail SMS failed:', err.message));
+              .catch(err => logger.error('[retell] Voicemail SMS failed:', err.message));
 
             db.prepare(`
               INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at)
@@ -390,7 +391,7 @@ async function handleCallEnded(db, call) {
             }
           }
         } catch (vmErr) {
-          console.error('[retell] Voicemail handler error:', vmErr.message);
+          logger.error('[retell] Voicemail handler error:', vmErr.message);
         }
       }
 
@@ -411,7 +412,7 @@ async function handleCallEnded(db, call) {
             // Instant text-back (with opt-out check)
             const textBackMsg = `Hi! Sorry we missed your call. How can we help you today? — ${missedClient.business_name || 'Our team'}`;
             sendSMS(callerPhone, textBackMsg, missedClient.twilio_phone, db, clientId)
-              .catch(err => console.error('[retell] Missed call text-back failed:', err.message));
+              .catch(err => logger.error('[retell] Missed call text-back failed:', err.message));
 
             // Log text-back in messages
             db.prepare(`
@@ -423,7 +424,7 @@ async function handleCallEnded(db, call) {
             if (missedClient.telegram_chat_id) {
               telegram.sendMessage(missedClient.telegram_chat_id,
                 `&#10060; <b>Missed call</b> from ${callerPhone}\n\nAuto text-back sent.`
-              ).catch(err => console.error('[retell] Telegram missed-call alert failed:', err.message));
+              ).catch(err => logger.error('[retell] Telegram missed-call alert failed:', err.message));
             }
 
             // Speed-to-lead sequence
@@ -432,14 +433,14 @@ async function handleCallEnded(db, call) {
               leadId: missedLeadId, clientId, phone: callerPhone,
               name: null, email: null, message: null, service: null,
               source: 'missed_call', client: missedClient
-            }).catch(err => console.error('[retell] Missed call speed sequence failed:', err.message));
+            }).catch(err => logger.error('[retell] Missed call speed sequence failed:', err.message));
 
             // NOTE: Brain decision for missed calls is handled by the general post-call
             // brain block below (line ~443). Removed duplicate brain call here to prevent
             // double SMS sends and duplicate follow-ups.
           }
         } catch (missedErr) {
-          console.error('[retell] Missed call handler error:', missedErr.message);
+          logger.error('[retell] Missed call handler error:', missedErr.message);
         }
       }
 
@@ -452,7 +453,7 @@ async function handleCallEnded(db, call) {
           sendSMS(
             client.owner_phone,
             `[ELYVN] ${reason} — ${client.business_name}\nCaller: ${callerPhone}\n${summary}`
-          ).catch(err => console.error('[retell] Owner SMS failed:', err.message));
+          ).catch(err => logger.error('[retell] Owner SMS failed:', err.message));
         }
       }
     }
@@ -466,19 +467,19 @@ async function handleCallEnded(db, call) {
           if (outcome === 'transferred') {
             const { text } = telegram.formatTransferAlert(processedCall, summary, clientForNotify);
             telegram.sendMessage(clientForNotify.telegram_chat_id, text)
-              .catch(err => console.error('[retell] Telegram transfer notify failed:', err.message));
+              .catch(err => logger.error('[retell] Telegram transfer notify failed:', err.message));
           } else {
             const { text, buttons } = telegram.formatCallNotification(processedCall, clientForNotify);
             telegram.sendMessage(clientForNotify.telegram_chat_id, text, { reply_markup: { inline_keyboard: buttons } })
-              .catch(err => console.error('[retell] Telegram call notify failed:', err.message));
+              .catch(err => logger.error('[retell] Telegram call notify failed:', err.message));
           }
         }
       }
     } catch (tgErr) {
-      console.error('[retell] Telegram notification failed:', tgErr.message);
+      logger.error('[retell] Telegram notification failed:', tgErr.message);
     }
 
-    console.log(`[retell] call_ended processed: ${callId} outcome=${outcome} score=${score}`);
+    logger.info(`[retell] call_ended processed: ${callId} outcome=${outcome} score=${score}`);
 
     // === BRAIN — autonomous post-call decisions ===
     if (callerPhone && clientId) {
@@ -497,18 +498,18 @@ async function handleCallEnded(db, call) {
           }
         }
       } catch (brainErr) {
-        console.error('[Brain] Post-call error:', brainErr.message);
+        logger.error('[Brain] Post-call error:', brainErr.message);
       }
     }
   } catch (err) {
-    console.error('[retell] call_ended error:', err);
+    logger.error('[retell] call_ended error:', err);
   }
 }
 
 function handleCallAnalyzed(db, call) {
   try {
     if (!call || !call.call_id) {
-      console.warn('[retell] call_analyzed missing call or call_id');
+      logger.warn('[retell] call_analyzed missing call or call_id');
       return;
     }
     const callId = call.call_id;
@@ -542,21 +543,21 @@ function handleCallAnalyzed(db, call) {
       callId
     );
 
-    console.log(`[retell] call_analyzed: ${callId} transcript=${transcriptText.length}chars summary=${callSummary.length}chars`);
+    logger.info(`[retell] call_analyzed: ${callId} transcript=${transcriptText.length}chars summary=${callSummary.length}chars`);
   } catch (err) {
-    console.error('[retell] call_analyzed error:', err);
+    logger.error('[retell] call_analyzed error:', err);
   }
 }
 
 async function handleTransfer(db, call) {
   try {
     if (!call || !call.call_id) {
-      console.warn('[retell] transfer missing call or call_id');
+      logger.warn('[retell] transfer missing call or call_id');
       return;
     }
     const callId = call.call_id;
     const callerPhone = call.from_number;
-    console.log(`[retell] transfer: ${callId}`);
+    logger.info(`[retell] transfer: ${callId}`);
 
     // Fetch transcript (with timeout)
     const retellResp = await fetch(`${RETELL_BASE}/get-call/${callId}`, {
@@ -582,7 +583,7 @@ async function handleTransfer(db, call) {
         });
         summary = summaryResp.content[0]?.text || summary;
       } catch (err) {
-        console.error('[retell] Transfer summary generation failed:', err.message);
+        logger.error('[retell] Transfer summary generation failed:', err.message);
       }
     }
 
@@ -615,10 +616,10 @@ async function handleTransfer(db, call) {
         telegram.sendMessage(tgClient.telegram_chat_id, text);
       }
     } catch (tgErr) {
-      console.error('[retell] Telegram transfer alert failed:', tgErr.message);
+      logger.error('[retell] Telegram transfer alert failed:', tgErr.message);
     }
   } catch (err) {
-    console.error('[retell] transfer error:', err);
+    logger.error('[retell] transfer error:', err);
   }
 }
 
@@ -630,7 +631,7 @@ function scheduleFollowUp(db, clientId, callerPhone, outcome) {
     ).get(callerPhone, clientId);
 
     if (!lead) {
-      console.log(`[retell] No lead found for ${callerPhone}, skipping follow-up`);
+      logger.info(`[retell] No lead found for ${callerPhone}, skipping follow-up`);
       return;
     }
 
@@ -647,13 +648,16 @@ function scheduleFollowUp(db, clientId, callerPhone, outcome) {
           { touchNumber: 2, type: 'nudge', delayMs: 48 * 60 * 60 * 1000, content: 'Still need service? We have availability this week.' }
         ];
 
+    // Batch-load all scheduled followups for this lead to avoid N+1 queries
+    const existingFollowups = db.prepare(
+      "SELECT touch_number FROM followups WHERE lead_id = ? AND status = 'scheduled'"
+    ).all(leadId);
+    const existingTouchNumbers = new Set(existingFollowups.map(f => f.touch_number));
+
     for (const touch of touches) {
       // Skip if this touch_number already scheduled for this lead
-      const existing = db.prepare(
-        "SELECT id FROM followups WHERE lead_id = ? AND touch_number = ? AND status = 'scheduled'"
-      ).get(leadId, touch.touchNumber);
-      if (existing) {
-        console.log(`[retell] Skipping duplicate followup touch ${touch.touchNumber} for lead ${leadId}`);
+      if (existingTouchNumbers.has(touch.touchNumber)) {
+        logger.info(`[retell] Skipping duplicate followup touch ${touch.touchNumber} for lead ${leadId}`);
         continue;
       }
       const scheduledAt = new Date(now.getTime() + touch.delayMs);
@@ -663,9 +667,9 @@ function scheduleFollowUp(db, clientId, callerPhone, outcome) {
       `).run(randomUUID(), leadId, clientId, touch.touchNumber, touch.type, touch.content, scheduledAt.toISOString());
     }
 
-    console.log(`[retell] Scheduled ${touches.length} follow-ups for ${callerPhone}`);
+    logger.info(`[retell] Scheduled ${touches.length} follow-ups for ${callerPhone}`);
   } catch (err) {
-    console.error('[retell] scheduleFollowUp error:', err);
+    logger.error('[retell] scheduleFollowUp error:', err);
   }
 }
 

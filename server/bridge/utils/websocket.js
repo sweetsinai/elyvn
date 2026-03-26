@@ -8,6 +8,7 @@ const WebSocket = require('ws');
 
 let wss = null;
 const clients = new Set();
+let heartbeatInterval;
 
 function initWebSocket(server) {
   try {
@@ -36,7 +37,7 @@ function initWebSocket(server) {
     });
 
     // Heartbeat every 30s
-    setInterval(() => {
+    heartbeatInterval = setInterval(() => {
       for (const client of clients) {
         if (client.readyState === WebSocket.OPEN) {
           client.ping();
@@ -49,6 +50,15 @@ function initWebSocket(server) {
     console.log('[ws] WebSocket server initialized on /ws');
   } catch (err) {
     console.warn('[ws] WebSocket init failed:', err.message);
+  }
+}
+
+function cleanupWebSocket() {
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  if (wss) {
+    wss.close(() => {
+      console.log('[ws] WebSocket server closed');
+    });
   }
 }
 
@@ -72,4 +82,4 @@ function getConnectionCount() {
   return clients.size;
 }
 
-module.exports = { initWebSocket, broadcast, getConnectionCount };
+module.exports = { initWebSocket, broadcast, getConnectionCount, cleanupWebSocket };
