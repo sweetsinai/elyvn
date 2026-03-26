@@ -11,6 +11,8 @@ import Outreach from './pages/Outreach';
 import Settings from './pages/Settings';
 import Clients from './pages/Clients';
 import ClientDetail from './pages/ClientDetail';
+import Provision from './pages/Provision';
+import Bookings from './pages/Bookings';
 
 export default function App() {
   return (
@@ -35,6 +37,8 @@ export default function App() {
                 <Route path="/outreach" element={<Outreach />} />
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/client-detail" element={<ClientDetail />} />
+                <Route path="/provision" element={<Provision />} />
+                <Route path="/bookings" element={<Bookings />} />
                 <Route path="/settings" element={<Settings />} />
               </Routes>
             </ErrorBoundary>
