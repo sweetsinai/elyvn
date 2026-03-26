@@ -403,7 +403,8 @@ async function handleCommand(db, message) {
           '<b>Settings</b>\n\n'
           + '/set review https://g.page/... — Google review link\n'
           + '/set ticket 150 — Average ticket price\n'
-          + '/set name My Business — Business name'
+          + '/set name My Business — Business name\n'
+          + '/set transfer +15551234567 — Call transfer number'
         );
         break;
       }
@@ -426,8 +427,21 @@ async function handleCommand(db, message) {
       } else if (key === 'name') {
         db.prepare('UPDATE clients SET business_name = ?, updated_at = datetime(\'now\') WHERE id = ?').run(value, client.id);
         await telegram.sendMessage(chatId, `✅ Business name updated to "${value}".`);
+      } else if (key === 'transfer') {
+        // Validate phone number format
+        const phone = value.replace(/[^\d+]/g, '');
+        if (!/^\+?\d{10,15}$/.test(phone)) {
+          await telegram.sendMessage(chatId, 'Invalid phone number. Use format: +15551234567');
+          break;
+        }
+        db.prepare('UPDATE clients SET transfer_phone = ?, updated_at = datetime(\'now\') WHERE id = ?').run(phone, client.id);
+        await telegram.sendMessage(chatId,
+          `✅ Transfer number set to ${phone}.\n\n`
+          + `When a caller says "transfer" or presses *, the AI will forward the call to this number.\n\n`
+          + `<b>Note:</b> You also need to set this number in your Retell agent's transfer settings for live call forwarding.`
+        );
       } else {
-        await telegram.sendMessage(chatId, `Unknown setting "${key}". Try: review, ticket, name`);
+        await telegram.sendMessage(chatId, `Unknown setting "${key}". Try: review, ticket, name, transfer`);
       }
       break;
     }

@@ -23,7 +23,7 @@ const ALLOWED_CLIENT_FIELDS = new Set([
   'google_review_link', 'ticket_price', 'timezone', 'ai_enabled',
   'booking_link', 'industry', 'auto_followup_enabled',
   'owner_name', 'owner_phone', 'owner_email',
-  'retell_agent_id', 'retell_phone', 'twilio_phone',
+  'retell_agent_id', 'retell_phone', 'twilio_phone', 'transfer_phone',
   'calcom_event_type_id', 'calcom_booking_link', 'telegram_chat_id',
   'avg_ticket', 'is_active'
 ]);
@@ -528,7 +528,7 @@ router.post('/clients', async (req, res) => {
     const db = req.app.locals.db;
     const {
       business_name, owner_name, owner_phone, owner_email,
-      retell_agent_id, retell_phone, twilio_phone, industry, timezone,
+      retell_agent_id, retell_phone, twilio_phone, transfer_phone, industry, timezone,
       calcom_event_type_id, calcom_booking_link,
       avg_ticket, knowledge_base
     } = req.body;
@@ -543,13 +543,13 @@ router.post('/clients', async (req, res) => {
     db.prepare(`
       INSERT INTO clients (
         id, business_name, owner_name, owner_phone, owner_email,
-        retell_agent_id, retell_phone, twilio_phone, industry, timezone,
+        retell_agent_id, retell_phone, twilio_phone, transfer_phone, industry, timezone,
         calcom_event_type_id, calcom_booking_link,
         avg_ticket, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, business_name, owner_name || null, owner_phone || null, owner_email || null,
-      retell_agent_id || null, retell_phone || null, twilio_phone || null, industry || null, timezone || 'UTC',
+      retell_agent_id || null, retell_phone || null, twilio_phone || null, transfer_phone || null, industry || null, timezone || 'UTC',
       calcom_event_type_id || null, calcom_booking_link || null,
       avg_ticket || 0, now, now
     );

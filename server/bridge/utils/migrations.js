@@ -509,6 +509,16 @@ const migrations = [
       // - weekly_reports.client_id → clients.id
     },
   },
+  {
+    id: '019_transfer_phone_column',
+    description: 'Add transfer_phone to clients for call forwarding destination',
+    up(db) {
+      const clientCols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+      if (!clientCols.includes('transfer_phone')) {
+        db.exec('ALTER TABLE clients ADD COLUMN transfer_phone TEXT');
+      }
+    },
+  },
 ];
 
 /**

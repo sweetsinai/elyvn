@@ -79,7 +79,12 @@ function createJobHandlers(db, sendSMS, captureException) {
             from_number: fromPhone,
             to_number: payload.phone,
             agent_id: agentId,
-            metadata: { lead_id: payload.leadId, client_id: payload.clientId, reason: payload.reason || 'speed_callback' },
+            metadata: {
+              lead_id: payload.leadId,
+              client_id: payload.clientId,
+              reason: payload.reason || 'speed_callback',
+              transfer_number: client.transfer_phone || client.owner_phone || '',
+            },
           }),
           signal: AbortSignal.timeout(RETELL_CALL_TIMEOUT_MS),
         });

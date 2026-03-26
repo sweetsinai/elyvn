@@ -592,31 +592,38 @@ async function handleTransfer(db, call) {
       UPDATE calls SET outcome = 'transferred', summary = ?, updated_at = ? WHERE call_id = ?
     `).run(summary, new Date().toISOString(), callId);
 
-    // Find client and send SMS to owner
+    // Find client and notify owner + transfer number
     const callRecord = db.prepare('SELECT client_id FROM calls WHERE call_id = ?').get(callId);
     if (callRecord?.client_id) {
-      const client = db.prepare('SELECT owner_phone FROM clients WHERE id = ?').get(callRecord.client_id);
-      if (client?.owner_phone) {
+      const client = db.prepare('SELECT owner_phone, transfer_phone, telegram_chat_id, business_name FROM clients WHERE id = ?').get(callRecord.client_id);
+      const transferTarget = client?.transfer_phone || client?.owner_phone;
+      if (transferTarget) {
         await sendSMS(
-          client.owner_phone,
-          `Transfer incoming from ${callerPhone || 'unknown'} -- ${summary}`
+          transferTarget,
+          `📞 Transfer incoming from ${callerPhone || 'unknown'} — ${summary}\n\nCall your Retell number and press * to connect.`
         );
+        // Also notify owner if transfer_phone is different from owner_phone
+        if (client?.transfer_phone && client?.owner_phone && client.transfer_phone !== client.owner_phone) {
+          await sendSMS(
+            client.owner_phone,
+            `Transfer routed to ${client.transfer_phone} from ${callerPhone || 'unknown'} — ${summary}`
+          ).catch(err => logger.error('[retell] Owner transfer notify SMS failed:', err.message));
+        }
       }
-    }
 
-    // === Telegram transfer alert ===
-    try {
-      const tgClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(callRecord?.client_id);
-      if (tgClient && tgClient.telegram_chat_id) {
-        const { text } = telegram.formatTransferAlert(
-          { caller_name: callerPhone, caller_phone: callerPhone },
-          summary,
-          tgClient
-        );
-        telegram.sendMessage(tgClient.telegram_chat_id, text);
+      // === Telegram transfer alert ===
+      try {
+        if (client?.telegram_chat_id) {
+          const { text } = telegram.formatTransferAlert(
+            { caller_name: callerPhone, caller_phone: callerPhone },
+            summary,
+            client
+          );
+          telegram.sendMessage(client.telegram_chat_id, text);
+        }
+      } catch (tgErr) {
+        logger.error('[retell] Telegram transfer alert failed:', tgErr.message);
       }
-    } catch (tgErr) {
-      logger.error('[retell] Telegram transfer alert failed:', tgErr.message);
     }
   } catch (err) {
     logger.error('[retell] transfer error:', err);
