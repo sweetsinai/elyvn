@@ -107,29 +107,19 @@ async function sendSMS(to, body, from, db, clientId) {
       recordMetric('total_sms_failed', 1, 'counter');
     } catch (_) {}
 
-    // Schedule retry after 5 minutes (via job queue if available)
-    try {
-      if (db) {
+    // Only schedule retry for transient errors (not auth/config failures)
+    const NON_RETRYABLE = ['Authenticate', 'not configured', 'suspended', 'Account is not active'];
+    const isRetryable = !NON_RETRYABLE.some(msg => err.message.includes(msg));
+    if (isRetryable && db) {
+      try {
         const { enqueueJob } = require('./jobQueue');
         const retryTime = new Date(Date.now() + MIN_GAP_MS).toISOString();
-        enqueueJob(db, 'followup_sms', { to, message: body, from: fromNumber }, retryTime);
+        enqueueJob(db, 'followup_sms', { to, message: body, from: fromNumber, clientId }, retryTime);
+      } catch (_) {
+        // Silently fail if job queue not available
       }
-    } catch (_) {
-      // Fallback to setTimeout if job queue not available
-      setTimeout(async () => {
-        try {
-          console.log(`[sms] Retrying send to ${to}...`);
-          const retryMsg = await twilioClient.messages.create({
-            to,
-            from: fromNumber,
-            body: bodyWithFooter
-          });
-          lastSendTime.set(to, Date.now());
-          console.log(`[sms] Retry succeeded: ${to} ${retryMsg.sid}`);
-        } catch (retryErr) {
-          console.error(`[sms] Retry failed for ${to}:`, retryErr.message);
-        }
-      }, MIN_GAP_MS);
+    } else if (!isRetryable) {
+      console.error(`[sms] Non-retryable error for ${to}: ${err.message} — will not retry`);
     }
 
     return { success: false, error: err.message };
