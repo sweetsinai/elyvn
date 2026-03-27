@@ -174,7 +174,7 @@ async function createRetellAgent(businessName, knowledgeBaseSummary) {
 }
 
 /**
- * POST / — Provision a new client with Twilio number, Retell agent, and knowledge base
+ * POST / — Provision a new client with Telnyx number, Retell agent, and knowledge base
  */
 router.post('/', async (req, res) => {
   try {

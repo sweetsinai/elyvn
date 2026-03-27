@@ -24,7 +24,7 @@ function createJobHandlers(db, sendSMS, captureException) {
         logger.info(`[jobHandlers] Skipping duplicate SMS to ${payload.phone}`);
         return;
       }
-      // Truncate to Twilio max for concatenated SMS
+      // Truncate to SMS max for concatenated messages (Telnyx/Twilio compat)
       const message = (payload.message || '').slice(0, 1600);
       await sendSMS(payload.phone, message, payload.from, db, payload.clientId);
     },
@@ -60,7 +60,8 @@ function createJobHandlers(db, sendSMS, captureException) {
         logger.warn(`[jobQueue] speed_to_lead_callback — missing agent_id (${agentId}), from (${fromPhone}), or to (${payload.phone})`);
         // Fallback: send SMS instead
         const smsMsg = `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried calling you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back when you can!'}`.slice(0, 1600);
-        await sendSMS(payload.phone, smsMsg, client.twilio_phone, db, client.id);
+        const fallbackPhone = client.telnyx_phone || client.twilio_phone;
+        await sendSMS(payload.phone, smsMsg, fallbackPhone, db, client.id);
         return;
       }
       const RETELL_API_KEY = process.env.RETELL_API_KEY;
@@ -96,7 +97,8 @@ function createJobHandlers(db, sendSMS, captureException) {
           logger.error(`[jobQueue] Retell create-phone-call failed (${resp.status}): ${errText}`);
           // Fallback SMS
           const fallbackMsg = `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried to reach you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back!'}`.slice(0, 1600);
-          await sendSMS(payload.phone, fallbackMsg, client.twilio_phone, db, client.id);
+          const fallbackPhone = client.telnyx_phone || client.twilio_phone;
+          await sendSMS(payload.phone, fallbackMsg, fallbackPhone, db, client.id);
         }
       } catch (callErr) {
         logger.error(`[jobQueue] Retell outbound call error:`, callErr.message);

@@ -376,7 +376,8 @@ async function handleCallEnded(db, call) {
           const voicemailClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
           if (voicemailClient) {
             const voicemailMsg = `Hi, we noticed you called ${voicemailClient.business_name}. Sorry we missed you! Book an appointment: ${voicemailClient.calcom_booking_link || '(booking link not set)'} or we'll call you back during business hours.`;
-            sendSMS(callerPhone, voicemailMsg, voicemailClient.twilio_phone, db, clientId)
+            const voicemailPhone = voicemailClient.telnyx_phone || voicemailClient.twilio_phone;
+            sendSMS(callerPhone, voicemailMsg, voicemailPhone, db, clientId)
               .catch(err => logger.error('[retell] Voicemail SMS failed:', err.message));
 
             db.prepare(`
@@ -418,7 +419,8 @@ async function handleCallEnded(db, call) {
 
             // Instant text-back (with opt-out check)
             const textBackMsg = `Hi! Sorry we missed your call. How can we help you today? — ${missedClient.business_name || 'Our team'}`;
-            sendSMS(callerPhone, textBackMsg, missedClient.twilio_phone, db, clientId)
+            const missedCallPhone = missedClient.telnyx_phone || missedClient.twilio_phone;
+            sendSMS(callerPhone, textBackMsg, missedCallPhone, db, clientId)
               .catch(err => logger.error('[retell] Missed call text-back failed:', err.message));
 
             // Log text-back in messages

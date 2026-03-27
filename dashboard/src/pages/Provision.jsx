@@ -35,7 +35,7 @@ const PLANS = [
     price: '$297',
     period: '/month',
     features: [
-      'One Twilio phone number',
+      'One Telnyx phone number',
       'Basic AI agent (5k messages/month)',
       'Telegram bot integration',
       'Email support'
@@ -47,7 +47,7 @@ const PLANS = [
     price: '$497',
     period: '/month',
     features: [
-      'Up to 3 Twilio phone numbers',
+      'Up to 3 Telnyx phone numbers',
       'Advanced AI agent (25k messages/month)',
       'Telegram + Web integration',
       'Priority email & chat support',
@@ -61,7 +61,7 @@ const PLANS = [
     price: '$997',
     period: '/month',
     features: [
-      'Unlimited Twilio phone numbers',
+      'Unlimited Telnyx phone numbers',
       'Enterprise AI agent (100k+ messages/month)',
       'All integrations (Telegram, Web, Slack)',
       '24/7 phone support',
@@ -93,7 +93,7 @@ export default function Provision() {
 
   const steps = [
     { name: 'Creating client', duration: 2000 },
-    { name: 'Provisioning Twilio', duration: 3000 },
+    { name: 'Provisioning Telnyx', duration: 3000 },
     { name: 'Setting up AI agent', duration: 3500 },
     { name: 'Creating knowledge base', duration: 2500 },
     { name: 'Setting up Telegram bot', duration: 2000 }
@@ -215,7 +215,7 @@ export default function Provision() {
             color: '#888',
             marginBottom: '0'
           }}>
-            One-click setup: Twilio number + AI agent + Telegram bot
+            One-click setup: Telnyx number + AI agent + Telegram bot
           </p>
         </div>
 
@@ -930,7 +930,7 @@ export default function Provision() {
                   display: 'block',
                   marginBottom: '8px'
                 }}>
-                  Twilio Phone Number
+                  Telnyx Phone Number
                 </label>
                 <p style={{
                   fontSize: '16px',

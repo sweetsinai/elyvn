@@ -31,7 +31,7 @@ const { isValidUUID } = require('./utils/validate');
 
 // === STARTUP ENV VALIDATION ===
 const REQUIRED_ENV = ['ANTHROPIC_API_KEY'];
-const RECOMMENDED_ENV = ['RETELL_API_KEY', 'TELNYX_API_KEY', 'TELNYX_PHONE_NUMBER', 'TELNYX_MESSAGING_PROFILE_ID', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'ELYVN_API_KEY'];
+const RECOMMENDED_ENV = ['RETELL_API_KEY', 'TELNYX_API_KEY', 'TELNYX_PHONE_NUMBER', 'TELNYX_MESSAGING_PROFILE_ID', 'ELYVN_API_KEY'];
 const missingRequired = REQUIRED_ENV.filter(v => !process.env[v]);
 if (missingRequired.length > 0) {
   logger.error(`[FATAL] Missing required env vars: ${missingRequired.join(', ')}`);
@@ -291,9 +291,6 @@ app.get('/health', async (req, res) => {
     TELNYX_API_KEY: !!process.env.TELNYX_API_KEY,
     TELNYX_PHONE_NUMBER: !!process.env.TELNYX_PHONE_NUMBER,
     TELNYX_MESSAGING_PROFILE_ID: !!process.env.TELNYX_MESSAGING_PROFILE_ID,
-    TWILIO_ACCOUNT_SID: !!process.env.TWILIO_ACCOUNT_SID,
-    TWILIO_AUTH_TOKEN: !!process.env.TWILIO_AUTH_TOKEN,
-    TWILIO_PHONE_NUMBER: !!process.env.TWILIO_PHONE_NUMBER,
     TELEGRAM_BOT_TOKEN: !!process.env.TELEGRAM_BOT_TOKEN,
     CALCOM_API_KEY: !!process.env.CALCOM_API_KEY,
     ELYVN_API_KEY: !!process.env.ELYVN_API_KEY,

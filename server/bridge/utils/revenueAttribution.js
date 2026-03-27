@@ -142,7 +142,7 @@ function getROIMetrics(db, clientId, days = 30) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   // Get client info
-  const client = db.prepare('SELECT avg_ticket, retell_phone, twilio_phone FROM clients WHERE id = ?').get(clientId);
+  const client = db.prepare('SELECT avg_ticket, retell_phone, telnyx_phone, twilio_phone FROM clients WHERE id = ?').get(clientId);
   if (!client) {
     return null;
   }

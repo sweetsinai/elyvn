@@ -145,8 +145,8 @@ export default function Settings() {
       color: '#3B82F6',
     },
     {
-      name: 'Twilio',
-      key: 'twilio',
+      name: 'Telnyx',
+      key: 'telnyx',
       icon: Phone,
       color: '#DC2626',
     },
@@ -402,7 +402,7 @@ export default function Settings() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[
             { label: 'Retell Webhook', url: `${baseUrl}/webhooks/retell` },
-            { label: 'Twilio Webhook', url: `${baseUrl}/webhooks/twilio` },
+            { label: 'Telnyx Webhook', url: `${baseUrl}/webhooks/twilio` },
           ].map(wh => (
             <div key={wh.label} className="card" style={{
               padding: '12px 16px',
