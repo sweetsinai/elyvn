@@ -167,7 +167,9 @@ async function handleBookingCreated(db, payload) {
 
     // Try 3: Match by attendee name against prospect business_name
     if (!prospect && name) {
-      prospect = db.prepare('SELECT * FROM prospects WHERE business_name LIKE ? LIMIT 1').get(`%${name}%`);
+      // Escape LIKE wildcards to prevent SQL LIKE injection
+      const escapedName = name.replace(/[%_\\]/g, '\\$&');
+      prospect = db.prepare("SELECT * FROM prospects WHERE business_name LIKE ? ESCAPE '\\' LIMIT 1").get(`%${escapedName}%`);
     }
   }
 

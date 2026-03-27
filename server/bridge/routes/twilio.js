@@ -99,6 +99,15 @@ router.post('/', async (req, res) => {
   // Process asynchronously
   setImmediate(async () => {
     try {
+      // Idempotency: skip if this MessageSid was already processed (webhook retry)
+      if (messageSid) {
+        const dup = db.prepare('SELECT id FROM messages WHERE message_sid = ?').get(messageSid);
+        if (dup) {
+          logger.info(`[twilio] Duplicate MessageSid ${messageSid}, skipping (idempotent)`);
+          return;
+        }
+      }
+
       // Find which client owns this phone number
       const client = db.prepare(
         'SELECT * FROM clients WHERE twilio_phone = ? AND is_active = 1'

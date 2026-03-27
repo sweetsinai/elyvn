@@ -175,6 +175,9 @@ function createRateLimiterMiddleware(limiter) {
 
 const generalRateLimiter = createRateLimiterMiddleware(generalLimiter);
 const authRateLimiter = createRateLimiterMiddleware(authLimiter);
+// Webhook rate limiter: 60 requests per minute per IP (prevents flooding)
+const webhookLimiter = new BoundedRateLimiter({ windowMs: 60000, maxRequests: 60, maxEntries: 5000 });
+const webhookRateLimiter = createRateLimiterMiddleware(webhookLimiter);
 
 // Apply general rate limiter to all routes
 app.use(generalRateLimiter);
@@ -183,6 +186,7 @@ app.use(generalRateLimiter);
 const rateLimiterInterval = setInterval(() => {
   generalLimiter.cleanup();
   authLimiter.cleanup();
+  webhookLimiter.cleanup();
 }, RATE_LIMIT_CLEANUP_MS);
 
 // --- Health check endpoint (no auth required, before apiAuth) ---
@@ -295,14 +299,14 @@ const { enforceClientIsolation } = require('./utils/clientIsolation');
 
 // Telnyx inbound SMS webhook
 const telnyxRouter = require('./routes/telnyx');
-app.use('/webhooks/telnyx', telnyxRouter);
+app.use('/webhooks/telnyx', webhookRateLimiter, telnyxRouter);
 
 // Twilio inbound SMS webhook
 const twilioRouter = require('./routes/twilio');
-app.use('/webhooks/twilio', twilioRouter);
+app.use('/webhooks/twilio', webhookRateLimiter, twilioRouter);
 
-app.use('/webhooks/retell', retellRouter);
-app.use('/retell-webhook', retellRouter);
+app.use('/webhooks/retell', webhookRateLimiter, retellRouter);
+app.use('/retell-webhook', webhookRateLimiter, retellRouter);
 app.use('/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
 // Mount onboard routes (before general /api to allow public access)
 app.use('/api', onboardRouter);
@@ -314,15 +318,15 @@ app.use('/t', trackingRouter);
 
 // Telegram bot webhook
 const telegramRoutes = require('./routes/telegram');
-app.use('/webhooks/telegram', telegramRoutes);
+app.use('/webhooks/telegram', webhookRateLimiter, telegramRoutes);
 
 // Form webhook (any web form → speed-to-lead)
 const formRoutes = require('./routes/forms');
-app.use('/webhooks/form', formRoutes);
+app.use('/webhooks/form', webhookRateLimiter, formRoutes);
 
 // Cal.com webhook (booking created/cancelled/rescheduled)
 const calcomWebhook = require('./routes/calcom-webhook');
-app.use('/webhooks/calcom', calcomWebhook);
+app.use('/webhooks/calcom', webhookRateLimiter, calcomWebhook);
 
 // Static files (production dashboard build)
 app.use(express.static(path.join(__dirname, 'public')));
