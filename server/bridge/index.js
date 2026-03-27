@@ -22,6 +22,7 @@ process.on('uncaughtException', (error) => {
 });
 
 const express = require('express');
+const helmet = require('helmet');
 const { RATE_LIMIT_CLEANUP_MS, JOB_PROCESSOR_INTERVAL, DATA_RETENTION_DAILY_INTERVAL_MS, AUTO_CLASSIFY_INTERVAL_MS } = require('./config/timing');
 const cors = require('cors');
 const path = require('path');
@@ -49,6 +50,12 @@ if (!process.env.ELYVN_API_KEY) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Security headers via Helmet
+app.use(helmet({
+  contentSecurityPolicy: false, // Dashboard serves static files
+  crossOriginEmbedderPolicy: false,
+}));
+
 // Timing-safe API key comparison
 function safeCompare(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -60,7 +67,7 @@ function safeCompare(a, b) {
 const corsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
   : (process.env.NODE_ENV === 'production'
-    ? ['https://joyful-trust-production.up.railway.app']
+    ? ['https://joyful-trust-production.up.railway.app', 'https://api.elyvn.net', 'https://elyvn.net']
     : '*');
 
 if (!process.env.CORS_ORIGINS && process.env.NODE_ENV === 'production') {
@@ -82,7 +89,13 @@ app.use(cors({
 const { correlationMiddleware } = require('./utils/correlationId');
 app.use(correlationMiddleware);
 
-app.use(express.json({ limit: '10mb' }));
+// Capture raw body for webhook signature verification (Telnyx Ed25519)
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Request logging for errors and slow requests

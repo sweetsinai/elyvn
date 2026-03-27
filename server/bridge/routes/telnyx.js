@@ -59,7 +59,7 @@ router.use((req, res, next) => {
     next();
   } catch (err) {
     logger.error('[telnyx] Signature validation error:', err.message);
-    next(); // Allow through on error to avoid blocking legitimate webhooks
+    return res.status(401).json({ error: 'Webhook signature validation failed' });
   }
 });
 

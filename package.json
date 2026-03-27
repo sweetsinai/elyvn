@@ -9,6 +9,7 @@
     "db:reset": "rm -f server/mcp/elyvn.db && cd server/mcp && python -c 'from db import init_db; import asyncio; asyncio.run(init_db())'"
   },
   "dependencies": {
-    "concurrently": "^8.0.0"
+    "concurrently": "^8.0.0",
+    "helmet": "^8.1.0"
   }
 }
