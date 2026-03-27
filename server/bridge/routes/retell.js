@@ -442,7 +442,8 @@ async function handleCallEnded(db, call) {
               leadId: missedLeadId, clientId, phone: callerPhone,
               name: null, email: null, message: null, service: null,
               source: 'missed_call', client: missedClient
-            }).catch(err => logger.error('[retell] Missed call speed sequence failed:', err.message));
+            })
+              .catch(err => logger.error('[retell] Missed call speed sequence failed:', err.message));
 
             // NOTE: Brain decision for missed calls is handled by the general post-call
             // brain block below (line ~443). Removed duplicate brain call here to prevent
