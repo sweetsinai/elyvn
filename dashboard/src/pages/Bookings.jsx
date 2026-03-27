@@ -50,7 +50,7 @@ const Bookings = () => {
       setLoading(true);
       setError(null);
       const data = await getBookings(clientId, startDate, endDate);
-      setBookings(data || []);
+      setBookings(Array.isArray(data) ? data : data?.bookings || []);
     } catch (err) {
       setError(err.message || 'Failed to load bookings');
     } finally {
