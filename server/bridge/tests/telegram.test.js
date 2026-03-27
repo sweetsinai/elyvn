@@ -1,447 +1,971 @@
 'use strict';
 
 const express = require('express');
+const request = require('supertest');
 
-// Mock telegram module at the top level
-jest.mock('../utils/telegram', () => ({
-  sendMessage: jest.fn().mockResolvedValue({ ok: true }),
-  answerCallback: jest.fn().mockResolvedValue({ ok: true }),
+jest.mock('../utils/telegram');
+jest.mock('../utils/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+jest.mock('../utils/validate', () => ({
+  isValidURL: jest.fn((url) => url && (url.startsWith('http://') || url.startsWith('https://'))),
 }));
 
-const telegramRoute = require('../routes/telegram');
-const mockTelegram = require('../utils/telegram');
+const telegram = require('../utils/telegram');
+const { isValidURL } = require('../utils/validate');
 
-describe('Telegram Route', () => {
-  let app, mockDb;
+describe('Telegram Route Handler', () => {
+  let app;
+  let mockDb;
 
   beforeEach(() => {
-    // Reset mocks
     jest.clearAllMocks();
+    delete require.cache[require.resolve('../routes/telegram')];
 
-    // Create mock database
     mockDb = {
-      prepare: jest.fn(),
+      prepare: jest.fn((sql) => ({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn().mockReturnValue({ changes: 1 }),
+        all: jest.fn().mockReturnValue([]),
+      })),
+      transaction: jest.fn((fn) => fn),
     };
 
-    // Set up the app
+    telegram.sendMessage.mockResolvedValue({ ok: true });
+    telegram.setClientCommands.mockResolvedValue({ ok: true });
+    telegram.answerCallback.mockResolvedValue({ ok: true });
+    telegram.sendDocument.mockResolvedValue({ ok: true });
+
     app = express();
-    app.locals.db = mockDb;
     app.use(express.json());
+    app.locals.db = mockDb;
+    const router = require('../routes/telegram');
+    app.use('/webhook/telegram', router);
+
+    delete process.env.TELEGRAM_WEBHOOK_SECRET;
   });
 
-  describe('Webhook Secret Middleware', () => {
-    test('should skip verification when TELEGRAM_WEBHOOK_SECRET is not set', async () => {
-      delete process.env.TELEGRAM_WEBHOOK_SECRET;
-      const router = telegramRoute;
-      app.use('/webhook', router);
-
-      const mockSendStatus = jest.fn().mockReturnValue({});
-      const next = jest.fn();
-      const req = {
-        method: 'POST',
-        headers: {},
-        body: { message: { chat: { id: 123 }, text: '/help' } },
-        app,
-      };
-      const res = { sendStatus: mockSendStatus };
-
-      // The middleware should call next without checking secret
-      const middleware = router.stack[0].handle;
-      await middleware(req, res, next);
-      expect(next).toHaveBeenCalled();
+  describe('Webhook Secret Validation', () => {
+    test('allows request when TELEGRAM_WEBHOOK_SECRET is not set', async () => {
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({ message: { chat: { id: '123' }, text: '/help' } });
+      expect(res.status).toBe(200);
     });
 
-    test('should reject request with wrong secret', async () => {
-      process.env.TELEGRAM_WEBHOOK_SECRET = 'expected-secret';
-      const router = telegramRoute;
-
-      const mockSendStatus = jest.fn().mockReturnValue({});
-      const req = {
-        method: 'POST',
-        headers: { 'x-telegram-bot-api-secret-token': 'wrong-secret' },
-        body: {},
-        app,
-      };
-      const res = { sendStatus: mockSendStatus };
-
-      // Make a fake call to the middleware
-      const middleware = router.stack[0].handle;
-      await middleware(req, res, () => {});
-      expect(mockSendStatus).toHaveBeenCalledWith(403);
-
-      delete process.env.TELEGRAM_WEBHOOK_SECRET;
+    test('rejects request with missing secret header when secret is configured', async () => {
+      process.env.TELEGRAM_WEBHOOK_SECRET = 'test-secret';
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({ message: { chat: { id: '123' }, text: '/help' } });
+      expect(res.status).toBe(403);
     });
 
-    test('should accept request with correct secret', async () => {
+    test('rejects request with incorrect secret', async () => {
       process.env.TELEGRAM_WEBHOOK_SECRET = 'correct-secret';
-      const router = telegramRoute;
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .set('x-telegram-bot-api-secret-token', 'wrong-secret')
+        .send({ message: { chat: { id: '123' }, text: '/help' } });
+      expect(res.status).toBe(403);
+    });
 
-      const next = jest.fn();
-      const req = {
-        headers: { 'x-telegram-bot-api-secret-token': 'correct-secret' },
-      };
-      const res = {};
+    test('accepts request with correct secret', async () => {
+      const secret = 'test-secret';
+      process.env.TELEGRAM_WEBHOOK_SECRET = secret;
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .set('x-telegram-bot-api-secret-token', secret)
+        .send({ message: { chat: { id: '123' }, text: '/help' } });
+      expect(res.status).toBe(200);
+    });
 
-      // The middleware should call next when secret matches
-      const middleware = router.stack[0].handle;
-      await middleware(req, res, next);
-      expect(next).toHaveBeenCalled();
-
-      delete process.env.TELEGRAM_WEBHOOK_SECRET;
+    test('rejects request when secret length differs', async () => {
+      process.env.TELEGRAM_WEBHOOK_SECRET = 'correct-secret-with-length';
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .set('x-telegram-bot-api-secret-token', 'short')
+        .send({ message: { chat: { id: '123' }, text: '/help' } });
+      expect(res.status).toBe(403);
     });
   });
 
-  describe('POST / - Webhook receiver', () => {
-    beforeEach(() => {
-      delete process.env.TELEGRAM_WEBHOOK_SECRET;
+  describe('POST / - Webhook Reception', () => {
+    test('responds with 200 immediately', async () => {
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({ message: { chat: { id: '123' }, text: '/help' } });
+      expect(res.status).toBe(200);
     });
 
-    test('should return 200 immediately', () => {
-      expect(telegramRoute).toBeDefined();
-      // Verify POST handler exists
-      const hasPOSTHandler = telegramRoute.stack.some(
-        layer => layer.route && layer.route.methods.post
-      );
-      expect(hasPOSTHandler).toBe(true);
+    test('handles empty body gracefully', async () => {
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({});
+      expect(res.status).toBe(200);
     });
 
-    test('should handle message commands asynchronously', () => {
-      mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({
-          id: 'client-123',
-          telegram_chat_id: '12345',
-          business_name: 'Test Business',
-          is_active: 1,
-        }),
-        all: jest.fn().mockReturnValue([]),
-        run: jest.fn(),
-      });
-
-      expect(telegramRoute).toBeDefined();
-      // Verify route is properly structured
-      const hasPOSTHandler = telegramRoute.stack.some(
-        layer => layer.route && layer.route.methods.post
-      );
-      expect(hasPOSTHandler).toBe(true);
+    test('handles message with missing database', async () => {
+      app.locals.db = null;
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({ message: { chat: { id: '123' }, text: '/help' } });
+      expect(res.status).toBe(200);
     });
   });
 
-  describe('Command Handlers - without database', () => {
-    beforeEach(() => {
-      delete process.env.TELEGRAM_WEBHOOK_SECRET;
-    });
-
-    test('/help command should return help message', async () => {
+  describe('/start command - linking', () => {
+    test('handles /start with linking parameter for valid client', async () => {
+      const mockClient = { id: 'client-123', plan: 'starter', business_name: 'Test Business' };
+      let callCount = 0;
       mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({
-          id: 'client-123',
-          telegram_chat_id: '12345',
-          business_name: 'Test Business',
+        get: jest.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) return null; // First SELECT for existing link
+          return mockClient; // Second SELECT for target client
         }),
+        run: jest.fn(),
         all: jest.fn().mockReturnValue([]),
-        run: jest.fn(),
       });
 
-      // We can test the route structure
-      expect(telegramRoute).toBeDefined();
-      expect(telegramRoute.post).toBeDefined();
-    });
-
-    test('/status command should return dashboard', async () => {
-      mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({
-          id: 'client-123',
-          telegram_chat_id: '12345',
-          business_name: 'Test Business',
-          is_active: 1,
-          avg_ticket: 100,
-        }),
-        all: jest.fn().mockReturnValue([]),
-        run: jest.fn(),
-      });
-
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('/leads command should return leads list', async () => {
-      mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({
-          id: 'client-123',
-          telegram_chat_id: '12345',
-          business_name: 'Test Business',
-        }),
-        all: jest.fn().mockReturnValue([
-          { name: 'Alice', phone: '+1234567890', stage: 'hot', score: 8 },
-          { name: 'Bob', phone: '+0987654321', stage: 'warm', score: 6 },
-        ]),
-        run: jest.fn(),
-      });
-
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('/calls command should return recent calls', async () => {
-      mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({
-          id: 'client-123',
-          telegram_chat_id: '12345',
-          business_name: 'Test Business',
-        }),
-        all: jest.fn().mockReturnValue([
-          {
-            call_id: 'call-1',
-            caller_name: 'Alice',
-            caller_phone: '+1234567890',
-            outcome: 'booked',
-            duration: 180,
-            score: 9,
-            created_at: new Date().toISOString(),
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/start client-123',
+            from: { first_name: 'John' },
           },
-        ]),
-        run: jest.fn(),
-      });
+        });
 
-      expect(telegramRoute).toBeDefined();
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalled();
     });
 
-    test('/pause command should pause AI', async () => {
-      mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({
-          id: 'client-123',
-          telegram_chat_id: '12345',
-          business_name: 'Test Business',
-        }),
-        all: jest.fn().mockReturnValue([]),
-        run: jest.fn(),
-      });
-
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('/resume command should resume AI', async () => {
-      mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({
-          id: 'client-123',
-          telegram_chat_id: '12345',
-          business_name: 'Test Business',
-        }),
-        all: jest.fn().mockReturnValue([]),
-        run: jest.fn(),
-      });
-
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('/set command should update settings', async () => {
-      mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({
-          id: 'client-123',
-          telegram_chat_id: '12345',
-          business_name: 'Test Business',
-        }),
-        all: jest.fn().mockReturnValue([]),
-        run: jest.fn(),
-      });
-
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('/complete command should mark job as done', async () => {
-      mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({
-          id: 'client-123',
-          telegram_chat_id: '12345',
-          business_name: 'Test Business',
-          google_review_link: 'https://g.page/business',
-        }),
-        all: jest.fn().mockReturnValue([]),
-        run: jest.fn(),
-        transaction: jest.fn((fn) => fn),
-      });
-
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('unknown command should show helpful message', async () => {
-      mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({
-          id: 'client-123',
-          telegram_chat_id: '12345',
-          business_name: 'Test Business',
-        }),
-        all: jest.fn().mockReturnValue([]),
-        run: jest.fn(),
-      });
-
-      expect(telegramRoute).toBeDefined();
-    });
-  });
-
-  describe('Callback Query Handlers', () => {
-    beforeEach(() => {
-      delete process.env.TELEGRAM_WEBHOOK_SECRET;
-    });
-
-    test('should handle transcript callback', async () => {
-      mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({
-          transcript: 'Customer: Hello\nAI: Hi there!',
-        }),
-        all: jest.fn().mockReturnValue([]),
-        run: jest.fn(),
-      });
-
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('should handle msg_ok callback', async () => {
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('should handle msg_takeover callback', async () => {
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('should handle cancel_speed callback', async () => {
-      mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue({}),
-        all: jest.fn().mockReturnValue([]),
-        run: jest.fn(),
-      });
-
-      expect(telegramRoute).toBeDefined();
-    });
-  });
-
-  describe('Rate Limiting for Callbacks', () => {
-    test('should rate limit callback queries', async () => {
-      // The route defines a callback rate limit function
-      // We test it by checking that the route exists and is properly structured
-      expect(telegramRoute).toBeDefined();
-      expect(telegramRoute.post).toBeDefined();
-    });
-
-    test('should allow callbacks up to the limit', async () => {
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('should reject callbacks exceeding the limit', async () => {
-      expect(telegramRoute).toBeDefined();
-    });
-  });
-
-  describe('Helper Functions', () => {
-    test('fmtDuration should format seconds correctly', () => {
-      // These functions are internal to the module
-      // We verify the route exports correctly
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('timeAgo should format relative time', () => {
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('outcomeEmoji should return correct emoji', () => {
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('stageEmoji should return correct emoji', () => {
-      expect(telegramRoute).toBeDefined();
-    });
-  });
-
-  describe('Error Handling', () => {
-    test('should handle missing database gracefully', async () => {
-      const appNoDB = express();
-      appNoDB.locals.db = null;
-      appNoDB.use(express.json());
-
-      const req = { body: {}, app: appNoDB };
-      const res = { sendStatus: jest.fn().mockReturnValue({}) };
-
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('should handle malformed webhook payload', async () => {
+    test('rejects /start with invalid client ID', async () => {
       mockDb.prepare.mockReturnValue({
         get: jest.fn().mockReturnValue(null),
-        all: jest.fn().mockReturnValue([]),
         run: jest.fn(),
       });
 
-      const req = { body: {}, app };
-      const res = { sendStatus: jest.fn().mockReturnValue({}) };
-
-      expect(telegramRoute).toBeDefined();
-    });
-
-    test('should handle missing chat ID in message', async () => {
-      const req = {
-        body: {
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
           message: {
-            text: '/help',
-            // Missing chat object
+            chat: { id: 'chat-456' },
+            text: '/start invalid-id',
+            from: { first_name: 'John' },
           },
-        },
-        app,
-      };
-      const res = { sendStatus: jest.fn().mockReturnValue({}) };
+        });
 
-      expect(telegramRoute).toBeDefined();
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Invalid link')
+      );
     });
 
-    test('should handle missing callback query ID', async () => {
-      const req = {
-        body: {
-          callback_query: {
-            message: { chat: { id: '12345' } },
-            data: 'transcript:call-1',
-            // Missing id
-          },
-        },
-        app,
-      };
-      const res = { sendStatus: jest.fn().mockReturnValue({}) };
+    test('handles /start without parameters when no linked client', async () => {
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn(),
+      });
 
-      expect(telegramRoute).toBeDefined();
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/start',
+            from: { first_name: 'John' },
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('onboarding link')
+      );
     });
   });
 
-  describe('/start command with linking', () => {
-    test('should accept valid onboarding link', async () => {
+  describe('/status command', () => {
+    test('sends dashboard status for linked client', async () => {
+      const mockClient = { id: 'client-123', business_name: 'Test Business', is_active: 1, avg_ticket: 100 };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+        all: jest.fn().mockReturnValue([]),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/status',
+            from: { first_name: 'John' },
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalled();
+      const call = telegram.sendMessage.mock.calls[0];
+      expect(call[1]).toContain('Today');
+    });
+  });
+
+  describe('/leads command', () => {
+    test('displays active leads grouped by stage', async () => {
+      const mockClient = { id: 'client-123' };
+      const mockLeads = [
+        { name: 'Hot Lead', phone: '+1234567890', score: 9, stage: 'hot', updated_at: new Date().toISOString() },
+      ];
+
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+        all: jest.fn().mockReturnValue(mockLeads),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/leads',
+            from: { first_name: 'John' },
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Leads')
+      );
+    });
+
+    test('shows message when no active leads exist', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+        all: jest.fn().mockReturnValue([]),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/leads',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('No active leads')
+      );
+    });
+  });
+
+  describe('/calls command', () => {
+    test('displays recent calls with summary', async () => {
+      const mockClient = { id: 'client-123' };
+      const mockCalls = [
+        {
+          call_id: 'call-123',
+          caller_name: 'John Doe',
+          caller_phone: '+1234567890',
+          outcome: 'booked',
+          duration: 300,
+          score: 8,
+          summary: 'Customer interested',
+          created_at: new Date().toISOString(),
+        },
+      ];
+
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+        all: jest.fn().mockReturnValue(mockCalls),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/calls',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalled();
+    });
+
+    test('shows message when no calls exist', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+        all: jest.fn().mockReturnValue([]),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/calls',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        'No calls yet.'
+      );
+    });
+  });
+
+  describe('/pause and /resume commands', () => {
+    test('/pause disables AI', async () => {
+      const mockClient = { id: 'client-123', is_active: 1 };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/pause',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('paused')
+      );
+    });
+
+    test('/resume enables AI', async () => {
+      const mockClient = { id: 'client-123', is_active: 0 };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/resume',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('resumed')
+      );
+    });
+  });
+
+  describe('/complete command', () => {
+    test('marks job as complete with valid phone number', async () => {
+      const mockClient = { id: 'client-123', business_name: 'Test Business', google_review_link: 'https://g.page/test' };
+      const mockLead = { id: 'lead-123', name: 'John' };
+
       mockDb.prepare.mockReturnValue({
         get: jest.fn()
-          .mockReturnValueOnce(null) // No existing client
-          .mockReturnValueOnce({
-            id: 'client-target-123',
-            business_name: 'Target Business',
-            name: 'Target',
-          }),
-        all: jest.fn().mockReturnValue([]),
+          .mockReturnValueOnce(mockClient)
+          .mockReturnValueOnce(mockLead),
         run: jest.fn(),
+        all: jest.fn().mockReturnValue([]),
       });
 
-      expect(telegramRoute).toBeDefined();
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/complete +15551234567',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalled();
     });
 
-    test('should reject invalid onboarding link', async () => {
+    test('shows error when phone number not provided', async () => {
+      const mockClient = { id: 'client-123' };
       mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue(null), // Client not found
-        all: jest.fn().mockReturnValue([]),
+        get: jest.fn().mockReturnValue(mockClient),
         run: jest.fn(),
       });
 
-      expect(telegramRoute).toBeDefined();
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/complete',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Usage: /complete')
+      );
+    });
+  });
+
+  describe('/set command - configuration', () => {
+    test('shows settings menu when /set called without parameters', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/set',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Settings')
+      );
     });
 
-    test('should reject /start without linking param when not connected', async () => {
+    test('sets Google review link with /set review command', async () => {
+      const mockClient = { id: 'client-123' };
+      isValidURL.mockReturnValue(true);
+
       mockDb.prepare.mockReturnValue({
-        get: jest.fn().mockReturnValue(null), // Not connected
-        all: jest.fn().mockReturnValue([]),
+        get: jest.fn().mockReturnValue(mockClient),
         run: jest.fn(),
       });
 
-      expect(telegramRoute).toBeDefined();
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/set review https://g.page/mybusiness',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Review link')
+      );
+    });
+
+    test('rejects invalid URL for review link', async () => {
+      const mockClient = { id: 'client-123' };
+      isValidURL.mockReturnValue(false);
+
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/set review invalid-url',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Invalid URL')
+      );
+    });
+
+    test('sets average ticket price with /set ticket command', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/set ticket 150',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('ticket')
+      );
+    });
+
+    test('rejects invalid ticket amount', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/set ticket not-a-number',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Invalid amount')
+      );
+    });
+
+    test('sets business name with /set name command', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/set name My Awesome Business',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('updated')
+      );
+    });
+
+    test('sets transfer phone with /set transfer command', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/set transfer +15551234567',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Transfer number')
+      );
+    });
+
+    test('rejects invalid transfer phone number', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/set transfer 123',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Invalid phone')
+      );
+    });
+
+    test('rejects unknown setting key', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/set unknown_key some_value',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Unknown setting')
+      );
+    });
+  });
+
+  describe('/help command', () => {
+    test('displays available commands', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/help',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Commands')
+      );
+    });
+  });
+
+  describe('Unlinked client handling', () => {
+    test('shows linking prompt when user not linked', async () => {
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/status',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('linked')
+      );
+    });
+  });
+
+  describe('Callback Query Handling', () => {
+    test('handles transcript callback for long transcripts', async () => {
+      const longTranscript = 'x'.repeat(4000);
+      const mockCall = {
+        call_id: 'call-123',
+        transcript: longTranscript,
+        caller_phone: '+1234567890',
+        created_at: new Date().toISOString(),
+      };
+
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockCall),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          callback_query: {
+            id: 'callback-123',
+            message: { chat: { id: 'chat-456' } },
+            data: 'transcript:call-123',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendDocument).toHaveBeenCalled();
+    });
+
+    test('handles transcript callback for short transcripts', async () => {
+      const shortTranscript = 'Agent: Hello\nCustomer: Hi';
+      const mockCall = {
+        call_id: 'call-123',
+        transcript: shortTranscript,
+        caller_phone: '+1234567890',
+        created_at: new Date().toISOString(),
+      };
+
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockCall),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          callback_query: {
+            id: 'callback-123',
+            message: { chat: { id: 'chat-456' } },
+            data: 'transcript:call-123',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalled();
+    });
+
+    test('handles transcript not found', async () => {
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          callback_query: {
+            id: 'callback-123',
+            message: { chat: { id: 'chat-456' } },
+            data: 'transcript:call-123',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('not available')
+      );
+    });
+
+    test('handles msg_ok callback', async () => {
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          callback_query: {
+            id: 'callback-123',
+            message: { chat: { id: 'chat-456' } },
+            data: 'msg_ok:msg-123',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.answerCallback).toHaveBeenCalled();
+    });
+
+    test('handles msg_takeover callback', async () => {
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          callback_query: {
+            id: 'callback-123',
+            message: { chat: { id: 'chat-456' } },
+            data: 'msg_takeover:msg-123:+1234567890',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.answerCallback).toHaveBeenCalled();
+      expect(telegram.sendMessage).toHaveBeenCalled();
+    });
+  });
+
+  describe('Error handling', () => {
+    test('gracefully handles message with missing text field', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+          },
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('gracefully handles message with missing chat field', async () => {
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            text: '/status',
+          },
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('gracefully handles null message', async () => {
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: null,
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('handles database errors in command execution', async () => {
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockImplementation(() => {
+          throw new Error('Database error');
+        }),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/status',
+          },
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Command with @bot mention', () => {
+    test('strips @botname suffix from command', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: '/help@ElyvnBot',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Commands')
+      );
+    });
+  });
+
+  describe('Unrecognized text handling', () => {
+    test('shows helpful prompt for unrecognized text', async () => {
+      const mockClient = { id: 'client-123' };
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(mockClient),
+        run: jest.fn(),
+      });
+
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          message: {
+            chat: { id: 'chat-456' },
+            text: 'Just some random text',
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        'chat-456',
+        expect.stringContaining('Type /status')
+      );
+    });
+  });
+
+  describe('Callback with missing data', () => {
+    test('gracefully handles callback with missing data', async () => {
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          callback_query: {
+            id: 'callback-123',
+            message: { chat: { id: 'chat-456' } },
+          },
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('gracefully handles callback with missing message', async () => {
+      const res = await request(app)
+        .post('/webhook/telegram')
+        .send({
+          callback_query: {
+            id: 'callback-123',
+            data: 'transcript:call-123',
+          },
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Rate limiting callbacks', () => {
+    test('enforces callback rate limit per chat', async () => {
+      mockDb.prepare.mockReturnValue({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn(),
+      });
+
+      const callPromises = [];
+      for (let i = 0; i < 12; i++) {
+        callPromises.push(
+          request(app)
+            .post('/webhook/telegram')
+            .send({
+              callback_query: {
+                id: `callback-${i}`,
+                message: { chat: { id: 'chat-456' } },
+                data: `transcript:call-${i}`,
+              },
+            })
+        );
+      }
+
+      const results = await Promise.all(callPromises);
+      expect(results[0].status).toBe(200);
     });
   });
 });

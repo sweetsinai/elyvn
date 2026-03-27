@@ -622,4 +622,895 @@ describe('Retell Route', () => {
       expect(res.status).toBe(200);
     });
   });
+
+  describe('Lead Management in call_ended', () => {
+    test('creates new lead from call with caller phone', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        } else if (sql.includes('SELECT id FROM leads WHERE phone')) {
+          mock.get.mockReturnValue(null); // Lead doesn't exist yet
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 60,
+            direction: 'inbound'
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('updates existing lead score from call', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      const mockLead = { id: 'lead-123', score: 5 };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        } else if (sql.includes('SELECT id FROM leads WHERE phone')) {
+          mock.get.mockReturnValue(mockLead);
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 120,
+            direction: 'inbound'
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('schedules follow-up SMS for non-missed calls', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        } else if (sql.includes('SELECT id FROM leads WHERE phone')) {
+          mock.get.mockReturnValue({ id: 'lead-123' });
+        } else if (sql.includes('SELECT * FROM clients WHERE id')) {
+          mock.get.mockReturnValue({
+            id: 'client-123',
+            business_name: 'Test Business',
+            avg_ticket: 100
+          });
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 60,
+            direction: 'inbound'
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Voicemail Handling', () => {
+    test('handles voicemail detection as separate outcome', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 30,
+            call_analysis: { voicemail_detected: true }
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('sends SMS textback for voicemail', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        } else if (sql.includes('SELECT * FROM clients WHERE id')) {
+          mock.get.mockReturnValue({
+            id: 'client-123',
+            business_name: 'Test Business',
+            telnyx_phone: '+1234567890'
+          });
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 5,
+            call_analysis: { voicemail_detected: true }
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Missed Call Handling', () => {
+    test('detects missed calls based on duration', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 3, // Less than 10 seconds
+            direction: 'inbound'
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('sends instant text-back for missed calls', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        } else if (sql.includes('SELECT * FROM clients WHERE id')) {
+          mock.get.mockReturnValue({
+            id: 'client-123',
+            business_name: 'Test Business',
+            telnyx_phone: '+1234567890'
+          });
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 2
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Transfer Handling', () => {
+    test('detects agent transfer from call analysis', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 180,
+            call_analysis: { agent_transfer: true }
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('handles transfer_requested event', async () => {
+      mockDb.prepare = jest.fn((sql) => ({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn().mockReturnValue({ changes: 1 })
+      }));
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'transfer_requested',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 60
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('handles DTMF star key for transfer', async () => {
+      mockDb.prepare = jest.fn((sql) => ({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn().mockReturnValue({ changes: 1 })
+      }));
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'dtmf',
+          call: {
+            call_id: 'call-123',
+            digit: '*'
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('ignores DTMF non-star keys', async () => {
+      mockDb.prepare = jest.fn((sql) => ({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn().mockReturnValue({ changes: 1 })
+      }));
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'dtmf',
+          call: {
+            call_id: 'call-123',
+            digit: '5'
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Booking Tracking', () => {
+    test('detects booking outcome from calcom_booking_id', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        } else if (sql.includes('SELECT id FROM leads WHERE phone')) {
+          mock.get.mockReturnValue({ id: 'lead-123' });
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 300,
+            custom_analysis_data: {
+              calcom_booking_id: 'booking-456'
+            }
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('stores booking reference in lead record', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      const mockLead = { id: 'lead-123' };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        } else if (sql.includes('SELECT id FROM leads WHERE phone')) {
+          mock.get.mockReturnValue(mockLead);
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 300,
+            custom_analysis_data: {
+              calcom_booking_id: 'booking-789'
+            }
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Sentiment Detection', () => {
+    test('captures user sentiment from call analysis', async () => {
+      mockDb.prepare = jest.fn((sql) => ({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn().mockReturnValue({ changes: 1 })
+      }));
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_analyzed',
+          call: {
+            call_id: 'call-123',
+            transcript: 'Great service!',
+            call_analysis: {
+              user_sentiment: 'positive',
+              call_summary: 'Customer very satisfied'
+            }
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('detects negative sentiment for complaints', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      const mockClient = {
+        id: 'client-123',
+        owner_phone: '+15551234567'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        } else if (sql.includes('SELECT owner_phone')) {
+          mock.get.mockReturnValue(mockClient);
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 120,
+            call_analysis: { user_sentiment: 'negative' }
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Transcript Handling', () => {
+    test('handles transcript as string format', async () => {
+      mockDb.prepare = jest.fn((sql) => ({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn().mockReturnValue({ changes: 1 })
+      }));
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_analyzed',
+          call: {
+            call_id: 'call-123',
+            transcript: 'Agent: Hello\nCustomer: Hi',
+            call_analysis: {
+              call_summary: 'Standard greeting'
+            }
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('handles transcript as array format', async () => {
+      mockDb.prepare = jest.fn((sql) => ({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn().mockReturnValue({ changes: 1 })
+      }));
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_analyzed',
+          call: {
+            call_id: 'call-123',
+            transcript: [
+              { role: 'agent', content: 'Hello' },
+              { role: 'customer', content: 'Hi there' }
+            ],
+            call_analysis: {
+              call_summary: 'Initial contact'
+            }
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('handles transcript as JSON object (stringified)', async () => {
+      mockDb.prepare = jest.fn((sql) => ({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn().mockReturnValue({ changes: 1 })
+      }));
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_analyzed',
+          call: {
+            call_id: 'call-123',
+            transcript: { complex: 'object' },
+            call_analysis: {
+              call_summary: 'Complex format test'
+            }
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('skips transcript update if already set', async () => {
+      mockDb.prepare = jest.fn((sql) => ({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn().mockReturnValue({ changes: 1 })
+      }));
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_analyzed',
+          call: {
+            call_id: 'call-123',
+            transcript: '',
+            call_analysis: { call_summary: '' }
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Metrics Recording', () => {
+    test('records call metric on call_ended', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 60
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Call Duration Handling', () => {
+    test('uses call_length from Retell API over webhook duration', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 30,
+            call_length: 120 // Should prefer this
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('handles zero-duration calls gracefully', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234'
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('SELECT * FROM calls WHERE call_id')) {
+          mock.get.mockReturnValue(mockCall);
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 0
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Multiple Webhook Events Concurrently', () => {
+    test('handles multiple call_started events concurrently', async () => {
+      mockDb.prepare = jest.fn((sql) => ({
+        get: jest.fn().mockReturnValue({ id: 'client-123' }),
+        run: jest.fn().mockReturnValue({ changes: 1 })
+      }));
+
+      app.locals.db = mockDb;
+
+      const promises = [];
+      for (let i = 0; i < 5; i++) {
+        promises.push(
+          request(app)
+            .post('/webhooks/retell')
+            .send({
+              event: 'call_started',
+              call: {
+                call_id: `call-${i}`,
+                to_number: '+14155551234',
+                from_number: `+19876543${String(i).padStart(3, '0')}`
+              }
+            })
+        );
+      }
+
+      const results = await Promise.all(promises);
+      results.forEach(res => {
+        expect(res.status).toBe(200);
+      });
+    });
+  });
+
+  describe('Client Lookup Edge Cases', () => {
+    test('falls back to agent_id when phone lookup fails', async () => {
+      const mockClient = { id: 'client-456' };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 1 })
+        };
+
+        if (sql.includes('retell_agent_id')) {
+          mock.get.mockReturnValue(mockClient);
+        } else if (sql.includes('retell_phone')) {
+          mock.get.mockReturnValue(null);
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_started',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            agent_id: 'agent-789'
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+
+    test('handles call with no matching client', async () => {
+      mockDb.prepare = jest.fn((sql) => ({
+        get: jest.fn().mockReturnValue(null),
+        run: jest.fn().mockReturnValue({ changes: 1 })
+      }));
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_started',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            to_number: '+15555555555'
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('Idempotency', () => {
+    test('skips processing duplicate call_ended webhooks', async () => {
+      const mockCall = {
+        id: 'call-record-id',
+        client_id: 'client-123',
+        caller_phone: '+14155551234',
+        outcome: 'completed' // Already processed
+      };
+
+      mockDb.prepare = jest.fn((sql) => {
+        const mock = {
+          get: jest.fn(),
+          run: jest.fn().mockReturnValue({ changes: 0 })
+        };
+
+        if (sql.includes('outcome IS NOT NULL')) {
+          mock.get.mockReturnValue(mockCall);
+        }
+
+        return mock;
+      });
+
+      app.locals.db = mockDb;
+
+      const res = await request(app)
+        .post('/webhooks/retell')
+        .send({
+          event: 'call_ended',
+          call: {
+            call_id: 'call-123',
+            from_number: '+14155551234',
+            duration: 60
+          }
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
 });

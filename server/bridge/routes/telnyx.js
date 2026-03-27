@@ -65,48 +65,69 @@ router.use((req, res, next) => {
 
 // POST / — Telnyx SMS webhook
 router.post('/', (req, res) => {
-  const { data } = req.body || {};
+  try {
+    const { data } = req.body || {};
 
-  // Respond immediately
-  res.status(200).json({ success: true });
+    // Respond immediately
+    res.status(200).json({ success: true });
 
-  const db = req.app.locals.db;
-  if (!db) {
-    logger.error('[telnyx] No database connection');
-    return;
-  }
-
-  if (!data || !data.payload) {
-    logger.warn('[telnyx] Missing data.payload in webhook');
-    return;
-  }
-
-  const { payload } = data;
-
-  // Only process inbound messages
-  if (data.event_type !== 'message.received' || payload.direction !== 'inbound') {
-    logger.info(`[telnyx] Ignoring event_type: ${data.event_type}, direction: ${payload.direction}`);
-    return;
-  }
-
-  const from = payload.from?.phone_number;
-  const to = payload.to?.[0]?.phone_number;
-  const body = payload.text;
-  const messageId = payload.id;
-
-  if (!from || !to) {
-    logger.warn('[telnyx] Missing from or to in SMS webhook');
-    return;
-  }
-
-  // Process async
-  setImmediate(() => {
-    try {
-      handleInboundSMS(db, { from, to, body, messageId });
-    } catch (err) {
-      logger.error('[telnyx] setImmediate error:', err);
+    const db = req.app.locals.db;
+    if (!db) {
+      logger.error('[telnyx] No database connection');
+      return;
     }
-  });
+
+    if (!data || !data.payload) {
+      logger.warn('[telnyx] Missing data.payload in webhook');
+      return;
+    }
+
+    const { payload } = data;
+
+    // Validate required webhook fields
+    if (!data.event_type || typeof data.event_type !== 'string') {
+      logger.warn('[telnyx] Missing or invalid event_type in webhook');
+      return;
+    }
+
+    if (!payload.direction || typeof payload.direction !== 'string') {
+      logger.warn('[telnyx] Missing or invalid direction in webhook');
+      return;
+    }
+
+    // Only process inbound messages
+    if (data.event_type !== 'message.received' || payload.direction !== 'inbound') {
+      logger.info(`[telnyx] Ignoring event_type: ${data.event_type}, direction: ${payload.direction}`);
+      return;
+    }
+
+    const from = payload.from?.phone_number;
+    const to = payload.to?.[0]?.phone_number;
+    const body = payload.text;
+    const messageId = payload.id;
+
+    if (!from || typeof from !== 'string' || !to || typeof to !== 'string') {
+      logger.warn('[telnyx] Missing or invalid from/to in SMS webhook');
+      return;
+    }
+
+    if (from.length > 20 || to.length > 20) {
+      logger.warn('[telnyx] Phone number exceeds length limit');
+      return;
+    }
+
+    // Process async
+    setImmediate(() => {
+      try {
+        handleInboundSMS(db, { from, to, body, messageId });
+      } catch (err) {
+        logger.error('[telnyx] setImmediate error:', err);
+      }
+    });
+  } catch (err) {
+    logger.error('[telnyx] Webhook parsing error:', err);
+    res.status(200).json({ success: false }); // Still respond 200 to stop retries
+  }
 });
 
 async function handleInboundSMS(db, { from, to, body, messageId }) {

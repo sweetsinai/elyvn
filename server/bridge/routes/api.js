@@ -10,6 +10,7 @@ const path = require('path');
 const { isValidUUID, escapeLikePattern } = require('../utils/validate');
 const { withTimeout } = require('../utils/resilience');
 const { logger } = require('../utils/logger');
+const { validateEmail, validatePhone, validateLength, sanitizeString, LENGTH_LIMITS, validateParameters } = require('../utils/inputValidation');
 
 const anthropic = new Anthropic();
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
@@ -535,8 +536,75 @@ router.post('/clients', async (req, res) => {
       avg_ticket, knowledge_base
     } = req.body;
 
+    // Validate required business_name
     if (!business_name) {
       return res.status(400).json({ error: 'business_name is required' });
+    }
+
+    // Validate input lengths
+    const nameValidation = validateLength(business_name, 'business_name', LENGTH_LIMITS.name);
+    if (!nameValidation.valid) {
+      return res.status(400).json({ error: nameValidation.error });
+    }
+
+    // Validate owner_email if provided
+    if (owner_email) {
+      const emailValidation = validateEmail(owner_email);
+      if (!emailValidation.valid) {
+        return res.status(400).json({ error: emailValidation.error });
+      }
+    }
+
+    // Validate owner_phone if provided
+    if (owner_phone) {
+      const phoneValidation = validatePhone(owner_phone);
+      if (!phoneValidation.valid) {
+        return res.status(400).json({ error: phoneValidation.error });
+      }
+    }
+
+    // Validate other phone fields if provided
+    if (retell_phone) {
+      const phoneValidation = validatePhone(retell_phone);
+      if (!phoneValidation.valid) {
+        return res.status(400).json({ error: `Invalid retell_phone: ${phoneValidation.error}` });
+      }
+    }
+
+    if (twilio_phone) {
+      const phoneValidation = validatePhone(twilio_phone);
+      if (!phoneValidation.valid) {
+        return res.status(400).json({ error: `Invalid twilio_phone: ${phoneValidation.error}` });
+      }
+    }
+
+    if (transfer_phone) {
+      const phoneValidation = validatePhone(transfer_phone);
+      if (!phoneValidation.valid) {
+        return res.status(400).json({ error: `Invalid transfer_phone: ${phoneValidation.error}` });
+      }
+    }
+
+    // Validate optional text fields
+    if (owner_name) {
+      const validation = validateLength(owner_name, 'owner_name', LENGTH_LIMITS.name);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
+      }
+    }
+
+    if (industry) {
+      const validation = validateLength(industry, 'industry', LENGTH_LIMITS.name);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
+      }
+    }
+
+    if (calcom_booking_link) {
+      const validation = validateLength(calcom_booking_link, 'calcom_booking_link', LENGTH_LIMITS.url);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
+      }
     }
 
     const id = randomUUID();
@@ -594,8 +662,46 @@ router.put('/clients/:clientId', async (req, res) => {
     // Only allow whitelisted fields to prevent SQL injection
     for (const field in updates) {
       if (ALLOWED_CLIENT_FIELDS.has(field) && updates[field] !== undefined) {
+        const value = updates[field];
+
+        // Validate field lengths and formats based on field type
+        if (field === 'business_name' && value) {
+          const validation = validateLength(value, field, LENGTH_LIMITS.name);
+          if (!validation.valid) {
+            return res.status(400).json({ error: validation.error });
+          }
+        }
+
+        if (field === 'email' && value) {
+          const validation = validateEmail(value);
+          if (!validation.valid) {
+            return res.status(400).json({ error: validation.error });
+          }
+        }
+
+        if (field === 'owner_email' && value) {
+          const validation = validateEmail(value);
+          if (!validation.valid) {
+            return res.status(400).json({ error: validation.error });
+          }
+        }
+
+        if (['phone', 'owner_phone', 'retell_phone', 'twilio_phone', 'telnyx_phone', 'transfer_phone'].includes(field) && value) {
+          const validation = validatePhone(value);
+          if (!validation.valid) {
+            return res.status(400).json({ error: `Invalid ${field}: ${validation.error}` });
+          }
+        }
+
+        if (['business_address', 'owner_name', 'industry', 'website', 'google_review_link', 'calcom_booking_link', 'booking_link'].includes(field) && value) {
+          const validation = validateLength(value, field, LENGTH_LIMITS.text);
+          if (!validation.valid) {
+            return res.status(400).json({ error: validation.error });
+          }
+        }
+
         setClauses.push(`${field} = ?`);
-        values.push(updates[field]);
+        values.push(value);
       }
     }
 
@@ -638,6 +744,23 @@ router.post('/chat', async (req, res) => {
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'messages array is required' });
+    }
+
+    // Validate messages array — check each message has required fields and reasonable sizes
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (!msg.role || !msg.content) {
+        return res.status(400).json({ error: `Message at index ${i} missing role or content` });
+      }
+      if (typeof msg.role !== 'string' || !['user', 'assistant'].includes(msg.role)) {
+        return res.status(400).json({ error: `Message at index ${i} has invalid role` });
+      }
+      if (typeof msg.content !== 'string') {
+        return res.status(400).json({ error: `Message at index ${i} content must be a string` });
+      }
+      if (msg.content.length > LENGTH_LIMITS.text) {
+        return res.status(400).json({ error: `Message at index ${i} exceeds maximum length of ${LENGTH_LIMITS.text} characters` });
+      }
     }
 
     // Load client KB as system context

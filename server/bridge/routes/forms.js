@@ -6,6 +6,7 @@ const { triggerSpeedSequence } = require('../utils/speed-to-lead');
 const { normalizePhone } = require('../utils/phone');
 const { isValidUUID, isValidPhone, isValidEmail, sanitizeString } = require('../utils/validate');
 const { logger } = require('../utils/logger');
+const { validateEmail: validateEmailFormat, validatePhone: validatePhoneFormat, validateLength, LENGTH_LIMITS, sanitizeString: sanitizeInput } = require('../utils/inputValidation');
 
 // Speed-to-lead deduplication store: tracks recent speed-to-lead jobs by phone+email within 5 minutes
 const speedToLeadStore = new Map();
@@ -111,20 +112,36 @@ router.post('/', formRateLimit, async (req, res) => {
     const phone = normalizePhone(body.phone || body.Phone || body['your-phone'] || body.tel || body.mobile || null);
     const email = body.email || body.Email || body['your-email'] || null;
 
+    // Validate and sanitize name
+    if (name) {
+      const nameValidation = validateLength(name, 'name', LENGTH_LIMITS.name);
+      if (!nameValidation.valid) {
+        logger.warn(`[Form] ${nameValidation.error}`);
+        return;
+      }
+    }
+
     // Validate phone if provided
-    if (phone && !isValidPhone(phone)) {
-      logger.warn(`[Form] Invalid phone format: ${phone}`);
-      return;
+    if (phone) {
+      const phoneValidation = validatePhoneFormat(phone);
+      if (!phoneValidation.valid) {
+        logger.warn(`[Form] Invalid phone format: ${phone}`);
+        return;
+      }
     }
 
     // Validate email if provided
-    if (email && !isValidEmail(email)) {
-      logger.warn(`[Form] Invalid email format: ${email}`);
-      return;
+    if (email) {
+      const emailValidation = validateEmailFormat(email);
+      if (!emailValidation.valid) {
+        logger.warn(`[Form] Invalid email format: ${email}`);
+        return;
+      }
     }
-    const message = body.message || body.Message || body['your-message'] || body.body || body.inquiry || '';
-    const service = body.service || body.Service || null;
-    const source = body.utm_source || body.source || 'website_form';
+
+    const message = sanitizeInput(body.message || body.Message || body['your-message'] || body.body || body.inquiry || '', LENGTH_LIMITS.message);
+    const service = sanitizeInput(body.service || body.Service || null, LENGTH_LIMITS.name);
+    const source = sanitizeInput(body.utm_source || body.source || 'website_form', LENGTH_LIMITS.name);
 
     if (!phone) {
       if (email) {
@@ -216,9 +233,11 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
     const body = req.body || {};
 
     // Normalize field names across form builder conventions
-    const name = body.name || body.first_name || body['your-name'] || body.Name || body['full-name'] || body.fullName
+    const rawName = body.name || body.first_name || body['your-name'] || body.Name || body['full-name'] || body.fullName
       || (body.first_name && body.last_name ? `${body.first_name} ${body.last_name}` : null)
       || null;
+
+    const name = rawName ? sanitizeInput(rawName, LENGTH_LIMITS.name) : null;
 
     const phone = normalizePhone(
       body.phone || body.Phone || body['your-phone'] || body.tel
@@ -229,24 +248,33 @@ router.post('/:clientId', formRateLimit, async (req, res) => {
       || body.email_address || body.emailAddress || null;
 
     // Validate phone if provided
-    if (phone && !isValidPhone(phone)) {
-      logger.warn(`[Form] Invalid phone format: ${phone}`);
-      return;
+    if (phone) {
+      const phoneValidation = validatePhoneFormat(phone);
+      if (!phoneValidation.valid) {
+        logger.warn(`[Form] Invalid phone format: ${phone}`);
+        return;
+      }
     }
 
     // Validate email if provided
-    if (email && !isValidEmail(email)) {
-      logger.warn(`[Form] Invalid email format: ${email}`);
-      return;
+    if (email) {
+      const emailValidation = validateEmailFormat(email);
+      if (!emailValidation.valid) {
+        logger.warn(`[Form] Invalid email format: ${email}`);
+        return;
+      }
     }
 
-    const message = (body.message || body.Message || body['your-message']
-      || body.comments || body.inquiry || body.details || body.notes || '').substring(0, 2000);
+    const rawMessage = body.message || body.Message || body['your-message']
+      || body.comments || body.inquiry || body.details || body.notes || '';
+    const message = sanitizeInput(rawMessage, LENGTH_LIMITS.message);
 
-    const service = body.service || body.Service || body.service_type
+    const rawService = body.service || body.Service || body.service_type
       || body.serviceType || body['service-type'] || null;
+    const service = rawService ? sanitizeInput(rawService, LENGTH_LIMITS.name) : null;
 
-    const source = body.utm_source || body.source || body.referrer || 'website_form';
+    const rawSource = body.utm_source || body.source || body.referrer || 'website_form';
+    const source = sanitizeInput(rawSource, LENGTH_LIMITS.name);
 
     // No phone — create lead with email only + notify client
     if (!phone) {

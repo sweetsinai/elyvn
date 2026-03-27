@@ -3,6 +3,8 @@
  * Ensures clean database close, pending job completion, and connection draining on SIGTERM/SIGINT.
  */
 
+const { logger } = require('./logger');
+
 let isShuttingDown = false;
 const shutdownCallbacks = [];
 
@@ -14,20 +16,20 @@ function initGracefulShutdown(server, db) {
   const shutdown = async (signal) => {
     if (isShuttingDown) return;
     isShuttingDown = true;
-    console.log(`\n[shutdown] ${signal} received — starting graceful shutdown...`);
+    logger.info(`\n[shutdown] ${signal} received — starting graceful shutdown...`);
 
     // 0. Clear all timers and cleanup resources
     try {
       const { cleanupWebSocket } = require('./websocket');
       cleanupWebSocket();
     } catch (err) {
-      console.error('[shutdown] WebSocket cleanup error:', err.message);
+      logger.error('[shutdown] WebSocket cleanup error:', err.message);
     }
 
     // 1. Stop accepting new connections
     if (server) {
       server.close(() => {
-        console.log('[shutdown] HTTP server closed — no new connections');
+        logger.info('[shutdown] HTTP server closed — no new connections');
       });
     }
 
@@ -36,7 +38,7 @@ function initGracefulShutdown(server, db) {
       try {
         await cb();
       } catch (err) {
-        console.error('[shutdown] Callback error:', err.message);
+        logger.error('[shutdown] Callback error:', err.message);
       }
     }
 
@@ -46,11 +48,11 @@ function initGracefulShutdown(server, db) {
         const { closeDatabase } = require('./dbAdapter');
         closeDatabase(db);
       } catch (err) {
-        console.error('[shutdown] DB close error:', err.message);
+        logger.error('[shutdown] DB close error:', err.message);
       }
     }
 
-    console.log('[shutdown] Graceful shutdown complete');
+    logger.info('[shutdown] Graceful shutdown complete');
     process.exit(0);
   };
 
@@ -58,7 +60,7 @@ function initGracefulShutdown(server, db) {
   const forceShutdown = (signal) => {
     shutdown(signal);
     setTimeout(() => {
-      console.error('[shutdown] Forced exit after 10s timeout');
+      logger.error('[shutdown] Forced exit after 10s timeout');
       process.exit(1);
     }, 10000).unref();
   };

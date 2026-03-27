@@ -106,14 +106,19 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging for errors and slow requests
+// Request ID middleware — add X-Request-ID for traceability
+app.use((req, res, next) => {
+  req.id = crypto.randomUUID();
+  res.setHeader('X-Request-ID', req.id);
+  next();
+});
+
+// Request logging for all requests with method, path, status, duration
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const ms = Date.now() - start;
-    if (res.statusCode >= 400 || ms > 5000) {
-      logger.info(`[REQ] ${req.method} ${req.path} → ${res.statusCode} (${ms}ms)`);
-    }
+    logger.info(`[REQ] ${req.id} ${req.method} ${req.path} → ${res.statusCode} (${ms}ms)`);
   });
   next();
 });
@@ -147,26 +152,89 @@ app.locals.db = db;
 
 // --- Rate limiting (in-memory, per IP/client with LRU eviction) ---
 const { BoundedRateLimiter } = require('./utils/rateLimiter');
-const limiter = new BoundedRateLimiter({ windowMs: 60000, maxRequests: 120, maxEntries: 10000 });
+// General API rate limiter: 100 requests per minute per IP
+const generalLimiter = new BoundedRateLimiter({ windowMs: 60000, maxRequests: 100, maxEntries: 10000 });
+// Auth-related rate limiter: 10 requests per minute per IP
+const authLimiter = new BoundedRateLimiter({ windowMs: 60000, maxRequests: 10, maxEntries: 10000 });
 
-function rateLimiter(req, res, next) {
-  const key = req.clientId || req.ip || req.connection?.remoteAddress || 'unknown';
-  const result = limiter.check(key);
+function createRateLimiterMiddleware(limiter) {
+  return (req, res, next) => {
+    const key = req.clientId || req.ip || req.connection?.remoteAddress || 'unknown';
+    const result = limiter.check(key);
 
-  res.set('X-RateLimit-Remaining', String(result.remaining));
-  res.set('X-RateLimit-Reset', String(Math.ceil(result.resetAt / 1000)));
+    res.set('X-RateLimit-Remaining', String(result.remaining));
+    res.set('X-RateLimit-Reset', String(Math.ceil(result.resetAt / 1000)));
 
-  if (!result.allowed) {
-    res.set('Retry-After', String(result.retryAfter || 60));
-    return res.status(429).json({ error: 'Too many requests', retry_after: result.retryAfter });
-  }
-  next();
+    if (!result.allowed) {
+      res.set('Retry-After', String(result.retryAfter || 60));
+      return res.status(429).json({ error: 'Too many requests, please try again later' });
+    }
+    next();
+  };
 }
 
-app.use(rateLimiter);
+const generalRateLimiter = createRateLimiterMiddleware(generalLimiter);
+const authRateLimiter = createRateLimiterMiddleware(authLimiter);
+
+// Apply general rate limiter to all routes
+app.use(generalRateLimiter);
 
 // Periodic cleanup
-const rateLimiterInterval = setInterval(() => limiter.cleanup(), RATE_LIMIT_CLEANUP_MS);
+const rateLimiterInterval = setInterval(() => {
+  generalLimiter.cleanup();
+  authLimiter.cleanup();
+}, RATE_LIMIT_CLEANUP_MS);
+
+// --- Health check endpoint (no auth required, before apiAuth) ---
+app.get('/health', async (req, res) => {
+  let dbOk = false;
+  let dbCounts = {};
+  let dbHealth = { status: 'disconnected' };
+
+  try {
+    db.prepare('SELECT 1').get();
+    dbOk = true;
+    dbHealth = getDatabaseHealth(db);
+    dbCounts = {
+      clients: db.prepare('SELECT COUNT(*) as c FROM clients').get().c,
+      calls: db.prepare('SELECT COUNT(*) as c FROM calls').get().c,
+      leads: db.prepare('SELECT COUNT(*) as c FROM leads').get().c,
+      messages: db.prepare('SELECT COUNT(*) as c FROM messages').get().c,
+      followups: db.prepare('SELECT COUNT(*) as c FROM followups').get().c,
+      pending_jobs: db.prepare('SELECT COUNT(*) as c FROM job_queue WHERE status = ?').get('pending').c,
+    };
+  } catch (err) {
+    logger.error('[server] Failed to load database counts:', err.message);
+  }
+
+  const mem = process.memoryUsage();
+
+  const envVars = {
+    ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY,
+    RETELL_API_KEY: !!process.env.RETELL_API_KEY,
+    TELNYX_API_KEY: !!process.env.TELNYX_API_KEY,
+    TELNYX_PHONE_NUMBER: !!process.env.TELNYX_PHONE_NUMBER,
+    TELNYX_MESSAGING_PROFILE_ID: !!process.env.TELNYX_MESSAGING_PROFILE_ID,
+    TELEGRAM_BOT_TOKEN: !!process.env.TELEGRAM_BOT_TOKEN,
+    CALCOM_API_KEY: !!process.env.CALCOM_API_KEY,
+    ELYVN_API_KEY: !!process.env.ELYVN_API_KEY,
+  };
+
+  res.json({
+    status: dbOk ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    uptime_seconds: Math.floor(process.uptime()),
+    memory: {
+      rss_mb: Math.round(mem.rss / 1048576),
+      heap_used_mb: Math.round(mem.heapUsed / 1048576),
+      heap_total_mb: Math.round(mem.heapTotal / 1048576),
+    },
+    services: { db: dbOk },
+    database: dbHealth,
+    db_counts: dbCounts,
+    env_configured: envVars,
+  });
+});
 
 // --- API auth middleware (skip webhooks + health) ---
 const API_KEY = process.env.ELYVN_API_KEY;
@@ -234,8 +302,8 @@ app.use('/retell-webhook', retellRouter);
 app.use('/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
 // Mount onboard routes (before general /api to allow public access)
 app.use('/api', onboardRouter);
-app.use('/api/provision', apiAuth, provisionRouter);
-app.use('/api', apiAuth, enforceClientIsolation, apiRouter);
+app.use('/api/provision', authRateLimiter, apiAuth, provisionRouter);
+app.use('/api', authRateLimiter, apiAuth, enforceClientIsolation, apiRouter);
 
 // Email tracking routes (no auth required)
 app.use('/t', trackingRouter);
@@ -277,57 +345,6 @@ app.get('/metrics', apiAuth, (req, res) => {
   }
 });
 
-// Health check
-app.get('/health', async (req, res) => {
-  let dbOk = false;
-  let dbCounts = {};
-  let dbHealth = { status: 'disconnected' };
-
-  try {
-    db.prepare('SELECT 1').get();
-    dbOk = true;
-    dbHealth = getDatabaseHealth(db);
-    dbCounts = {
-      clients: db.prepare('SELECT COUNT(*) as c FROM clients').get().c,
-      calls: db.prepare('SELECT COUNT(*) as c FROM calls').get().c,
-      leads: db.prepare('SELECT COUNT(*) as c FROM leads').get().c,
-      messages: db.prepare('SELECT COUNT(*) as c FROM messages').get().c,
-      followups: db.prepare('SELECT COUNT(*) as c FROM followups').get().c,
-      pending_jobs: db.prepare('SELECT COUNT(*) as c FROM job_queue WHERE status = ?').get('pending').c,
-    };
-  } catch (err) {
-    logger.error('[server] Failed to load database counts:', err.message);
-  }
-
-  const mem = process.memoryUsage();
-
-  const envVars = {
-    ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY,
-    RETELL_API_KEY: !!process.env.RETELL_API_KEY,
-    TELNYX_API_KEY: !!process.env.TELNYX_API_KEY,
-    TELNYX_PHONE_NUMBER: !!process.env.TELNYX_PHONE_NUMBER,
-    TELNYX_MESSAGING_PROFILE_ID: !!process.env.TELNYX_MESSAGING_PROFILE_ID,
-    TELEGRAM_BOT_TOKEN: !!process.env.TELEGRAM_BOT_TOKEN,
-    CALCOM_API_KEY: !!process.env.CALCOM_API_KEY,
-    ELYVN_API_KEY: !!process.env.ELYVN_API_KEY,
-  };
-
-  res.json({
-    status: dbOk ? 'ok' : 'degraded',
-    timestamp: new Date().toISOString(),
-    uptime_seconds: Math.floor(process.uptime()),
-    memory: {
-      rss_mb: Math.round(mem.rss / 1048576),
-      heap_used_mb: Math.round(mem.heapUsed / 1048576),
-      heap_total_mb: Math.round(mem.heapTotal / 1048576),
-    },
-    services: { db: dbOk },
-    database: dbHealth,
-    db_counts: dbCounts,
-    env_configured: envVars,
-  });
-});
-
 // Catch-all for SPA routing — exclude API/webhook/health paths
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/webhooks') || req.path.startsWith('/health') || req.path.startsWith('/test')) {
@@ -342,14 +359,41 @@ app.get('*', (req, res) => {
   }
 });
 
-// Global error handler
+// Global error handler — catch-all for unhandled errors (must be last middleware)
 app.use((err, req, res, _next) => {
-  // JSON parse errors from body-parser
-  if (err.type === 'entity.parse.failed' || (err instanceof SyntaxError && err.status === 400)) {
-    return res.status(400).json({ error: 'Invalid JSON' });
+  try {
+    // JSON parse errors from body-parser
+    if (err.type === 'entity.parse.failed' || (err instanceof SyntaxError && err.status === 400)) {
+      logger.warn('[server] JSON parse error:', err.message);
+      return res.status(400).json({ error: 'Invalid JSON in request body' });
+    }
+
+    // Validation errors
+    if (err.message && err.message.includes('validation')) {
+      logger.warn('[server] Validation error:', err.message);
+      return res.status(400).json({ error: 'Request validation failed' });
+    }
+
+    // Database errors
+    if (err.message && err.message.includes('database')) {
+      logger.error('[server] Database error:', err.message);
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    // Default: log and return generic error
+    logger.error('[server] Unhandled error:', {
+      message: err.message,
+      stack: err.stack,
+      method: req.method,
+      path: req.path,
+    });
+
+    // Don't expose error details to client
+    res.status(500).json({ error: 'Internal server error' });
+  } catch (handlerErr) {
+    logger.error('[server] Error handler crashed:', handlerErr.message);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  logger.error('[server] Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
 });
 
 const server = app.listen(PORT, () => {
