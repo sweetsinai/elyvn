@@ -52,7 +52,15 @@ const PORT = process.env.PORT || 3001;
 
 // Security headers via Helmet
 app.use(helmet({
-  contentSecurityPolicy: false, // Dashboard serves static files
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Required for dashboard (React)
+      styleSrc: ["'self'", "'unsafe-inline'"], // Required for dashboard styles
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", 'https://api.anthropic.com', 'https://api.retellai.com', 'https://api.telnyx.com'],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
 

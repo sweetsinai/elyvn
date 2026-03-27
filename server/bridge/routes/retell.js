@@ -420,7 +420,7 @@ async function handleCallEnded(db, call) {
             // Instant text-back (with opt-out check)
             const textBackMsg = `Hi! Sorry we missed your call. How can we help you today? — ${missedClient.business_name || 'Our team'}`;
             const missedCallPhone = missedClient.telnyx_phone || missedClient.twilio_phone;
-            sendSMS(callerPhone, textBackMsg, missedCallPhone, db, clientId)
+            await sendSMS(callerPhone, textBackMsg, missedCallPhone, db, clientId)
               .catch(err => logger.error('[retell] Missed call text-back failed:', err.message));
 
             // Log text-back in messages
@@ -431,7 +431,7 @@ async function handleCallEnded(db, call) {
 
             // Telegram: missed call alert
             if (missedClient.telegram_chat_id) {
-              telegram.sendMessage(missedClient.telegram_chat_id,
+              await telegram.sendMessage(missedClient.telegram_chat_id,
                 `&#10060; <b>Missed call</b> from ${callerPhone}\n\nAuto text-back sent.`
               ).catch(err => logger.error('[retell] Telegram missed-call alert failed:', err.message));
             }
@@ -460,7 +460,7 @@ async function handleCallEnded(db, call) {
         const client = db.prepare('SELECT owner_phone, business_name FROM clients WHERE id = ?').get(clientId);
         if (client?.owner_phone) {
           const reason = outcome === 'transferred' ? 'Transfer' : 'Complaint detected';
-          sendSMS(
+          await sendSMS(
             client.owner_phone,
             `[ELYVN] ${reason} — ${client.business_name}\nCaller: ${callerPhone}\n${summary}`
           ).catch(err => logger.error('[retell] Owner SMS failed:', err.message));
@@ -611,7 +611,7 @@ async function handleTransfer(db, call) {
         await sendSMS(
           transferTarget,
           `📞 Transfer incoming from ${callerPhone || 'unknown'} — ${summary}\n\nCall your Retell number and press * to connect.`
-        );
+        ).catch(err => logger.error('[retell] Transfer SMS failed:', err.message));
         // Also notify owner if transfer_phone is different from owner_phone
         if (client?.transfer_phone && client?.owner_phone && client.transfer_phone !== client.owner_phone) {
           await sendSMS(

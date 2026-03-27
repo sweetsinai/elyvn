@@ -25,7 +25,7 @@ const ALLOWED_CLIENT_FIELDS = new Set([
   'owner_name', 'owner_phone', 'owner_email',
   'retell_agent_id', 'retell_phone', 'twilio_phone', 'telnyx_phone', 'transfer_phone',
   'calcom_event_type_id', 'calcom_booking_link', 'telegram_chat_id',
-  'avg_ticket', 'is_active'
+  'avg_ticket', 'is_active', 'plan'
 ]);
 
 // Helper to safely build SQL where clauses with parameterized queries

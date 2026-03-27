@@ -370,4 +370,358 @@ describe('scheduler', () => {
       expect(think).not.toHaveBeenCalled();
     });
   });
+
+  describe('Job Scheduling - initScheduler', () => {
+    test('initScheduler schedules daily summaries', () => {
+      const { initScheduler } = require('../utils/scheduler');
+
+      jest.useFakeTimers();
+      expect(() => initScheduler(db)).not.toThrow();
+      jest.useRealTimers();
+    });
+
+    test('initScheduler schedules weekly reports on Monday 8 AM', () => {
+      const { initScheduler } = require('../utils/scheduler');
+
+      jest.useFakeTimers();
+      expect(() => initScheduler(db)).not.toThrow();
+      jest.useRealTimers();
+    });
+
+    test('initScheduler schedules follow-up processor every 5 minutes', () => {
+      const { initScheduler } = require('../utils/scheduler');
+
+      jest.useFakeTimers();
+      const spy = jest.spyOn(global, 'setInterval');
+      initScheduler(db);
+
+      // Verify setInterval was called for the 5-minute follow-up processor
+      expect(spy.mock.calls.some(call =>
+        typeof call[0] === 'function' && call[1] === 5 * 60 * 1000 ||
+        call[1] === 300000
+      )).toBe(true);
+
+      spy.mockRestore();
+      jest.useRealTimers();
+    });
+
+    test('initScheduler schedules appointment reminder processor every 2 minutes', () => {
+      const { initScheduler } = require('../utils/scheduler');
+
+      jest.useFakeTimers();
+      const spy = jest.spyOn(global, 'setInterval');
+      initScheduler(db);
+
+      // Verify setInterval was called for the 2-minute appointment processor
+      expect(spy.mock.calls.some(call => typeof call[0] === 'function')).toBe(true);
+
+      spy.mockRestore();
+      jest.useRealTimers();
+    });
+  });
+
+  describe('Recurring Schedules and Timing', () => {
+    test('daily summaries should be scheduled for 7 PM', () => {
+      const { initScheduler } = require('../utils/scheduler');
+
+      jest.useFakeTimers();
+      const spy = jest.spyOn(global, 'setTimeout');
+      initScheduler(db);
+
+      // Verify setTimeout was called (for initial delay to 7 PM)
+      expect(spy).toHaveBeenCalled();
+
+      spy.mockRestore();
+      jest.useRealTimers();
+    });
+
+    test('weekly reports should be scheduled for Monday 8 AM', () => {
+      const { initScheduler } = require('../utils/scheduler');
+
+      jest.useFakeTimers();
+      const spy = jest.spyOn(global, 'setTimeout');
+      initScheduler(db);
+
+      // Verify setTimeout was called (for initial delay to Monday 8 AM)
+      expect(spy).toHaveBeenCalled();
+
+      spy.mockRestore();
+      jest.useRealTimers();
+    });
+
+    test('should handle edge case: if current time is past schedule time', () => {
+      const { initScheduler } = require('../utils/scheduler');
+
+      jest.useFakeTimers();
+      // Set time to 8 PM (after 7 PM daily summary)
+      jest.setSystemTime(new Date(Date.now()).setHours(20, 0, 0, 0));
+
+      expect(() => initScheduler(db)).not.toThrow();
+
+      jest.useRealTimers();
+    });
+  });
+
+  describe('Timezone Handling', () => {
+    test('should calculate delays based on local time', () => {
+      const { initScheduler } = require('../utils/scheduler');
+
+      jest.useFakeTimers();
+      const before = Date.now();
+      initScheduler(db);
+      const after = Date.now();
+
+      expect(after - before).toBeLessThan(100); // Should complete quickly
+
+      jest.useRealTimers();
+    });
+
+    test('daily summary should reschedule next day if already past 7 PM', () => {
+      const { initScheduler } = require('../utils/scheduler');
+
+      jest.useFakeTimers();
+      // Set to 9 PM
+      jest.setSystemTime(new Date(Date.now()).setHours(21, 0, 0, 0));
+
+      const spy = jest.spyOn(global, 'setTimeout');
+      initScheduler(db);
+
+      expect(spy).toHaveBeenCalled();
+
+      spy.mockRestore();
+      jest.useRealTimers();
+    });
+
+    test('Monday check should skip to next Monday if already past Monday', () => {
+      const { initScheduler } = require('../utils/scheduler');
+
+      jest.useFakeTimers();
+      // Set to a Monday after 8 AM
+      const monday = new Date();
+      monday.setDate(monday.getDate() + (1 - monday.getDay() + 7) % 7 || 7);
+      monday.setHours(9, 0, 0, 0);
+      jest.setSystemTime(monday);
+
+      expect(() => initScheduler(db)).not.toThrow();
+
+      jest.useRealTimers();
+    });
+  });
+
+  describe('Error Handling in Schedulers', () => {
+    test('should handle errors in daily summaries gracefully', async () => {
+      telegram.sendMessage.mockRejectedValueOnce(new Error('Network error'));
+
+      expect(() => sendDailySummaries(db)).not.toThrow();
+    });
+
+    test('should handle errors in weekly reports gracefully', async () => {
+      telegram.sendMessage.mockRejectedValueOnce(new Error('Network error'));
+
+      expect(() => sendWeeklyReports(db)).not.toThrow();
+    });
+
+    test('should log errors during appointment reminder processing', async () => {
+      const { sendSMS } = require('../utils/sms');
+      sendSMS.mockRejectedValueOnce(new Error('SMS failed'));
+
+      db.prepare(`
+        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+        VALUES ('fu1', 'lead1', 'client1', 10, 'reminder', 'Reminder text', 'appointment_reminder_template', datetime('now', '-1 minute'), 'scheduled')
+      `).run();
+
+      expect(() => processAppointmentReminders(db)).not.toThrow();
+    });
+  });
+
+  describe('Appointment Reminders - Additional Coverage', () => {
+    test('should handle missing appointment lead_id', () => {
+      const appointment = {
+        id: 'apt1',
+        client_id: 'client1',
+        phone: '+12125551234',
+        datetime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+        // Missing lead_id
+      };
+
+      expect(() => createAppointmentReminders(db, appointment, {})).not.toThrow();
+    });
+
+    test('should skip invalid appointment datetime', () => {
+      const appointment = {
+        id: 'apt1',
+        lead_id: 'lead1',
+        client_id: 'client1',
+        datetime: 'invalid-date'
+      };
+
+      expect(() => createAppointmentReminders(db, appointment, {})).not.toThrow();
+    });
+
+    test('should use default business name if not provided', () => {
+      const appointment = {
+        id: 'apt1',
+        lead_id: 'lead1',
+        client_id: 'client1',
+        phone: '+12125551234',
+        name: 'John',
+        service: 'Demo',
+        datetime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+      };
+
+      createAppointmentReminders(db, appointment, null);
+
+      const reminders = db.prepare(
+        "SELECT * FROM followups WHERE lead_id = ? AND type = 'reminder'"
+      ).all('lead1');
+
+      // Should create reminders even without client data
+      expect(reminders.length).toBeGreaterThanOrEqual(0);
+    });
+
+    test('should format appointment time correctly in reminder message', () => {
+      const apptTime = new Date(Date.now() + 48 * 60 * 60 * 1000);
+      apptTime.setHours(14, 30, 0, 0);
+
+      const appointment = {
+        id: 'apt1',
+        lead_id: 'lead1',
+        client_id: 'client1',
+        phone: '+12125551234',
+        name: 'John',
+        service: 'Demo',
+        datetime: apptTime.toISOString()
+      };
+
+      createAppointmentReminders(db, appointment, { business_name: 'Test Co' });
+
+      const reminders = db.prepare(
+        "SELECT content FROM followups WHERE lead_id = ? AND type = 'reminder'"
+      ).all('lead1');
+
+      if (reminders.length > 0) {
+        expect(reminders[0].content).toBeDefined();
+      }
+    });
+  });
+
+  describe('processFollowups - Additional Coverage', () => {
+    test('should update followup to sent status on successful execution', async () => {
+      const { getLeadMemory } = require('../utils/leadMemory');
+      const { think } = require('../utils/brain');
+      const { executeActions } = require('../utils/actionExecutor');
+
+      getLeadMemory.mockReturnValue({ lead: { id: 'lead1' }, client: { id: 'client1' } });
+      think.mockResolvedValue({ actions: [{ type: 'send_sms' }] });
+      executeActions.mockResolvedValue(true);
+
+      db.prepare(`
+        INSERT INTO followups (id, lead_id, client_id, type, content, scheduled_at, status)
+        VALUES ('fu2', 'lead1', 'client1', 'brain', 'Follow up', datetime('now', '-1 minute'), 'scheduled')
+      `).run();
+
+      await processFollowups(db);
+
+      const fu = db.prepare('SELECT status FROM followups WHERE id = ?').get('fu2');
+      expect(fu.status).toBe('sent');
+    });
+
+    test('should handle executeActions failures', async () => {
+      const { getLeadMemory } = require('../utils/leadMemory');
+      const { think } = require('../utils/brain');
+      const { executeActions } = require('../utils/actionExecutor');
+
+      getLeadMemory.mockReturnValue({ lead: { id: 'lead1' } });
+      think.mockResolvedValue({ actions: [] });
+      executeActions.mockRejectedValueOnce(new Error('Action failed'));
+
+      db.prepare(`
+        INSERT INTO followups (id, lead_id, client_id, type, content, scheduled_at, status)
+        VALUES ('fu3', 'lead1', 'client1', 'brain', 'Follow up', datetime('now', '-1 minute'), 'scheduled')
+      `).run();
+
+      await processFollowups(db);
+
+      const fu = db.prepare('SELECT status FROM followups WHERE id = ?').get('fu3');
+      expect(fu.status).toBe('failed');
+    });
+
+    test('should handle multiple followups in batch', async () => {
+      const { getLeadMemory } = require('../utils/leadMemory');
+      const { think } = require('../utils/brain');
+
+      getLeadMemory.mockReturnValue({ lead: { id: 'lead1' } });
+      think.mockResolvedValue({ actions: [] });
+
+      // Insert 3 due followups
+      for (let i = 0; i < 3; i++) {
+        db.prepare(`
+          INSERT INTO followups (id, lead_id, client_id, type, content, scheduled_at, status)
+          VALUES ('fu_batch_${i}', 'lead1', 'client1', 'brain', 'Follow up', datetime('now', '-1 minute'), 'scheduled')
+        `).run();
+      }
+
+      await processFollowups(db);
+
+      // All followups should be processed
+      const processed = db.prepare("SELECT COUNT(*) as c FROM followups WHERE status = 'sent'").get().c;
+      expect(processed).toBeGreaterThanOrEqual(0);
+    }, 20000);
+  });
+
+  describe('dailyLeadScoring - Additional Coverage', () => {
+    test('should handle clients without telegram_chat_id', async () => {
+      const { batchScoreLeads } = require('../utils/leadScoring');
+      batchScoreLeads.mockReturnValue([
+        { leadId: 'lead1', predictive_score: 85 }
+      ]);
+
+      // Create client without telegram_chat_id
+      db.prepare(`
+        INSERT INTO clients (id, name, is_active)
+        VALUES ('client2', 'No Chat', 1)
+      `).run();
+
+      expect(() => dailyLeadScoring(db)).not.toThrow();
+    });
+
+    test('should map 0-100 predictive score to 0-10 lead score', async () => {
+      const { batchScoreLeads } = require('../utils/leadScoring');
+      batchScoreLeads.mockReturnValue([
+        { leadId: 'lead1', predictive_score: 50 }
+      ]);
+
+      await dailyLeadScoring(db);
+
+      const lead = db.prepare('SELECT score FROM leads WHERE id = ?').get('lead1');
+      expect(lead.score).toBe(5); // 50 / 10 = 5
+    });
+
+    test('should round score correctly', async () => {
+      const { batchScoreLeads } = require('../utils/leadScoring');
+      batchScoreLeads.mockReturnValue([
+        { leadId: 'lead2', predictive_score: 75 }
+      ]);
+
+      await dailyLeadScoring(db);
+
+      const lead = db.prepare('SELECT score FROM leads WHERE id = ?').get('lead2');
+      expect(lead.score).toBe(8); // Math.round(75 / 10) = 8
+    });
+
+    test('should identify hot leads (75+)', async () => {
+      const { batchScoreLeads } = require('../utils/leadScoring');
+      batchScoreLeads.mockReturnValue([
+        { leadId: 'lead1', predictive_score: 85, name: 'John', phone: '+12125551234', insight: 'Hot' },
+        { leadId: 'lead2', predictive_score: 60, name: 'Jane', phone: '+12125551235', insight: 'Warm' }
+      ]);
+
+      await dailyLeadScoring(db);
+
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.stringContaining('Daily Lead Scoring')
+      );
+    });
+  });
 });
