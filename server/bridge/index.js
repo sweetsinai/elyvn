@@ -469,7 +469,9 @@ const server = app.listen(PORT, () => {
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
       : process.env.BASE_URL || `http://localhost:${PORT}`;
     const { setWebhook } = require('./utils/telegram');
-    setWebhook(`${baseUrl}/webhooks/telegram`);
+    setWebhook(`${baseUrl}/webhooks/telegram`).catch(err =>
+      logger.error('[startup] Telegram setWebhook failed (non-fatal):', err.message)
+    );
   }
 });
 
