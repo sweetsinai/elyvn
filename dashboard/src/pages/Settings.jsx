@@ -402,7 +402,7 @@ export default function Settings() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[
             { label: 'Retell Webhook', url: `${baseUrl}/webhooks/retell` },
-            { label: 'Telnyx Webhook', url: `${baseUrl}/webhooks/twilio` },
+            { label: 'Telnyx Webhook', url: `${baseUrl}/webhooks/telnyx` },
           ].map(wh => (
             <div key={wh.label} className="card" style={{
               padding: '12px 16px',

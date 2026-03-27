@@ -25,8 +25,11 @@ export default function Dashboard() {
         if (cancelled) return;
         const list = Array.isArray(data) ? data : data.clients || [];
         setClients(list);
-        if (!clientId && list.length > 0) {
-          const first = list[0].id || list[0].client_id;
+        // Validate stored client ID exists in the list; reset if stale
+        const storedId = clientId;
+        const ids = list.map(c => c.id || c.client_id);
+        if (list.length > 0 && (!storedId || !ids.includes(storedId))) {
+          const first = ids[0];
           setClientId(first);
           localStorage.setItem('elyvn_client', first);
         }
