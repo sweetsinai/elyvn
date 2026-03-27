@@ -34,7 +34,7 @@ const connections = [
   { name: 'MCP', key: 'mcp' },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => {} }) {
   const location = useLocation();
   const [health, setHealth] = useState({});
 
@@ -72,7 +72,9 @@ export default function Sidebar() {
       display: 'flex',
       flexDirection: 'column',
       zIndex: 50,
-    }}>
+      transition: 'transform 0.3s ease-out',
+      transform: 'translateX(0)',
+    }} className="sidebar">
       {/* Logo */}
       <div style={{
         padding: '24px 20px 20px',
@@ -90,7 +92,7 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav style={{ flex: 1, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <nav style={{ flex: 1, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2 }} aria-label="Main navigation">
         {navItems.map(item => {
           const isActive = item.path === '/'
             ? location.pathname === '/'
@@ -100,6 +102,7 @@ export default function Sidebar() {
             <NavLink
               key={item.path}
               to={item.path}
+              aria-current={isActive ? 'page' : undefined}
               style={{
                 display: 'flex',
                 alignItems: 'center',

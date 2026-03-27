@@ -307,6 +307,7 @@ export default function Calls() {
           <button
             className="btn-primary"
             onClick={handleFilter}
+            aria-label="Apply call filters"
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
             <RefreshCw size={14} />
@@ -315,6 +316,7 @@ export default function Calls() {
           <button
             className="btn-ghost"
             onClick={clearFilters}
+            aria-label="Clear all filters"
           >
             Clear Filters
           </button>
@@ -351,107 +353,153 @@ export default function Calls() {
         </div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          {/* Table Header */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '80px 120px 80px 120px 100px 100px 40px',
-            gap: 16,
-            padding: '16px 20px',
-            borderBottom: '1px solid #141414',
-            fontSize: 12,
-            fontWeight: 600,
-            color: '#888',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-          }}>
-            <div>Time</div>
-            <div>Phone</div>
-            <div>Duration</div>
-            <div>Outcome</div>
-            <div>Score</div>
-            <div>Sentiment</div>
-            <div></div>
-          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{
+                borderBottom: '1px solid #141414',
+                backgroundColor: 'transparent',
+              }}>
+                <th style={{
+                  textAlign: 'left',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  color: '#888',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '16px 20px',
+                }}>Time</th>
+                <th style={{
+                  textAlign: 'left',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  color: '#888',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '16px 20px',
+                }}>Phone</th>
+                <th style={{
+                  textAlign: 'left',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  color: '#888',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '16px 20px',
+                }}>Duration</th>
+                <th style={{
+                  textAlign: 'left',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  color: '#888',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '16px 20px',
+                }}>Outcome</th>
+                <th style={{
+                  textAlign: 'left',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  color: '#888',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '16px 20px',
+                }}>Score</th>
+                <th style={{
+                  textAlign: 'left',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  color: '#888',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '16px 20px',
+                }}>Sentiment</th>
+                <th style={{
+                  textAlign: 'center',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  color: '#888',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '16px 20px',
+                }}><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {calls.map((call, i) => {
+                const outcomeBadge = getOutcomeBadgeColor(call.outcome);
+                const scoreColor = getScoreBarColor(call.score || 0);
+                return (
+                  <tr
+                    key={call.id || call.call_id || i}
+                    onClick={() => openDetail(call)}
+                    style={{
+                      borderBottom: '1px solid #0d0d0d',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.2s',
+                      backgroundColor: 'transparent',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#141414'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#e0d8c8', fontWeight: 500 }}>
+                      {timeAgo(call.created_at || call.timestamp)}
+                    </td>
 
-          {/* Table Rows */}
-          <div>
-            {calls.map((call, i) => {
-              const outcomeBadge = getOutcomeBadgeColor(call.outcome);
-              const scoreColor = getScoreBarColor(call.score || 0);
-              return (
-                <div
-                  key={call.id || call.call_id || i}
-                  onClick={() => openDetail(call)}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '80px 120px 80px 120px 100px 100px 40px',
-                    gap: 16,
-                    padding: '16px 20px',
-                    borderBottom: '1px solid #0d0d0d',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    transition: 'background-color 0.2s',
-                    backgroundColor: 'transparent',
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#141414'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                  <div style={{ fontSize: 13, color: '#e0d8c8', fontWeight: 500 }}>
-                    {timeAgo(call.created_at || call.timestamp)}
-                  </div>
+                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#e0d8c8', fontWeight: 500, fontFamily: 'monospace' }}>
+                      {formatPhone(call.phone || call.phone_number)}
+                    </td>
 
-                  <div style={{ fontSize: 13, color: '#e0d8c8', fontWeight: 500, fontFamily: 'monospace' }}>
-                    {formatPhone(call.phone || call.phone_number)}
-                  </div>
+                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#888' }}>
+                      {formatDuration(call.duration || 0)}
+                    </td>
 
-                  <div style={{ fontSize: 13, color: '#888' }}>
-                    {formatDuration(call.duration || 0)}
-                  </div>
-
-                  <div style={{
-                    display: 'inline-block',
-                    padding: '4px 10px',
-                    background: outcomeBadge.bg,
-                    color: outcomeBadge.color,
-                    borderRadius: 4,
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}>
-                    {outcomeBadge.text}
-                  </div>
-
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{
-                        width: 40,
-                        height: 4,
-                        background: '#0d0d0d',
-                        borderRadius: 2,
-                        overflow: 'hidden',
+                    <td style={{ padding: '16px 20px' }}>
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '4px 10px',
+                        background: outcomeBadge.bg,
+                        color: outcomeBadge.color,
+                        borderRadius: 4,
+                        fontSize: 12,
+                        fontWeight: 600,
                       }}>
-                        <div style={{
-                          width: `${Math.min((call.score || 0) * 10, 100)}%`,
-                          height: '100%',
-                          background: scoreColor,
-                        }} />
-                      </div>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: scoreColor }}>
-                        {(call.score || 0).toFixed(1)}
+                        {outcomeBadge.text}
                       </span>
-                    </div>
-                  </div>
+                    </td>
 
-                  <div style={{ fontSize: 13, color: '#888' }}>
-                    {getSentiment(call)}
-                  </div>
+                    <td style={{ padding: '16px 20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{
+                          width: 40,
+                          height: 4,
+                          background: '#0d0d0d',
+                          borderRadius: 2,
+                          overflow: 'hidden',
+                        }}>
+                          <div style={{
+                            width: `${Math.min((call.score || 0) * 10, 100)}%`,
+                            height: '100%',
+                            background: scoreColor,
+                          }} />
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: scoreColor }}>
+                          {(call.score || 0).toFixed(1)}
+                        </span>
+                      </div>
+                    </td>
 
-                  <div style={{ display: 'flex', justifyContent: 'center', color: '#555' }}>
-                    <ChevronDown size={16} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#888' }}>
+                      {getSentiment(call)}
+                    </td>
+
+                    <td style={{ padding: '16px 20px', textAlign: 'center', color: '#555' }}>
+                      <ChevronDown size={16} aria-hidden="true" />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -463,22 +511,24 @@ export default function Calls() {
           justifyContent: 'center',
           gap: 16,
           marginTop: 24,
-        }}>
+        }} role="navigation" aria-label="Call list pagination">
           <button
             className="btn-ghost"
             onClick={() => setPage(p => Math.max(1, p - 1))}
             disabled={page <= 1}
+            aria-label="Previous page"
             style={{ opacity: page <= 1 ? 0.3 : 1 }}
           >
             <ChevronLeft size={16} />
           </button>
-          <span style={{ fontSize: 13, color: '#888' }}>
+          <span style={{ fontSize: 13, color: '#888' }} aria-live="polite">
             Page {page} of {totalPages}
           </span>
           <button
             className="btn-ghost"
             onClick={() => setPage(p => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages}
+            aria-label="Next page"
             style={{ opacity: page >= totalPages ? 0.3 : 1 }}
           >
             <ChevronRight size={16} />
@@ -522,6 +572,7 @@ export default function Calls() {
               </h2>
               <button
                 onClick={closeDetail}
+                aria-label="Close call details"
                 style={{
                   background: 'none',
                   border: 'none',

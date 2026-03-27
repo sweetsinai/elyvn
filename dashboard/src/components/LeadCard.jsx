@@ -17,6 +17,15 @@ export default function LeadCard({ lead, onDragStart, onClick }) {
       }}
       onClick={() => onClick?.(lead)}
       className="card"
+      role="button"
+      tabIndex={0}
+      aria-label={`Lead: ${lead.name || lead.phone}, score ${lead.score || 0}/10. Drag to move to another stage or click to view details.`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick?.(lead);
+        }
+      }}
       style={{
         padding: '10px 12px',
         marginBottom: 6,

@@ -172,13 +172,14 @@ export default function Pipeline() {
         background: 'rgba(255,255,255,0.03)',
         borderRadius: 8,
         border: '1px solid rgba(255,255,255,0.06)',
-      }}>
-        <Search size={16} color="#555" />
+      }} role="search">
+        <Search size={16} color="#555" aria-hidden="true" />
         <input
           type="text"
           placeholder="Search by name, phone, or email..."
           value={searchQuery}
           onChange={e => handleSearch(e.target.value)}
+          aria-label="Search leads"
           style={{
             flex: 1,
             background: 'transparent',
@@ -191,6 +192,7 @@ export default function Pipeline() {
         <select
           value={filterStage}
           onChange={e => handleFilterStage(e.target.value)}
+          aria-label="Filter by pipeline stage"
           style={{
             padding: '6px 10px',
             borderRadius: 4,
@@ -236,7 +238,7 @@ export default function Pipeline() {
         gap: 10,
         minHeight: 500,
         overflowX: 'auto',
-      }}>
+      }} role="group" aria-label="Pipeline kanban board">
         {STAGES.map(stage => {
           const stageLeads = getLeadsByStage(stage);
           return (
@@ -248,6 +250,7 @@ export default function Pipeline() {
               }}
               onDragLeave={() => setDragOverStage(null)}
               onDrop={(e) => handleDrop(e, stage)}
+              aria-label={`${stageLabels[stage]} stage with ${stageLeads.length} leads`}
               style={{
                 background: dragOverStage === stage ? 'rgba(201,168,76,0.05)' : 'transparent',
                 border: `1px solid ${dragOverStage === stage ? 'rgba(201,168,76,0.2)' : 'rgba(255,255,255,0.06)'}`,
@@ -317,22 +320,24 @@ export default function Pipeline() {
           marginTop: 24,
           paddingTop: 16,
           borderTop: '1px solid rgba(255,255,255,0.06)',
-        }}>
+        }} role="navigation" aria-label="Lead list pagination">
           <button
             className="btn-ghost"
             onClick={() => setPage(p => Math.max(1, p - 1))}
             disabled={page <= 1}
+            aria-label="Previous page"
             style={{ opacity: page <= 1 ? 0.3 : 1 }}
           >
             Previous
           </button>
-          <span style={{ fontSize: 13, color: '#888', minWidth: 100, textAlign: 'center' }}>
+          <span style={{ fontSize: 13, color: '#888', minWidth: 100, textAlign: 'center' }} aria-live="polite">
             Page {page} of {totalPages}
           </span>
           <button
             className="btn-ghost"
             onClick={() => setPage(p => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages}
+            aria-label="Next page"
             style={{ opacity: page >= totalPages ? 0.3 : 1 }}
           >
             Next
@@ -352,7 +357,7 @@ export default function Pipeline() {
               <h3 style={{ fontSize: 16, fontWeight: 600 }}>
                 {selectedLead.name || formatPhone(selectedLead.phone)}
               </h3>
-              <button className="btn-ghost" onClick={() => setSelectedLead(null)}>
+              <button className="btn-ghost" onClick={() => setSelectedLead(null)} aria-label="Close lead details">
                 <X size={16} />
               </button>
             </div>
