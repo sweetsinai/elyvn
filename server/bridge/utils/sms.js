@@ -1,13 +1,31 @@
 const https = require('https');
 
+// === Provider config (auto-detect: Twilio first, then Telnyx) ===
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER;
+
 const TELNYX_API_KEY = process.env.TELNYX_API_KEY;
 const TELNYX_PHONE = process.env.TELNYX_PHONE_NUMBER;
 const TELNYX_MESSAGING_PROFILE_ID = process.env.TELNYX_MESSAGING_PROFILE_ID;
 
+// Determine active provider
+const SMS_PROVIDER = (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) ? 'twilio'
+  : TELNYX_API_KEY ? 'telnyx'
+  : null;
+
+const DEFAULT_FROM = SMS_PROVIDER === 'twilio' ? TWILIO_PHONE : TELNYX_PHONE;
+
+if (SMS_PROVIDER) {
+  console.log(`[sms] Using ${SMS_PROVIDER} as SMS provider (from: ${DEFAULT_FROM || 'not set'})`);
+} else {
+  console.warn('[sms] No SMS provider configured — set TWILIO or TELNYX env vars');
+}
+
 const { SMS_MIN_GAP_MS, SMS_RATE_LIMIT_CLEANUP_MS, SMS_MAX_RATE_LIMIT_ENTRIES, DUPLICATE_SMS_LOOKBACK_MS } = require('../config/timing');
 
 /**
- * Make an HTTPS request to Telnyx API and return {status, body}
+ * Make an HTTPS request and return {status, body}
  */
 function httpsRequest(options, data = null) {
   return new Promise((resolve, reject) => {
@@ -27,7 +45,8 @@ function httpsRequest(options, data = null) {
 
     req.on('error', reject);
     if (data) {
-      req.write(JSON.stringify(data));
+      const payload = typeof data === 'string' ? data : JSON.stringify(data);
+      req.write(payload);
     }
     req.end();
   });
@@ -51,16 +70,85 @@ const smsRateLimitCleanupInterval = setInterval(() => {
 }, SMS_RATE_LIMIT_CLEANUP_MS); // Every 10 minutes
 
 /**
- * Send SMS via Telnyx REST API with retry logic.
+ * Send SMS via Twilio REST API (no SDK needed)
+ */
+async function sendViaTwilio(to, body, from) {
+  const formData = new URLSearchParams({
+    To: to,
+    From: from,
+    Body: body,
+  }).toString();
+
+  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+
+  const options = {
+    hostname: 'api.twilio.com',
+    port: 443,
+    path: `/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Length': Buffer.byteLength(formData),
+    },
+  };
+
+  const response = await httpsRequest(options, formData);
+
+  if (response.status !== 201 && response.status !== 200) {
+    const errorMsg = response.body?.message || response.body?.error_message || JSON.stringify(response.body);
+    throw new Error(`Twilio API error (${response.status}): ${errorMsg}`);
+  }
+
+  return response.body?.sid || response.body?.message_sid;
+}
+
+/**
+ * Send SMS via Telnyx REST API
+ */
+async function sendViaTelnyx(to, body, from) {
+  const payload = {
+    from: from,
+    to: to,
+    text: body,
+  };
+
+  if (TELNYX_MESSAGING_PROFILE_ID) {
+    payload.messaging_profile_id = TELNYX_MESSAGING_PROFILE_ID;
+  }
+
+  const options = {
+    hostname: 'api.telnyx.com',
+    port: 443,
+    path: '/v2/messages',
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${TELNYX_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+  };
+
+  const response = await httpsRequest(options, payload);
+
+  if (response.status !== 200 && response.status !== 201) {
+    const errorMsg = response.body?.errors?.[0]?.detail || response.body || 'Unknown error';
+    throw new Error(`Telnyx API error (${response.status}): ${errorMsg}`);
+  }
+
+  return response.body?.data?.id;
+}
+
+/**
+ * Send SMS via the configured provider (Twilio or Telnyx) with retry logic.
  * @param {string} to - Recipient phone number
  * @param {string} body - Message body
- * @param {string} [from] - Sender phone number (defaults to TELNYX_PHONE_NUMBER)
+ * @param {string} [from] - Sender phone number (defaults to provider default)
  * @param {object} [db] - better-sqlite3 instance for opt-out checking
  * @param {string} [clientId] - Client ID for opt-out checking
  * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
  */
 async function sendSMS(to, body, from, db, clientId) {
-  const fromNumber = from || TELNYX_PHONE;
+  const fromNumber = from || DEFAULT_FROM;
 
   if (!fromNumber) {
     console.error('[sms] No from number configured');
@@ -77,13 +165,12 @@ async function sendSMS(to, body, from, db, clientId) {
       }
     } catch (err) {
       console.warn('[sms] Opt-out check error:', err.message);
-      // Continue with send if opt-out check fails
     }
   }
 
-  if (!TELNYX_API_KEY) {
-    console.error('[sms] Telnyx API key not configured');
-    return { success: false, error: 'Telnyx not configured' };
+  if (!SMS_PROVIDER) {
+    console.error('[sms] No SMS provider configured');
+    return { success: false, error: 'SMS not configured' };
   }
 
   // Rate limit check
@@ -101,37 +188,16 @@ async function sendSMS(to, body, from, db, clientId) {
   }
 
   try {
-    const payload = {
-      from: fromNumber,
-      to: to,
-      text: bodyWithFooter
-    };
+    let messageId;
 
-    if (TELNYX_MESSAGING_PROFILE_ID) {
-      payload.messaging_profile_id = TELNYX_MESSAGING_PROFILE_ID;
+    if (SMS_PROVIDER === 'twilio') {
+      messageId = await sendViaTwilio(to, bodyWithFooter, fromNumber);
+    } else {
+      messageId = await sendViaTelnyx(to, bodyWithFooter, fromNumber);
     }
 
-    const options = {
-      hostname: 'api.telnyx.com',
-      port: 443,
-      path: '/v2/messages',
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${TELNYX_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-    };
-
-    const response = await httpsRequest(options, payload);
-
-    if (response.status !== 200 && response.status !== 201) {
-      const errorMsg = response.body?.errors?.[0]?.detail || response.body || 'Unknown error';
-      throw new Error(`Telnyx API error (${response.status}): ${errorMsg}`);
-    }
-
-    const messageId = response.body?.data?.id;
     lastSendTime.set(to, Date.now());
-    console.log(`[sms] Sent to ${to}: ${messageId}`);
+    console.log(`[sms] [${SMS_PROVIDER}] Sent to ${to}: ${messageId}`);
 
     // Record metrics
     try {
@@ -141,7 +207,7 @@ async function sendSMS(to, body, from, db, clientId) {
 
     return { success: true, messageId };
   } catch (err) {
-    console.error(`[sms] Failed to send to ${to}:`, err.message);
+    console.error(`[sms] [${SMS_PROVIDER}] Failed to send to ${to}:`, err.message);
 
     // Record failed metric
     try {
@@ -150,7 +216,7 @@ async function sendSMS(to, body, from, db, clientId) {
     } catch (_) {}
 
     // Only schedule retry for transient errors (not auth/config failures)
-    const NON_RETRYABLE = ['Authentication', 'Invalid API Key', 'not configured', 'suspended', 'balance'];
+    const NON_RETRYABLE = ['Authentication', 'Invalid API Key', 'not configured', 'suspended', 'balance', 'Authenticate', 'blacklist'];
     const isRetryable = !NON_RETRYABLE.some(msg => err.message.includes(msg));
     if (isRetryable && db) {
       try {
@@ -185,7 +251,7 @@ async function sendSMSToOwner(db, clientId, body) {
       return { success: false, error: 'No owner phone number' };
     }
 
-    // Prefer telnyx_phone, fall back to twilio_phone for backwards compat
+    // Use whichever phone the client has configured
     const fromPhone = client.telnyx_phone || client.twilio_phone;
     return sendSMS(client.owner_phone, body, fromPhone);
   } catch (err) {
@@ -198,4 +264,4 @@ function cleanupSMSTimers() {
   if (smsRateLimitCleanupInterval) clearInterval(smsRateLimitCleanupInterval);
 }
 
-module.exports = { sendSMS, sendSMSToOwner, cleanupSMSTimers };
+module.exports = { sendSMS, sendSMSToOwner, cleanupSMSTimers, SMS_PROVIDER };

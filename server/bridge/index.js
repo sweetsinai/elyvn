@@ -297,6 +297,10 @@ const { enforceClientIsolation } = require('./utils/clientIsolation');
 const telnyxRouter = require('./routes/telnyx');
 app.use('/webhooks/telnyx', telnyxRouter);
 
+// Twilio inbound SMS webhook
+const twilioRouter = require('./routes/twilio');
+app.use('/webhooks/twilio', twilioRouter);
+
 app.use('/webhooks/retell', retellRouter);
 app.use('/retell-webhook', retellRouter);
 app.use('/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
