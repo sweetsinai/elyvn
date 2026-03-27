@@ -110,6 +110,7 @@ const Bookings = () => {
   weekDays.forEach(day => {
     const dayKey = day.toISOString().split('T')[0];
     weekBookings[dayKey] = bookings.filter(b => {
+      if (!b.start_time) return false;
       const bDate = new Date(b.start_time).toISOString().split('T')[0];
       return bDate === dayKey;
     });
@@ -129,8 +130,8 @@ const Bookings = () => {
   };
 
   const getBookingPosition = (startTime, endTime) => {
-    const start = new Date(startTime);
-    const end = new Date(endTime);
+    const start = startTime ? new Date(startTime) : new Date();
+    const end = endTime ? new Date(endTime) : new Date();
     const hour = start.getHours();
     const minutes = start.getMinutes();
     const duration = (end - start) / (1000 * 60); // minutes
@@ -503,8 +504,8 @@ const Bookings = () => {
                         }}
                       >
                         {dayBookings.map(booking => {
-                          const bookingStart = new Date(booking.start_time);
-                          if (bookingStart.getHours() === hour) {
+                          const bookingStart = booking.start_time ? new Date(booking.start_time) : null;
+                          if (bookingStart && bookingStart.getHours() === hour) {
                             const { top, height } = getBookingPosition(
                               booking.start_time,
                               booking.end_time
@@ -649,11 +650,11 @@ const Bookings = () => {
                         flexShrink: 0,
                       }}
                     >
-                      {booking.name.charAt(0).toUpperCase()}
+                      {(booking.name || '?').charAt(0).toUpperCase()}
                     </div>
                     <div>
                       <div style={{ fontSize: '13px', color: 'white', fontWeight: '500' }}>
-                        {booking.name}
+                        {booking.name || 'Unknown'}
                       </div>
                     </div>
                   </div>

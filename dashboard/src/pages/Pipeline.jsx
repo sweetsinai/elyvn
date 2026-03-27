@@ -108,9 +108,13 @@ export default function Pipeline() {
         getCalls(clientId, { phone: lead.phone, limit: 10 }).catch(() => ({ calls: [] })),
         getMessages(clientId, { phone: lead.phone, limit: 10 }).catch(() => ({ messages: [] })),
       ]);
-      const calls = (Array.isArray(callsData) ? callsData : callsData.calls || []).map(c => ({ ...c, _type: 'call' }));
-      const msgs = (Array.isArray(msgsData) ? msgsData : msgsData.messages || []).map(m => ({ ...m, _type: 'message' }));
-      const combined = [...calls, ...msgs].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      const calls = (Array.isArray(callsData) ? callsData : callsData?.calls || []).map(c => ({ ...c, _type: 'call' }));
+      const msgs = (Array.isArray(msgsData) ? msgsData : msgsData?.messages || []).map(m => ({ ...m, _type: 'message' }));
+      const combined = [...calls, ...msgs].sort((a, b) => {
+        const dateA = new Date(a.created_at || a.timestamp || 0);
+        const dateB = new Date(b.created_at || b.timestamp || 0);
+        return dateB - dateA;
+      });
       setLeadInteractions(combined);
     } catch {
       setLeadInteractions([]);

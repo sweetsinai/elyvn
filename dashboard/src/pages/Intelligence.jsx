@@ -76,10 +76,10 @@ export default function Intelligence() {
 
   // Parse peak hours data to create grid
   const createPeakHoursGrid = () => {
-    if (!peakHours) return [];
+    if (!peakHours || !peakHours.data) return { hours: [], days: [], data: [] };
     const hours = Array.from({ length: 13 }, (_, i) => i + 8); // 8AM-8PM
     const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-    const data = peakHours.data || [];
+    const data = Array.isArray(peakHours.data) ? peakHours.data : [];
 
     return {
       hours,
@@ -357,13 +357,13 @@ export default function Intelligence() {
       </div>
 
       {/* Channel Performance */}
-      {channels.length > 0 && (
+      {Array.isArray(channels) && channels.length > 0 && (
         <div style={{ marginBottom: 28 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>Channel Performance</h2>
           <div className="card" style={{ padding: 20 }}>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 20, height: 240 }}>
               {channels.map((channel, i) => {
-                const maxVal = Math.max(...channels.map(c => c.volume || 0)) || 1;
+                const maxVal = Array.isArray(channels) && channels.length > 0 ? Math.max(...channels.map(c => c.volume || 0)) : 1;
                 const height = ((channel.volume || 0) / maxVal) * 200;
                 return (
                   <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
@@ -399,7 +399,7 @@ export default function Intelligence() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#555' }}>
             <div className="spinner" /> Loading...
           </div>
-        ) : schedule.length === 0 ? (
+        ) : !Array.isArray(schedule) || schedule.length === 0 ? (
           <div className="card" style={{ padding: 32, textAlign: 'center', color: '#555' }}>
             No scheduled contacts for today
           </div>

@@ -101,10 +101,10 @@ export default function Calls() {
 
   // Calculate stats from calls
   const stats = {
-    totalCalls: calls.length,
-    avgDuration: calls.length > 0 ? Math.round(calls.reduce((sum, c) => sum + (c.duration || 0), 0) / calls.length) : 0,
-    bookingRate: calls.length > 0 ? Math.round((calls.filter(c => c.outcome === 'booked').length / calls.length) * 100) : 0,
-    avgScore: calls.length > 0 ? (calls.reduce((sum, c) => sum + (c.score || 0), 0) / calls.length).toFixed(1) : 0,
+    totalCalls: Array.isArray(calls) ? calls.length : 0,
+    avgDuration: Array.isArray(calls) && calls.length > 0 ? Math.round(calls.reduce((sum, c) => sum + (c.duration || 0), 0) / calls.length) : 0,
+    bookingRate: Array.isArray(calls) && calls.length > 0 ? Math.round((calls.filter(c => c.outcome === 'booked').length / calls.length) * 100) : 0,
+    avgScore: Array.isArray(calls) && calls.length > 0 ? (calls.reduce((sum, c) => sum + (c.score || 0), 0) / calls.length).toFixed(1) : 0,
   };
 
   const getOutcomeBadgeColor = (outcome) => {

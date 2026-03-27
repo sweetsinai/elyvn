@@ -79,20 +79,20 @@ export default function Messages() {
   };
 
   // Calculate stats
-  const totalCount = messages.length;
-  const autoRepliedCount = messages.filter(m => m.status === 'auto_replied').length;
-  const escalatedCount = messages.filter(m => m.escalated === true || m.status === 'escalated').length;
+  const totalCount = Array.isArray(messages) ? messages.length : 0;
+  const autoRepliedCount = Array.isArray(messages) ? messages.filter(m => m.status === 'auto_replied').length : 0;
+  const escalatedCount = Array.isArray(messages) ? messages.filter(m => m.escalated === true || m.status === 'escalated').length : 0;
   const responseRate = totalCount > 0 ? Math.round((autoRepliedCount / totalCount) * 100) : 0;
 
   // Filter messages by search query
-  const filteredMessages = searchQuery
+  const filteredMessages = searchQuery && Array.isArray(messages)
     ? messages.filter(m => {
         const phone = (m.phone_number || m.phone || '').toLowerCase();
         const content = (m.message || m.content || '').toLowerCase();
         const query = searchQuery.toLowerCase();
         return phone.includes(query) || content.includes(query);
       })
-    : messages;
+    : (Array.isArray(messages) ? messages : []);
 
   const getStatusBadge = (msg) => {
     let color = '#555';

@@ -90,10 +90,10 @@ export default function Clients() {
 
   const filteredClients = getFilteredAndSortedClients();
 
-  const totalClients = clients.length;
-  const activeClients = clients.filter(c => c.active !== false).length;
-  const totalCalls = Object.values(clientStats).reduce((sum, stats) => sum + (stats?.calls_this_week || 0), 0);
-  const totalMessages = Object.values(clientStats).reduce((sum, stats) => sum + (stats?.messages_this_week || 0), 0);
+  const totalClients = Array.isArray(clients) ? clients.length : 0;
+  const activeClients = Array.isArray(clients) ? clients.filter(c => c.active !== false).length : 0;
+  const totalCalls = clientStats && typeof clientStats === 'object' ? Object.values(clientStats).reduce((sum, stats) => sum + (stats?.calls_this_week || 0), 0) : 0;
+  const totalMessages = clientStats && typeof clientStats === 'object' ? Object.values(clientStats).reduce((sum, stats) => sum + (stats?.messages_this_week || 0), 0) : 0;
 
   return (
     <div className="fade-in">

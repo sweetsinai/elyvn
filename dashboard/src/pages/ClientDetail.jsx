@@ -405,7 +405,7 @@ export default function ClientDetail() {
                     {booking.name || booking.title || 'Booking'}
                   </div>
                   <div style={{ fontSize: 11, color: '#888' }}>
-                    {new Date(booking.start_time || booking.date).toLocaleDateString()}
+                    {booking.start_time || booking.date ? new Date(booking.start_time || booking.date).toLocaleDateString() : '--'}
                   </div>
                 </div>
               ))}
