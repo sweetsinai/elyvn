@@ -139,6 +139,10 @@ async function handleCommand(db, message) {
       return;
     }
     db.prepare('UPDATE clients SET telegram_chat_id = ? WHERE id = ?').run(chatId, clientId);
+    // Set plan-specific command menu for this client
+    await telegram.setClientCommands(chatId, target.plan || 'starter').catch(err =>
+      console.error('[telegram] setClientCommands error:', err.message)
+    );
     await telegram.sendMessage(chatId,
       `Hey ${firstName}! You're connected to <b>${target.business_name || target.name || 'your business'}</b>.\n\n`
       + `Here's what I can do:\n`
@@ -170,6 +174,8 @@ async function handleCommand(db, message) {
     // ═══════════════════════════════════════════════════════
     case '/start':
     case '/status': {
+      // Refresh plan-specific command menu on every /start or /status
+      telegram.setClientCommands(chatId, client.plan || 'starter').catch(() => {});
       const today = new Date().toISOString().split('T')[0];
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
