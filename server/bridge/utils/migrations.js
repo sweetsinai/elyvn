@@ -529,6 +529,29 @@ const migrations = [
       }
     },
   },
+  {
+    id: '021_message_sid_and_integrity',
+    description: 'Add message_sid column and enforce data integrity constraints',
+    up(db) {
+      // Add missing message_sid column used by SMS routes
+      const msgCols = db.prepare("PRAGMA table_info('messages')").all().map(c => c.name);
+      if (!msgCols.includes('message_sid')) {
+        db.exec('ALTER TABLE messages ADD COLUMN message_sid TEXT');
+        db.exec('CREATE INDEX IF NOT EXISTS idx_messages_sid ON messages(message_sid)');
+      }
+
+      // Add missing indexes for foreign key lookups
+      db.exec('CREATE INDEX IF NOT EXISTS idx_followups_client_id ON followups(client_id)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_sms_opt_outs_client_id ON sms_opt_outs(client_id)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_appointments_lead_id ON appointments(lead_id)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_messages_lead_id ON messages(lead_id)');
+
+      // Note: SQLite does not support adding FK constraints to existing tables via ALTER TABLE.
+      // FK enforcement is done via PRAGMA foreign_keys = ON (migration 018) which applies to
+      // tables created with FK declarations. For existing tables, we enforce at application level.
+      // A full schema rebuild would require copying all data — too risky for production.
+    },
+  },
 ];
 
 /**

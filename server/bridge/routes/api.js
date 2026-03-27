@@ -95,13 +95,15 @@ router.get('/stats/:clientId', (req, res) => {
     const avgTicket = client?.avg_ticket || 0;
     const estimatedRevenue = bookingsThisWeek * avgTicket;
 
-    // Leads by stage
+    // Leads by stage — single GROUP BY query instead of N+1
     const stages = ['new', 'contacted', 'qualified', 'booked', 'completed', 'lost'];
     const leadsByStage = {};
-    for (const stage of stages) {
-      leadsByStage[stage] = db.prepare(
-        'SELECT COUNT(*) as count FROM leads WHERE client_id = ? AND stage = ?'
-      ).get(clientId, stage).count;
+    stages.forEach(s => { leadsByStage[s] = 0; });
+    const stageRows = db.prepare(
+      'SELECT stage, COUNT(*) as count FROM leads WHERE client_id = ? GROUP BY stage'
+    ).all(clientId);
+    for (const row of stageRows) {
+      if (stages.includes(row.stage)) leadsByStage[row.stage] = row.count;
     }
 
     res.json({

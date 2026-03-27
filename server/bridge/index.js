@@ -202,10 +202,7 @@ function apiAuth(req, res, next) {
     }
   }
 
-  // Dev mode fallback
-  if (!API_KEY && process.env.NODE_ENV !== 'production') {
-    return next();
-  }
+  // No dev mode bypass — always require auth
 
   logAudit(db, { action: 'auth_failure', ip: req.ip, userAgent: req.get('user-agent'), details: { reason: 'invalid_key', path: req.path } });
   return res.status(401).json({ error: 'Invalid API key' });
@@ -213,7 +210,6 @@ function apiAuth(req, res, next) {
 
 // Routes
 const retellRouter = require('./routes/retell');
-const twilioRouter = require('./routes/twilio');
 const apiRouter = require('./routes/api');
 const outreachRouter = require('./routes/outreach');
 const onboardRouter = require('./routes/onboard');
@@ -227,7 +223,6 @@ app.use('/webhooks/telnyx', telnyxRouter);
 
 app.use('/webhooks/retell', retellRouter);
 app.use('/retell-webhook', retellRouter);
-app.use('/webhooks/twilio', twilioRouter);
 app.use('/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
 // Mount onboard routes (before general /api to allow public access)
 app.use('/api', onboardRouter);
@@ -358,7 +353,7 @@ const server = app.listen(PORT, () => {
 
   // Initialize WebSocket
   const { initWebSocket } = require('./utils/websocket');
-  initWebSocket(server);
+  initWebSocket(server, db);
 
   // Initialize Telegram scheduler
   const { initScheduler } = require('./utils/scheduler');
