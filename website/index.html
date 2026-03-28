@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ELYVN — Never Miss Another Customer Call</title>
+  <meta name="description" content="ELYVN is your AI receptionist. It answers every call, qualifies leads, and books appointments while you focus on your work. 7-day free trial." />
+  <link rel="icon" type="image/png" href="icon.png" />
+  <meta property="og:title" content="ELYVN — Never Miss Another Customer Call" />
+  <meta property="og:description" content="AI receptionist that answers every call, qualifies leads, and books appointments. 7-day free trial." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://elyvn.net" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ELYVN — Never Miss Another Customer Call" />
+  <meta name="twitter:description" content="AI receptionist that answers every call, qualifies leads, and books appointments. 7-day free trial." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- CANVAS: WebGL Liquid Background -->
+  <canvas id="liquid-canvas"></canvas>
+
+  <!-- NAV -->
+  <nav id="navbar">
+    <div class="nav-logo">
+      <div class="nav-symbol">
+        <svg width="58" height="28" viewBox="0 0 58 28" fill="none">
+          <circle cx="14" cy="14" r="12" stroke="white" stroke-width="0.8"/>
+          <line x1="14" y1="14" x2="56" y2="14" stroke="white" stroke-width="0.8" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span class="nav-brand">ELYVN</span>
+    </div>
+    <div class="nav-links" id="nav-links">
+      <a href="#howitworks">How It Works</a>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <a href="https://api.elyvn.net/" class="btn-nav btn-nav-desktop">Start Free Trial</a>
+    <button class="hamburger" id="hamburger" aria-label="Toggle menu">
+      <span></span><span></span><span></span>
+    </button>
+  </nav>
+
+  <!-- HERO -->
+  <section id="hero">
+    <div class="hero-3d-container">
+      <canvas id="hero-3d"></canvas>
+    </div>
+    <div class="hero-content">
+      <div class="hero-eyebrow">AI Receptionist · Live Now</div>
+      <h1 class="hero-headline">
+        Never Miss<br/>
+        <span class="gradient-text">Another Customer</span><br/>
+        Call
+      </h1>
+      <p class="hero-sub">Your AI receptionist answers every call, qualifies leads, and books appointments while you focus on your work.</p>
+      <div class="hero-ctas">
+        <a href="https://cal.com/elyvn/quick" target="_blank" rel="noopener" class="btn-primary" id="hero-cta">Book a Free Demo</a>
+        <span class="hero-meta">Set up in 15 min · No contracts · No credit card</span>
+      </div>
+    </div>
+    <div class="hero-scroll-hint">
+      <div class="scroll-line"></div>
+    </div>
+  </section>
+
+  <!-- SOCIAL PROOF BAR -->
+  <section id="proof-bar">
+    <div class="proof-inner">
+      <div class="proof-stat">
+        <span class="stat-num">22</span>
+        <span class="stat-label">missed calls recovered<br/>per business/month</span>
+      </div>
+      <div class="proof-divider"></div>
+      <div class="proof-stat">
+        <span class="stat-num">&lt;30s</span>
+        <span class="stat-label">response time<br/>to missed calls</span>
+      </div>
+      <div class="proof-divider"></div>
+      <div class="proof-stat">
+        <span class="stat-num">3–5×</span>
+        <span class="stat-label">ROI by<br/>Month 2</span>
+      </div>
+      <div class="proof-divider"></div>
+      <div class="proof-industries">
+        <span>HVAC</span>
+        <span>Dental</span>
+        <span>Med Spa</span>
+        <span>Real Estate</span>
+        <span>Salons</span>
+        <span>Gyms</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section id="howitworks" class="section-dark">
+    <div class="section-inner">
+      <div class="section-eyebrow">How It Works</div>
+      <h2 class="section-title">Live in 15 minutes.<br/>Paying for itself in week one.</h2>
+      <div class="steps-grid">
+        <div class="step-card" data-step="01">
+          <div class="step-num">01</div>
+          <div class="step-icon">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+              <rect x="8" y="8" width="24" height="24" rx="4" stroke="white" stroke-width="1.5"/>
+              <path d="M14 20h12M20 14v12" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Connect Your Phone</h3>
+          <p>Forward your existing number to ELYVN via our Telegram bot. Setup takes under 15 minutes. No hardware needed.</p>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-card" data-step="02">
+          <div class="step-num">02</div>
+          <div class="step-icon">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+              <circle cx="20" cy="20" r="12" stroke="white" stroke-width="1.5"/>
+              <path d="M20 15v5l3 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>AI Answers Everything</h3>
+          <p>Our AI phone agent answers calls 24/7, qualifies leads, books appointments into your calendar, and texts back missed calls in under 30 seconds.</p>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-card" data-step="03">
+          <div class="step-num">03</div>
+          <div class="step-icon">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+              <path d="M8 28l8-8 6 6 10-12" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3>You Get Real Results</h3>
+          <p>Real-time Telegram alerts with call summaries, lead scores, and transcripts. Weekly revenue reports show exactly what ELYVN is recovering for you.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features" class="section-features">
+    <div class="section-inner">
+      <div class="section-eyebrow">What's Live Now</div>
+      <h2 class="section-title">Everything running at<br/><span class="mono-text">api.elyvn.net</span></h2>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-status">LIVE</div>
+          <h4>AI Phone Agent</h4>
+          <p>Answers calls 24/7, qualifies leads, handles transfers. Sounds human.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-status">LIVE</div>
+          <h4>Missed Call Text-Back</h4>
+          <p>Responds in under 30 seconds with a personalized SMS + booking link.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-status">LIVE</div>
+          <h4>SMS Auto-Reply</h4>
+          <p>AI replies using your business knowledge base. Always accurate, always compliant.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-status">LIVE</div>
+          <h4>Follow-Up Sequences</h4>
+          <p>Multi-touch SMS campaigns: confirm → remind → nudge → re-engage.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-status">LIVE</div>
+          <h4>Lead Scoring AI</h4>
+          <p>Every interaction scored 1–10. High-score leads get priority follow-up automatically.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-status">LIVE</div>
+          <h4>Telegram Command Center</h4>
+          <p>/stats, /leads, /pause, /set — full control from your phone, no dashboard needed.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-status">LIVE</div>
+          <h4>Weekly Revenue Reports</h4>
+          <p>Auto-generated before/after metrics. Know your ROI every single week.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-status">LIVE</div>
+          <h4>New Customer Finder</h4>
+          <p>Automatically finds local businesses who need your services and sends personalized outreach.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROI CALCULATOR -->
+  <section id="roi" class="section-dark">
+    <div class="section-inner roi-inner">
+      <div class="roi-left">
+        <div class="section-eyebrow">ROI Calculator</div>
+        <h2 class="section-title">Find out what<br/>you're losing.</h2>
+        <p class="roi-desc">Enter your numbers. See your monthly revenue at risk — and how fast ELYVN pays for itself.</p>
+        <div class="roi-guarantee">
+          <div class="guarantee-icon">✦</div>
+          <p>ELYVN pays for itself with just<br/><strong>1–2 recovered jobs per month.</strong></p>
+        </div>
+      </div>
+      <div class="roi-calculator">
+        <div class="calc-field">
+          <label>Average job / ticket value</label>
+          <div class="calc-input-wrap">
+            <span class="calc-prefix">$</span>
+            <input type="number" id="avg-ticket" value="400" min="0" />
+          </div>
+        </div>
+        <div class="calc-field">
+          <label>Missed calls per week</label>
+          <input type="number" id="missed-calls" value="5" min="0" />
+        </div>
+        <div class="calc-result">
+          <div class="result-label">Monthly revenue you're losing</div>
+          <div class="result-amount" id="result-amount">$2,800</div>
+          <div class="result-sub" id="result-sub">5 missed calls × $400 avg × 35% close rate × 4 weeks</div>
+        </div>
+        <a href="#trial" class="btn-primary btn-full">Recover This Revenue — Free Trial</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section id="pricing" class="section-pricing">
+    <div class="section-inner">
+      <div class="section-eyebrow">Pricing</div>
+      <h2 class="section-title">Simple pricing.<br/>Ridiculous ROI.</h2>
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <div class="plan-name">Starter</div>
+          <div class="plan-price">$299<span>/mo</span></div>
+          <ul class="plan-features">
+            <li>AI Phone Agent</li>
+            <li>SMS Auto-Reply</li>
+            <li>Missed Call Text-Back</li>
+            <li>Telegram Alerts</li>
+            <li>500 calls/month</li>
+          </ul>
+          <a href="https://api.elyvn.net/" class="btn-outline">Start Free Trial</a>
+        </div>
+        <div class="pricing-card pricing-featured">
+          <div class="plan-badge">Most Popular</div>
+          <div class="plan-name">Growth</div>
+          <div class="plan-price">$499<span>/mo</span></div>
+          <ul class="plan-features">
+            <li>Everything in Starter</li>
+            <li>Follow-Up Sequences</li>
+            <li>AI Brain + Lead Scoring</li>
+            <li>Weekly Revenue Reports</li>
+            <li>1,500 calls/month</li>
+          </ul>
+          <a href="https://api.elyvn.net/" class="btn-primary">Start Free Trial</a>
+        </div>
+        <div class="pricing-card">
+          <div class="plan-name">Scale</div>
+          <div class="plan-price">$799<span>/mo</span></div>
+          <ul class="plan-features">
+            <li>Everything in Growth</li>
+            <li>New Customer Finder</li>
+            <li>Automated Outreach</li>
+            <li>Unlimited calls</li>
+            <li>Priority Support</li>
+          </ul>
+          <a href="https://api.elyvn.net/" class="btn-outline">Start Free Trial</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RESULTS TIMELINE -->
+  <section id="results" class="section-dark">
+    <div class="section-inner">
+      <div class="section-eyebrow">What to Expect</div>
+      <h2 class="section-title">Results that compound<br/>from day one.</h2>
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-marker">Week 1</div>
+          <div class="timeline-content">
+            <h4>Immediate Impact</h4>
+            <div class="timeline-stats">
+              <div class="tl-stat">
+                <span class="tl-val">30s</span>
+                <span class="tl-key">Response to missed calls<br/>(was 4–24 hrs)</span>
+              </div>
+              <div class="tl-stat">
+                <span class="tl-val">100%</span>
+                <span class="tl-key">After-hours coverage<br/>(was 0%)</span>
+              </div>
+              <div class="tl-stat">
+                <span class="tl-val">40%</span>
+                <span class="tl-key">Call-to-booking rate<br/>(was 15–25%)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-marker">Month 1</div>
+          <div class="timeline-content">
+            <h4>Compound Effect</h4>
+            <div class="timeline-stats">
+              <div class="tl-stat">
+                <span class="tl-val">+$9K</span>
+                <span class="tl-key">Avg recovered revenue<br/>from recaptured calls</span>
+              </div>
+              <div class="tl-stat">
+                <span class="tl-val">−40%</span>
+                <span class="tl-key">No-shows<br/>from reminders</span>
+              </div>
+              <div class="tl-stat">
+                <span class="tl-val">15 hrs</span>
+                <span class="tl-key">Owner time saved<br/>per week</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-marker">Month 2–3</div>
+          <div class="timeline-content">
+            <h4>Full ROI</h4>
+            <div class="timeline-stats">
+              <div class="tl-stat">
+                <span class="tl-val">3–5×</span>
+                <span class="tl-key">ROI on subscription<br/>cost</span>
+              </div>
+              <div class="tl-stat">
+                <span class="tl-val">Smarter</span>
+                <span class="tl-key">AI brain trained on<br/>your patterns</span>
+              </div>
+              <div class="tl-stat">
+                <span class="tl-val">Weekly</span>
+                <span class="tl-key">Telegram reports with<br/>clear before/after</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TESTIMONIALS (populate with real ones after pilots) -->
+  <section id="testimonials" class="section-testimonials">
+    <div class="section-inner">
+      <div class="section-eyebrow">From Our Clients</div>
+      <h2 class="section-title">They stopped losing customers<br/>on day one.</h2>
+      <div class="testimonials-grid">
+        <div class="testimonial-card">
+          <p class="testimonial-quote">"We were missing 15+ calls a week without realizing it. ELYVN recovered $12K in the first month just from calls we would have lost."</p>
+          <div class="testimonial-author">
+            <div class="testimonial-name">Dr. Sarah M.</div>
+            <div class="testimonial-role">Dental Practice Owner, Austin TX</div>
+          </div>
+        </div>
+        <div class="testimonial-card">
+          <p class="testimonial-quote">"I get a notification every time someone calls. I can see exactly what was discussed. It's like having a receptionist who never calls in sick."</p>
+          <div class="testimonial-author">
+            <div class="testimonial-name">Mike R.</div>
+            <div class="testimonial-role">HVAC Business Owner, Phoenix AZ</div>
+          </div>
+        </div>
+        <div class="testimonial-card">
+          <p class="testimonial-quote">"Setup took 10 minutes. By the end of the first week, ELYVN had booked 8 appointments that I would have missed completely."</p>
+          <div class="testimonial-author">
+            <div class="testimonial-name">Jessica T.</div>
+            <div class="testimonial-role">Med Spa Owner, Tampa FL</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="section-dark">
+    <div class="section-inner">
+      <div class="section-eyebrow">FAQ</div>
+      <h2 class="section-title">Common questions.</h2>
+      <div style="max-width:680px;margin:0 auto;">
+        <details style="border-bottom:1px solid rgba(255,255,255,0.08);padding:20px 0;">
+          <summary style="cursor:pointer;font-weight:500;color:#fff;font-size:16px;list-style:none;">How does the AI know about my business?</summary>
+          <p style="color:rgba(255,255,255,0.6);font-size:14px;line-height:1.7;margin-top:12px;">During setup, you enter your services, hours, and FAQs. The AI uses this as its knowledge base to answer calls accurately. You can update it anytime.</p>
+        </details>
+        <details style="border-bottom:1px solid rgba(255,255,255,0.08);padding:20px 0;">
+          <summary style="cursor:pointer;font-weight:500;color:#fff;font-size:16px;list-style:none;">Does it sound robotic?</summary>
+          <p style="color:rgba(255,255,255,0.6);font-size:14px;line-height:1.7;margin-top:12px;">No. We use the latest voice AI technology. Callers typically can't tell the difference. It handles natural conversation, interruptions, and complex questions.</p>
+        </details>
+        <details style="border-bottom:1px solid rgba(255,255,255,0.08);padding:20px 0;">
+          <summary style="cursor:pointer;font-weight:500;color:#fff;font-size:16px;list-style:none;">Can I keep my existing phone number?</summary>
+          <p style="color:rgba(255,255,255,0.6);font-size:14px;line-height:1.7;margin-top:12px;">Yes. You just set up call forwarding from your existing number to your ELYVN number. Takes 2 minutes. We walk you through it.</p>
+        </details>
+        <details style="border-bottom:1px solid rgba(255,255,255,0.08);padding:20px 0;">
+          <summary style="cursor:pointer;font-weight:500;color:#fff;font-size:16px;list-style:none;">What happens if the AI can't handle a call?</summary>
+          <p style="color:rgba(255,255,255,0.6);font-size:14px;line-height:1.7;margin-top:12px;">It transfers to you or your team immediately. You get a Telegram alert with the caller's info and what was discussed so you can pick up right where the AI left off.</p>
+        </details>
+        <details style="border-bottom:1px solid rgba(255,255,255,0.08);padding:20px 0;">
+          <summary style="cursor:pointer;font-weight:500;color:#fff;font-size:16px;list-style:none;">Is there a contract?</summary>
+          <p style="color:rgba(255,255,255,0.6);font-size:14px;line-height:1.7;margin-top:12px;">No. Month-to-month. Cancel anytime. We also offer a 7-day free trial so you can see real results before paying.</p>
+        </details>
+        <details style="border-bottom:1px solid rgba(255,255,255,0.08);padding:20px 0;">
+          <summary style="cursor:pointer;font-weight:500;color:#fff;font-size:16px;list-style:none;">How fast can I get started?</summary>
+          <p style="color:rgba(255,255,255,0.6);font-size:14px;line-height:1.7;margin-top:12px;">15 minutes. Sign up, enter your business info, and your AI receptionist is live. Most businesses start seeing results within the first week.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- FINAL CTA -->
+  <section id="trial" class="section-cta">
+    <div class="cta-3d-ring"></div>
+    <div class="section-inner cta-inner">
+      <div class="cta-symbol">
+        <svg width="110" height="72" viewBox="0 0 110 72" fill="none">
+          <circle cx="36" cy="36" r="32" stroke="white" stroke-width="1" opacity="0.3"/>
+          <circle cx="36" cy="36" r="22" stroke="white" stroke-width="1"/>
+          <line x1="36" y1="36" x2="108" y2="36" stroke="white" stroke-width="1" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h2 class="cta-title">Try ELYVN Free<br/>for 7 Days</h2>
+      <p class="cta-sub">If you don't see at least 5 recovered missed calls, you owe nothing.</p>
+      <a href="https://cal.com/elyvn/quick" target="_blank" rel="noopener" class="btn-primary btn-xl btn-full" style="display:inline-block;text-align:center;margin-top:12px;">Book a Free Demo Call</a>
+      <p class="cta-booking-note" style="color:rgba(255,255,255,0.5);font-size:14px;margin-top:16px;">Pick a 15-minute slot that works for you. We'll walk you through the setup live.</p>
+      <div class="cta-meta">
+        <span>15-minute setup</span>
+        <span>·</span>
+        <span>Works with your existing number</span>
+        <span>·</span>
+        <span>Cancel anytime</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer id="footer">
+    <div class="footer-inner">
+      <div class="footer-logo">
+        <svg width="44" height="28" viewBox="0 0 44 28" fill="none">
+          <circle cx="14" cy="14" r="12.5" stroke="white" stroke-width="0.7"/>
+          <line x1="14" y1="14" x2="42" y2="14" stroke="white" stroke-width="0.7" stroke-linecap="round"/>
+        </svg>
+        <span>ELYVN</span>
+      </div>
+      <div class="footer-links">
+        <a href="#howitworks">How It Works</a>
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+        <a href="https://cal.com/elyvn/quick" target="_blank" rel="noopener">Book a Call</a>
+      </div>
+      <div class="footer-legal">
+        <a href="/privacy" style="color:var(--grey-1);font-size:12px;text-decoration:none;">Privacy Policy</a>
+        <span style="color:var(--grey-2);font-size:12px;">·</span>
+        <a href="/terms" style="color:var(--grey-1);font-size:12px;text-decoration:none;">Terms of Service</a>
+      </div>
+      <div class="footer-copy">© 2026 ELYVN. All rights reserved.</div>
+    </div>
+  </footer>
+
+  <!-- THREE.JS + GSAP -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
