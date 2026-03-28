@@ -3,6 +3,12 @@ const router = express.Router();
 const telegram = require('../utils/telegram');
 const { isValidURL } = require('../utils/validate');
 
+// HTML-escape user/stored data before sending via Telegram HTML parse mode
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // Rate limiting for Telegram callback queries
 const callbackRateLimits = new Map();
 const CALLBACK_RATE_LIMIT = 10; // max callbacks per minute per chatId
@@ -143,14 +149,40 @@ async function handleCommand(db, message) {
     await telegram.setClientCommands(chatId, target.plan || 'starter').catch(err =>
       console.error('[telegram] setClientCommands error:', err.message)
     );
+
+    // ── Friendly welcome — no jargon, no learning curve ──
     await telegram.sendMessage(chatId,
-      `Hey ${firstName}! You're connected to <b>${target.business_name || target.name || 'your business'}</b>.\n\n`
-      + `Here's what I can do:\n`
-      + `/status — Full dashboard (calls, leads, revenue)\n`
-      + `/leads — All your leads by stage\n`
-      + `/complete +phone — Mark job done\n`
-      + `/pause / /resume — Toggle AI\n`
-      + `/help — All commands`
+      `Hey ${firstName}! 👋 You're all set.\n\n`
+      + `<b>${esc(target.business_name || target.name || 'Your business')}</b> is now connected to ELYVN.\n\n`
+      + `Here's what happens next:\n`
+      + `• Every call gets answered automatically\n`
+      + `• Missed calls get a text back in under 30 seconds\n`
+      + `• You get a notification here for every call and message\n\n`
+      + `<b>You don't need to do anything.</b> Just watch the notifications come in.\n\n`
+      + `When you're ready, tap the menu button (☰) next to the message box to see all your options — or just type /status to see your dashboard.`
+    );
+
+    // Send a second message with quick-action buttons
+    await telegram.sendMessage(chatId,
+      `💡 <b>Quick actions</b>`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '📊 My Dashboard', callback_data: 'quick:status' },
+              { text: '📋 My Leads', callback_data: 'quick:leads' },
+            ],
+            [
+              { text: '📅 Today\'s Schedule', callback_data: 'quick:today' },
+              { text: '📞 Recent Calls', callback_data: 'quick:calls' },
+            ],
+            [
+              { text: '⏸ Pause AI', callback_data: 'quick:pause' },
+              { text: '▶️ Resume AI', callback_data: 'quick:resume' },
+            ],
+          ]
+        }
+      }
     );
     return;
   }
@@ -258,7 +290,23 @@ async function handleCommand(db, message) {
       msg += client.is_active !== 0 ? '🟢 AI is active' : '🔴 AI is paused';
       if (pendingJobs.c > 0) msg += ` | ${pendingJobs.c} jobs queued`;
 
-      await telegram.sendMessage(chatId, msg);
+      // Quick-action buttons — client never needs to type a command
+      const statusButtons = [
+        [
+          { text: '📋 Leads', callback_data: 'quick:leads' },
+          { text: '📞 Calls', callback_data: 'quick:calls' },
+          { text: '📅 Today', callback_data: 'quick:today' },
+        ],
+      ];
+      if (client.is_active !== 0) {
+        statusButtons.push([{ text: '⏸ Pause AI', callback_data: 'quick:pause' }]);
+      } else {
+        statusButtons.push([{ text: '▶️ Resume AI', callback_data: 'quick:resume' }]);
+      }
+
+      await telegram.sendMessage(chatId, msg, {
+        reply_markup: { inline_keyboard: statusButtons }
+      });
       break;
     }
 
@@ -453,26 +501,406 @@ async function handleCommand(db, message) {
     }
 
     // ═══════════════════════════════════════════════════════
-    // /help — Simple command list
+    // /today — Today's schedule (appointments)
+    // ═══════════════════════════════════════════════════════
+    case '/today': {
+      const today = new Date().toISOString().split('T')[0];
+      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      const appts = db.prepare(
+        `SELECT name, phone, service, datetime, status
+         FROM appointments WHERE client_id = ? AND date(datetime) = ?
+         ORDER BY datetime ASC`
+      ).all(client.id, today);
+
+      const tomorrowAppts = db.prepare(
+        `SELECT name, phone, service, datetime, status
+         FROM appointments WHERE client_id = ? AND date(datetime) = ?
+         ORDER BY datetime ASC`
+      ).all(client.id, tomorrow);
+
+      if (appts.length === 0 && tomorrowAppts.length === 0) {
+        await telegram.sendMessage(chatId, '📅 No appointments scheduled for today or tomorrow.');
+        break;
+      }
+
+      let msg = `📅 <b>Schedule</b>\n\n`;
+
+      if (appts.length > 0) {
+        msg += `<b>Today (${today})</b>\n`;
+        for (const a of appts) {
+          const time = a.datetime ? new Date(a.datetime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '—';
+          const statusIcon = a.status === 'completed' ? '✅' : a.status === 'cancelled' ? '❌' : '🕐';
+          msg += `  ${statusIcon} ${time} — ${a.name || a.phone || 'Client'}`;
+          if (a.service) msg += ` (${a.service})`;
+          msg += '\n';
+        }
+        msg += '\n';
+      }
+
+      if (tomorrowAppts.length > 0) {
+        msg += `<b>Tomorrow (${tomorrow})</b>\n`;
+        for (const a of tomorrowAppts) {
+          const time = a.datetime ? new Date(a.datetime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '—';
+          msg += `  🕐 ${time} — ${a.name || a.phone || 'Client'}`;
+          if (a.service) msg += ` (${a.service})`;
+          msg += '\n';
+        }
+      }
+
+      await telegram.sendMessage(chatId, msg);
+      break;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // /stats — 7-day performance overview
+    // ═══════════════════════════════════════════════════════
+    case '/stats': {
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+      // This week
+      const thisWeek = db.prepare(
+        `SELECT COUNT(*) as calls,
+          SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked,
+          SUM(CASE WHEN outcome = 'missed' THEN 1 ELSE 0 END) as missed,
+          AVG(duration) as avg_duration,
+          AVG(score) as avg_score
+        FROM calls WHERE client_id = ? AND created_at >= ?`
+      ).get(client.id, weekAgo);
+
+      // Last week (for comparison)
+      const lastWeek = db.prepare(
+        `SELECT COUNT(*) as calls,
+          SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked
+        FROM calls WHERE client_id = ? AND created_at >= ? AND created_at < ?`
+      ).get(client.id, twoWeeksAgo, weekAgo);
+
+      const msgs = db.prepare(
+        `SELECT COUNT(*) as total,
+          SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as inbound,
+          SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outbound
+        FROM messages WHERE client_id = ? AND created_at >= ?`
+      ).get(client.id, weekAgo);
+
+      const activeLeads = db.prepare(
+        `SELECT COUNT(*) as c FROM leads WHERE client_id = ? AND stage NOT IN ('lost', 'completed')`
+      ).get(client.id);
+
+      const revenue = (thisWeek.booked || 0) * (client.avg_ticket || 0);
+      const lastRevenue = (lastWeek.booked || 0) * (client.avg_ticket || 0);
+      const revDelta = lastRevenue > 0 ? Math.round(((revenue - lastRevenue) / lastRevenue) * 100) : 0;
+      const revArrow = revDelta > 0 ? `↑${revDelta}%` : revDelta < 0 ? `↓${Math.abs(revDelta)}%` : '—';
+
+      let msg = `📊 <b>7-Day Performance</b>\n\n`;
+      msg += `<b>Calls</b>\n`;
+      msg += `  Total: ${thisWeek.calls || 0}`;
+      if (lastWeek.calls) msg += ` (prev: ${lastWeek.calls})`;
+      msg += `\n  Booked: ${thisWeek.booked || 0} | Missed: ${thisWeek.missed || 0}\n`;
+      if (thisWeek.avg_score) msg += `  Avg score: ${Math.round(thisWeek.avg_score * 10) / 10}/10\n`;
+      if (thisWeek.avg_duration) msg += `  Avg duration: ${fmtDuration(Math.round(thisWeek.avg_duration))}\n`;
+      msg += '\n';
+
+      msg += `<b>Messages</b>\n`;
+      msg += `  Total: ${msgs.total || 0} (${msgs.inbound || 0} in / ${msgs.outbound || 0} out)\n\n`;
+
+      msg += `<b>Revenue</b>\n`;
+      msg += `  Est: $${revenue.toLocaleString()} ${revArrow}\n`;
+      msg += `  Active leads: ${activeLeads.c || 0}\n`;
+
+      await telegram.sendMessage(chatId, msg);
+      break;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // /brain — AI Brain activity feed
+    // ═══════════════════════════════════════════════════════
+    case '/brain': {
+      if (!client.plan || client.plan === 'starter') {
+        await telegram.sendMessage(chatId, '🧠 AI Brain is available on Growth and Scale plans. Upgrade to unlock autonomous AI decisions.');
+        break;
+      }
+
+      const decisions = db.prepare(
+        `SELECT details, created_at FROM audit_log
+         WHERE client_id = ? AND action = 'brain_decision'
+         ORDER BY created_at DESC LIMIT 10`
+      ).all(client.id);
+
+      if (decisions.length === 0) {
+        await telegram.sendMessage(chatId, '🧠 No brain activity yet. The AI Brain activates after your first call or message.');
+        break;
+      }
+
+      let msg = `🧠 <b>AI Brain — Last 10 Decisions</b>\n\n`;
+      for (const d of decisions) {
+        try {
+          const details = typeof d.details === 'string' ? JSON.parse(d.details) : d.details;
+          const action = details.action || details.type || 'decision';
+          const reason = details.reason || details.reasoning || '';
+          const lead = details.lead_name || details.phone || '';
+          const actionEmoji = action === 'send_sms' ? '💬'
+            : action === 'schedule_followup' ? '⏰'
+            : action === 'update_lead_stage' ? '📊'
+            : action === 'notify_owner' ? '🔔'
+            : action === 'book_appointment' ? '📅'
+            : action === 'no_action' ? '⏸'
+            : '🤖';
+
+          msg += `${actionEmoji} <b>${esc(action.replace(/_/g, ' '))}</b>`;
+          if (lead) msg += ` — ${esc(lead)}`;
+          msg += ` — ${timeAgo(d.created_at)}\n`;
+          if (reason) msg += `  <i>${esc(reason.substring(0, 100))}</i>\n`;
+        } catch (e) {
+          msg += `🤖 Decision — ${timeAgo(d.created_at)}\n`;
+        }
+      }
+
+      // Brain stats
+      const brainCount = db.prepare(
+        `SELECT COUNT(*) as c FROM audit_log WHERE client_id = ? AND action = 'brain_decision' AND created_at >= datetime('now', '-7 days')`
+      ).get(client.id);
+      msg += `\n<b>7-day total:</b> ${brainCount.c || 0} decisions`;
+
+      await telegram.sendMessage(chatId, msg);
+      break;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // /outreach — Outreach campaign stats (7 days)
+    // ═══════════════════════════════════════════════════════
+    case '/outreach': {
+      if (!client.plan || client.plan !== 'scale') {
+        await telegram.sendMessage(chatId, '📧 Outreach is available on the Scale plan. Upgrade to unlock automated prospecting.');
+        break;
+      }
+
+      const campaigns = db.prepare(
+        `SELECT id, name, industry, city, total_prospects, total_sent, total_replied, total_positive, total_booked, status, created_at
+         FROM campaigns WHERE client_id = ? ORDER BY created_at DESC LIMIT 5`
+      ).all(client.id);
+
+      if (campaigns.length === 0) {
+        await telegram.sendMessage(chatId, '📧 No campaigns yet. Use /scrape industry city to find prospects.');
+        break;
+      }
+
+      let msg = `📧 <b>Outreach Campaigns</b>\n\n`;
+      for (const c of campaigns) {
+        const replyRate = c.total_sent > 0 ? Math.round((c.total_replied / c.total_sent) * 100) : 0;
+        const statusIcon = c.status === 'active' ? '🟢' : c.status === 'draft' ? '📝' : '⏸';
+        msg += `${statusIcon} <b>${esc(c.name || `${c.industry} — ${c.city}`)}</b>\n`;
+        msg += `  Sent: ${c.total_sent || 0} | Replies: ${c.total_replied || 0} (${replyRate}%)\n`;
+        msg += `  Positive: ${c.total_positive || 0} | Booked: ${c.total_booked || 0}\n`;
+        msg += `  ${timeAgo(c.created_at)}\n\n`;
+      }
+
+      // Overall stats
+      const totals = db.prepare(
+        `SELECT SUM(total_sent) as sent, SUM(total_replied) as replied, SUM(total_booked) as booked
+         FROM campaigns WHERE client_id = ?`
+      ).get(client.id);
+      msg += `<b>Overall:</b> ${totals.sent || 0} sent → ${totals.replied || 0} replies → ${totals.booked || 0} booked`;
+
+      await telegram.sendMessage(chatId, msg);
+      break;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // /scrape industry city — Find prospects via Google Maps
+    // ═══════════════════════════════════════════════════════
+    case '/scrape': {
+      if (!client.plan || client.plan !== 'scale') {
+        await telegram.sendMessage(chatId, '🔍 Prospect finder is available on the Scale plan.');
+        break;
+      }
+
+      const args = text.split(' ').slice(1);
+      if (args.length < 2) {
+        await telegram.sendMessage(chatId, 'Usage: /scrape HVAC Phoenix\n\nSearches Google Maps for businesses in that industry and city.');
+        break;
+      }
+
+      // Sanitize inputs — only allow alphanumeric, spaces, hyphens
+      const industry = args.slice(0, -1).join(' ').replace(/[^a-zA-Z0-9 \-]/g, '').substring(0, 50);
+      const city = args[args.length - 1].replace(/[^a-zA-Z0-9 \-]/g, '').substring(0, 50);
+      if (!industry || !city) {
+        await telegram.sendMessage(chatId, 'Invalid input. Use letters only. Example: /scrape HVAC Phoenix');
+        break;
+      }
+
+      await telegram.sendMessage(chatId, `🔍 Searching for <b>${industry}</b> businesses in <b>${city}</b>...\n\nThis takes 30-60 seconds.`);
+
+      // Trigger the scrape via internal API
+      try {
+        const http = require('http');
+        const postData = JSON.stringify({ industry, city, client_id: client.id });
+        const options = {
+          hostname: 'localhost',
+          port: process.env.PORT || 3000,
+          path: '/outreach/scrape',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData),
+            'x-api-key': process.env.ELYVN_API_KEY || '',
+          },
+        };
+
+        const req = http.request(options, (res) => {
+          let body = '';
+          res.on('data', (chunk) => body += chunk);
+          res.on('end', () => {
+            try {
+              const result = JSON.parse(body);
+              if (result.prospects && result.prospects.length > 0) {
+                let msg = `✅ Found <b>${result.prospects.length}</b> prospects!\n\n`;
+                const top5 = result.prospects.slice(0, 5);
+                for (const p of top5) {
+                  msg += `  • ${esc(p.business_name || p.name)}`;
+                  if (p.rating) msg += ` ⭐${esc(String(p.rating))}`;
+                  if (p.phone) msg += ` — ${esc(p.phone)}`;
+                  msg += '\n';
+                }
+                if (result.prospects.length > 5) msg += `  ... and ${result.prospects.length - 5} more\n`;
+                msg += '\nUse /prospects to see top 10.';
+                telegram.sendMessage(chatId, msg);
+              } else {
+                telegram.sendMessage(chatId, `No prospects found for ${industry} in ${city}. Try a different search.`);
+              }
+            } catch (e) {
+              telegram.sendMessage(chatId, 'Scrape completed but couldn\'t parse results. Check dashboard.');
+            }
+          });
+        });
+        req.on('error', () => {
+          telegram.sendMessage(chatId, 'Scrape failed. Check that your Google Maps API key is configured.');
+        });
+        req.setTimeout(90000);
+        req.write(postData);
+        req.end();
+      } catch (err) {
+        console.error('[telegram] /scrape error:', err.message);
+        await telegram.sendMessage(chatId, 'Error starting scrape. Try again later.');
+      }
+      break;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // /prospects — Top 10 recent prospects
+    // ═══════════════════════════════════════════════════════
+    case '/prospects': {
+      if (!client.plan || client.plan !== 'scale') {
+        await telegram.sendMessage(chatId, '🔍 Prospect finder is available on the Scale plan.');
+        break;
+      }
+
+      const prospects = db.prepare(
+        `SELECT p.business_name, p.phone, p.email, p.industry, p.city, p.rating, p.review_count, p.status
+         FROM prospects p
+         JOIN campaign_prospects cp ON cp.prospect_id = p.id
+         JOIN campaigns c ON c.id = cp.campaign_id AND c.client_id = ?
+         ORDER BY p.rating DESC, p.review_count DESC
+         LIMIT 10`
+      ).all(client.id);
+
+      if (prospects.length === 0) {
+        await telegram.sendMessage(chatId, '🔍 No prospects yet. Use /scrape industry city to find some.');
+        break;
+      }
+
+      let msg = `🔍 <b>Top 10 Prospects</b>\n\n`;
+      for (let i = 0; i < prospects.length; i++) {
+        const p = prospects[i];
+        const statusIcon = p.status === 'scraped' ? '🆕' : p.status === 'bounced' ? '❌' : '📧';
+        msg += `${i + 1}. ${statusIcon} <b>${esc(p.business_name || 'Unknown')}</b>`;
+        if (p.rating) msg += ` ⭐${esc(String(p.rating))}`;
+        if (p.review_count) msg += ` (${esc(String(p.review_count))} reviews)`;
+        msg += '\n';
+        if (p.phone) msg += `   📞 ${esc(p.phone)}`;
+        if (p.email) msg += ` | 📧 ${esc(p.email)}`;
+        msg += '\n';
+      }
+
+      await telegram.sendMessage(chatId, msg);
+      break;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // /reviewlink — Set/view Google review link
+    // ═══════════════════════════════════════════════════════
+    case '/reviewlink': {
+      const link = text.split(' ').slice(1).join(' ').trim();
+      if (!link) {
+        const current = client.google_review_link;
+        if (current) {
+          await telegram.sendMessage(chatId, `📎 Current review link:\n${current}\n\nTo change: /reviewlink https://g.page/...`);
+        } else {
+          await telegram.sendMessage(chatId, '📎 No review link set.\n\nUsage: /reviewlink https://g.page/your-business');
+        }
+        break;
+      }
+
+      if (!isValidURL(link)) {
+        await telegram.sendMessage(chatId, 'Invalid URL. Must start with https:// or http://');
+        break;
+      }
+
+      db.prepare('UPDATE clients SET google_review_link = ?, updated_at = datetime(\'now\') WHERE id = ?').run(link, client.id);
+      await telegram.sendMessage(chatId, '✅ Google review link updated. Customers will get this link after /complete.');
+      break;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // /help — Dynamic command list based on plan
     // ═══════════════════════════════════════════════════════
     case '/help': {
-      await telegram.sendMessage(chatId,
-        `<b>Commands</b>\n\n`
-        + `/status — Full dashboard\n`
-        + `/leads — All leads by stage\n`
-        + `/calls — Recent calls\n`
-        + `/complete +phone — Mark job done\n`
-        + `/set — Configure settings\n`
-        + `/pause — Pause AI\n`
-        + `/resume — Resume AI\n`
-        + `/help — This message`
-      );
+      const helpText = telegram.getHelpText(client.plan || 'starter');
+      await telegram.sendMessage(chatId, helpText);
       break;
     }
 
     default: {
-      // For any unrecognized text, show a friendly nudge
-      await telegram.sendMessage(chatId, 'Type /status for your dashboard or /help for commands.');
+      // Smart natural language detection — clients shouldn't need to learn commands
+      const lower = text.toLowerCase();
+      if (lower.includes('pause') || lower.includes('stop') || lower.includes('turn off')) {
+        db.prepare('UPDATE clients SET is_active = 0 WHERE id = ?').run(client.id);
+        await telegram.sendMessage(chatId, '🔴 AI paused. Calls will ring through to you. Say "resume" or tap below to turn it back on.', {
+          reply_markup: { inline_keyboard: [[{ text: '▶️ Resume AI', callback_data: 'quick:resume' }]] }
+        });
+      } else if (lower.includes('resume') || lower.includes('turn on') || lower.includes('unpause')) {
+        db.prepare('UPDATE clients SET is_active = 1 WHERE id = ?').run(client.id);
+        await telegram.sendMessage(chatId, '🟢 AI is back on. I\'m handling calls again.');
+      } else if (lower.includes('lead') || lower.includes('prospect')) {
+        // Redirect to leads
+        const fakeMsg = { chat: { id: chatId }, from: { first_name: firstName }, text: '/leads' };
+        await handleCommand(db, fakeMsg);
+      } else if (lower.includes('call') || lower.includes('phone')) {
+        const fakeMsg = { chat: { id: chatId }, from: { first_name: firstName }, text: '/calls' };
+        await handleCommand(db, fakeMsg);
+      } else if (lower.includes('schedule') || lower.includes('appointment') || lower.includes('today') || lower.includes('tomorrow')) {
+        const fakeMsg = { chat: { id: chatId }, from: { first_name: firstName }, text: '/today' };
+        await handleCommand(db, fakeMsg);
+      } else {
+        // Friendly fallback with tap-to-action buttons
+        await telegram.sendMessage(chatId,
+          `I didn't catch that. Here's what you can do:`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '📊 Dashboard', callback_data: 'quick:status' },
+                  { text: '📋 Leads', callback_data: 'quick:leads' },
+                ],
+                [
+                  { text: '📞 Calls', callback_data: 'quick:calls' },
+                  { text: '📅 Schedule', callback_data: 'quick:today' },
+                ],
+              ]
+            }
+          }
+        );
+      }
       break;
     }
   }
@@ -489,6 +917,22 @@ async function handleCallback(db, callbackQuery) {
   // Rate limit callback queries
   if (!callbackRateLimit(chatId)) {
     console.warn(`[telegram] Callback rate limited for chatId ${chatId}`);
+    return;
+  }
+
+  // ── Quick-action buttons (no typing needed) ──
+  if (data.startsWith('quick:')) {
+    const action = data.split(':')[1];
+    await telegram.answerCallback(callbackId, 'Loading...');
+    // Simulate the command by building a fake message and running handleCommand
+    const fakeMessage = {
+      chat: { id: chatId },
+      from: callbackQuery.from,
+      text: `/${action}`,
+    };
+    await handleCommand(db, fakeMessage).catch(err =>
+      console.error('[telegram] quick-action error:', err)
+    );
     return;
   }
 
