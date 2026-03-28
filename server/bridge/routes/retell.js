@@ -327,25 +327,30 @@ async function handleCallEnded(db, call) {
     const clientId = callRecord.client_id;
 
     if (callerPhone && clientId) {
-      const existingLead = db.prepare(
-        'SELECT id FROM leads WHERE phone = ? AND client_id = ?'
-      ).get(callerPhone, clientId);
+      // Atomic lead upsert inside a transaction to prevent race conditions
+      const upsertLead = db.transaction(() => {
+        const existingLead = db.prepare(
+          'SELECT id FROM leads WHERE phone = ? AND client_id = ?'
+        ).get(callerPhone, clientId);
 
-      if (existingLead) {
-        db.prepare(`
-          UPDATE leads SET
-            score = MAX(score, ?),
-            last_contact = ?,
-            stage = CASE WHEN stage = 'new' THEN 'contacted' ELSE stage END,
-            updated_at = ?
-          WHERE id = ?
-        `).run(score, new Date().toISOString(), new Date().toISOString(), existingLead.id);
-      } else {
-        db.prepare(`
-          INSERT INTO leads (id, client_id, phone, score, stage, last_contact, created_at, updated_at)
-          VALUES (?, ?, ?, ?, 'new', ?, ?, ?)
-        `).run(randomUUID(), clientId, callerPhone, score, new Date().toISOString(), new Date().toISOString(), new Date().toISOString());
-      }
+        const now = new Date().toISOString();
+        if (existingLead) {
+          db.prepare(`
+            UPDATE leads SET
+              score = MAX(score, ?),
+              last_contact = ?,
+              stage = CASE WHEN stage = 'new' THEN 'contacted' ELSE stage END,
+              updated_at = ?
+            WHERE id = ?
+          `).run(score, now, now, existingLead.id);
+        } else {
+          db.prepare(`
+            INSERT INTO leads (id, client_id, phone, score, stage, last_contact, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'new', ?, ?, ?)
+          `).run(randomUUID(), clientId, callerPhone, score, now, now, now);
+        }
+      });
+      upsertLead();
 
       // 8. Store booking reference
       if (bookingId) {

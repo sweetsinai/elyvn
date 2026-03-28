@@ -181,7 +181,14 @@ router.post('/', async (req, res) => {
       let kbContent = '';
       if (client.kb_path) {
         try {
-          kbContent = fs.readFileSync(path.resolve(client.kb_path), 'utf-8');
+          // Resolve KB path relative to project root and ensure it stays within allowed directory
+          const kbBaseDir = path.resolve(__dirname, '../../mcp/knowledge_bases');
+          const resolvedPath = path.resolve(__dirname, '../..', client.kb_path);
+          if (!resolvedPath.startsWith(kbBaseDir)) {
+            logger.warn(`[twilio] KB path traversal blocked: ${client.kb_path}`);
+          } else {
+            kbContent = fs.readFileSync(resolvedPath, 'utf-8');
+          }
         } catch (err) {
           logger.warn(`[twilio] KB not found: ${client.kb_path}`);
         }

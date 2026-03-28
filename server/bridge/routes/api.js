@@ -478,6 +478,15 @@ router.get('/bookings/:clientId', async (req, res) => {
 
     const { startDate, endDate } = req.query;
 
+    // Validate date parameters if provided (ISO 8601 format)
+    const isoDateRegex = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?Z?)?$/;
+    if (startDate && !isoDateRegex.test(startDate)) {
+      return res.status(400).json({ error: 'Invalid startDate format. Use ISO 8601 (YYYY-MM-DD)' });
+    }
+    if (endDate && !isoDateRegex.test(endDate)) {
+      return res.status(400).json({ error: 'Invalid endDate format. Use ISO 8601 (YYYY-MM-DD)' });
+    }
+
     const client = db.prepare('SELECT calcom_event_type_id FROM clients WHERE id = ?').get(clientId);
     if (!client?.calcom_event_type_id) {
       return res.json({ bookings: [] });

@@ -162,8 +162,10 @@ function cancelJobs(db, filter) {
     }
 
     if (filter.payloadContains) {
-      where += " AND payload LIKE ?";
-      params.push(`%${filter.payloadContains}%`);
+      // Escape SQL LIKE wildcards to prevent pattern injection
+      const escaped = filter.payloadContains.replace(/[%_\\]/g, '\\$&');
+      where += " AND payload LIKE ? ESCAPE '\\'";
+      params.push(`%${escaped}%`);
     }
 
     const result = db.prepare(
