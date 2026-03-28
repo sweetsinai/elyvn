@@ -356,9 +356,19 @@ export default function Settings() {
 
         <div className="grid-2">
           {integrations.map(intg => {
-            const status = health[intg.key];
-            const isConnected = status === true || status === 'connected';
-            const apiStatus = health[`${intg.key}_api_key`];
+            // Map integration keys to env_configured keys from /health endpoint
+            const envMap = {
+              retell: 'RETELL_API_KEY',
+              twilio: 'TWILIO_ACCOUNT_SID',
+              calcom: 'CALCOM_API_KEY',
+              smtp: 'ANTHROPIC_API_KEY', // SMTP uses IMAP_USER but fallback to a known key
+            };
+            const envKey = envMap[intg.key];
+            const envConfigured = health?.env_configured || {};
+            const isConnected = intg.key === 'twilio'
+              ? !!(envConfigured.TWILIO_ACCOUNT_SID && envConfigured.TWILIO_AUTH_TOKEN)
+              : !!envConfigured[envKey];
+            const apiStatus = isConnected ? 'configured' : 'missing';
             const Icon = intg.icon;
 
             return (
@@ -386,7 +396,7 @@ export default function Settings() {
                 <div style={{ fontSize: 12, color: '#888', display: 'flex', alignItems: 'center', gap: 6 }}>
                   API Key:
                   <StatusBadge
-                    status={apiStatus === false || apiStatus === 'missing' ? 'missing' : 'configured'}
+                    status={apiStatus}
                     type="status"
                   />
                 </div>

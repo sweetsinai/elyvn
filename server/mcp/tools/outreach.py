@@ -173,7 +173,7 @@ async def send_campaign(campaign_id: str) -> dict:
                         await asyncio.sleep(60)
 
                     prospect = await get_prospect(email["prospect_id"]) if email.get("prospect_id") else None
-                    to_email = prospect.get("email") if prospect else None
+                    to_email = prospect.get("email", "") if prospect else None
 
                     if not to_email:
                         await update_email(email["id"], status="skipped")

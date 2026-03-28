@@ -196,18 +196,14 @@ async def analyze_call(
 async def _find_call_by_call_id(call_id: str) -> Optional[dict]:
     """Look up a call record by call ID."""
     try:
-        import aiosqlite
         from db import get_db
 
         db = await get_db()
-        try:
-            cursor = await db.execute(
-                "SELECT * FROM calls WHERE call_id = ?", (call_id,)
-            )
-            row = await cursor.fetchone()
-            return dict(row) if row else None
-        finally:
-            await db.close()
+        cursor = await db.execute(
+            "SELECT * FROM calls WHERE call_id = ?", (call_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
     except Exception as e:
         logger.error("Failed to find call by ID %s: %s", call_id, e)
         return None

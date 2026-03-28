@@ -1,0 +1,16 @@
+node_modules
+dashboard/node_modules
+server/bridge/node_modules
+server/mcp/__pycache__
+server/mcp/tools/__pycache__
+server/bridge/public
+server/bridge/logs
+*.db
+*.db-wal
+*.db-shm
+.env
+.git
+.DS_Store
+*.md
+docs
+landing
