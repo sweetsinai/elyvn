@@ -21,6 +21,7 @@ const path = require('path');
 const { isValidUUID } = require('../utils/validate');
 const { withTimeout } = require('../utils/resilience');
 const { logger } = require('../utils/logger');
+const { generateSystemPrompt } = require('../utils/nicheTemplates');
 
 const anthropic = new Anthropic();
 const ANTHROPIC_TIMEOUT = 30000;
@@ -186,13 +187,12 @@ router.post('/', async (req, res) => {
         }
       }
 
-      // Build AI prompt
-      const systemPrompt = `You are an AI receptionist for ${client.business_name} (${client.industry || 'service business'}).
-Your job: respond to customer SMS messages helpfully and professionally.
-Keep replies SHORT (under 160 chars if possible). Be warm and helpful.
-${client.calcom_booking_link ? `Booking link: ${client.calcom_booking_link}` : ''}
-${kbContent ? `\nKnowledge base:\n${kbContent}` : ''}
-${client.business_hours ? `\nBusiness hours: ${client.business_hours}` : ''}`;
+      // Build AI prompt — use niche-specific template if available
+      const nichePrompt = generateSystemPrompt(client);
+      const systemPrompt = `${nichePrompt}
+
+CHANNEL: SMS — keep replies SHORT (under 160 chars if possible). Be warm and helpful.
+${kbContent ? `\nAdditional knowledge base:\n${kbContent}` : ''}`;
 
       const messages = history.map(m => ({
         role: m.direction === 'inbound' ? 'user' : 'assistant',

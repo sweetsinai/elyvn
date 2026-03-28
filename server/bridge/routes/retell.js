@@ -6,6 +6,7 @@ const { sendSMS, sendSMSToOwner } = require('../utils/sms');
 const telegram = require('../utils/telegram');
 const config = require('../utils/config');
 const { logger } = require('../utils/logger');
+const { generateVoicemailText, generateFollowUpSms } = require('../utils/nicheTemplates');
 
 const anthropic = new Anthropic();
 const { normalizePhone } = require('../utils/phone');
@@ -375,7 +376,7 @@ async function handleCallEnded(db, call) {
 
           const voicemailClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
           if (voicemailClient) {
-            const voicemailMsg = `Hi, we noticed you called ${voicemailClient.business_name}. Sorry we missed you! Book an appointment: ${voicemailClient.calcom_booking_link || '(booking link not set)'} or we'll call you back during business hours.`;
+            const voicemailMsg = generateVoicemailText(voicemailClient, callerPhone);
             const voicemailPhone = voicemailClient.telnyx_phone || voicemailClient.twilio_phone;
             sendSMS(callerPhone, voicemailMsg, voicemailPhone, db, clientId)
               .catch(err => logger.error('[retell] Voicemail SMS failed:', err.message));
@@ -655,14 +656,22 @@ function scheduleFollowUp(db, clientId, callerPhone, outcome) {
     const leadId = lead.id;
     const now = new Date();
 
+    // Load client for niche-aware follow-up content
+    const followUpClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    const biz = followUpClient?.business_name || followUpClient?.name || 'us';
+
     const touches = outcome === 'booked'
       ? [
-          { touchNumber: 1, type: 'confirmation', delayMs: 5 * 60 * 1000, content: 'Your appointment is confirmed! Reply CANCEL to cancel.' },
-          { touchNumber: 2, type: 'reminder', delayMs: 24 * 60 * 60 * 1000, content: 'Reminder: your appointment is coming up soon!' }
+          { touchNumber: 1, type: 'confirmation', delayMs: 5 * 60 * 1000,
+            content: generateFollowUpSms(followUpClient || {}, null, `Your appointment with ${biz} is confirmed! Reply CANCEL to cancel.`) },
+          { touchNumber: 2, type: 'reminder', delayMs: 24 * 60 * 60 * 1000,
+            content: generateFollowUpSms(followUpClient || {}, null, `Reminder: your appointment with ${biz} is coming up soon!`) }
         ]
       : [
-          { touchNumber: 1, type: 'thank_you', delayMs: 2 * 60 * 60 * 1000, content: 'Thanks for calling! Book online anytime.' },
-          { touchNumber: 2, type: 'nudge', delayMs: 48 * 60 * 60 * 1000, content: 'Still need service? We have availability this week.' }
+          { touchNumber: 1, type: 'thank_you', delayMs: 2 * 60 * 60 * 1000,
+            content: generateFollowUpSms(followUpClient || {}, null, `Thanks for calling ${biz}! Book online anytime: ${followUpClient?.calcom_booking_link || ''}`) },
+          { touchNumber: 2, type: 'nudge', delayMs: 48 * 60 * 60 * 1000,
+            content: generateFollowUpSms(followUpClient || {}, null, `Still need service? ${biz} has availability this week.`) }
         ];
 
     // Batch-load all scheduled followups for this lead to avoid N+1 queries

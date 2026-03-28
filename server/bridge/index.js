@@ -58,11 +58,21 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Required for dashboard (React)
       styleSrc: ["'self'", "'unsafe-inline'"], // Required for dashboard styles
       imgSrc: ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'", 'https://api.anthropic.com', 'https://api.retellai.com', 'https://api.telnyx.com'],
+      connectSrc: ["'self'", 'https://api.anthropic.com', 'https://api.retellai.com', 'https://api.telnyx.com', 'https://api.stripe.com'],
+      frameSrc: ["'self'", 'https://checkout.stripe.com', 'https://js.stripe.com'],
     },
   },
   crossOriginEmbedderPolicy: false,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
+
+// Additional security headers
+app.use((req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(self)');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.removeHeader('X-Powered-By');
+  next();
+});
 
 // Timing-safe API key comparison
 function safeCompare(a, b) {
@@ -223,6 +233,14 @@ app.get('/health', async (req, res) => {
     CALCOM_API_KEY: !!process.env.CALCOM_API_KEY,
     ELYVN_API_KEY: !!process.env.ELYVN_API_KEY,
   };
+
+  // In production, only expose minimal health info to public
+  if (process.env.NODE_ENV === 'production' && !req.headers['x-api-key']) {
+    return res.json({
+      status: dbOk ? 'ok' : 'degraded',
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   res.json({
     status: dbOk ? 'ok' : 'degraded',
