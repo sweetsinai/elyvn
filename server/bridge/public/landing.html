@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ELYVN - AI Phone Answering for Service Businesses</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #0a0e27;
+      color: #ffffff;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* Navigation */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      backdrop-filter: blur(10px);
+      background: rgba(10, 14, 39, 0.8);
+      border-bottom: 1px solid rgba(0, 229, 204, 0.1);
+      padding: 1rem 2rem;
+    }
+
+    nav .container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    nav .logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #00E5CC 0%, #00b8a0 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    nav .nav-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+    }
+
+    nav .nav-links a {
+      color: #ffffff;
+      text-decoration: none;
+      font-size: 0.95rem;
+      transition: color 0.3s ease;
+    }
+
+    nav .nav-links a:hover {
+      color: #00E5CC;
+    }
+
+    @media (max-width: 768px) {
+      nav .nav-links {
+        display: none;
+      }
+    }
+
+    /* Container */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+
+    /* Hero Section */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem 2rem;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 60vw;
+      height: 60vw;
+      background: radial-gradient(circle, rgba(0, 229, 204, 0.15) 0%, transparent 70%);
+      border-radius: 50%;
+      filter: blur(40px);
+      z-index: 0;
+    }
+
+    .hero::after {
+      content: '';
+      position: absolute;
+      bottom: -30%;
+      left: -10%;
+      width: 50vw;
+      height: 50vw;
+      background: radial-gradient(circle, rgba(0, 229, 204, 0.1) 0%, transparent 70%);
+      border-radius: 50%;
+      filter: blur(40px);
+      z-index: 0;
+    }
+
+    .hero .content {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      max-width: 900px;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      font-weight: 800;
+      margin-bottom: 1.5rem;
+      letter-spacing: -2px;
+      background: linear-gradient(135deg, #ffffff 0%, #00E5CC 50%, #ffffff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1.2;
+    }
+
+    .hero .subtitle {
+      font-size: clamp(1rem, 2.5vw, 1.4rem);
+      color: #b8bfd4;
+      margin-bottom: 2.5rem;
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .hero .cta-button {
+      display: inline-block;
+      padding: 1rem 3rem;
+      background: linear-gradient(135deg, #00E5CC 0%, #00b8a0 100%);
+      color: #0a0e27;
+      text-decoration: none;
+      border-radius: 50px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      transition: all 0.3s ease;
+      box-shadow: 0 20px 50px rgba(0, 229, 204, 0.2);
+      border: none;
+      cursor: pointer;
+    }
+
+    .hero .cta-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 30px 60px rgba(0, 229, 204, 0.3);
+    }
+
+    /* Stats Section */
+    .stats {
+      background: linear-gradient(135deg, #0f1535 0%, #1a1f4a 100%);
+      padding: 5rem 2rem;
+      border-top: 1px solid rgba(0, 229, 204, 0.1);
+    }
+
+    .stats .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 2rem;
+    }
+
+    .stat-card {
+      text-align: center;
+      padding: 2rem;
+      background: rgba(0, 229, 204, 0.05);
+      border: 1px solid rgba(0, 229, 204, 0.1);
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+      background: rgba(0, 229, 204, 0.1);
+      border-color: rgba(0, 229, 204, 0.3);
+      transform: translateY(-5px);
+    }
+
+    .stat-number {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: #00E5CC;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+      font-size: 1rem;
+      color: #b8bfd4;
+    }
+
+    /* How It Works */
+    .how-it-works {
+      padding: 5rem 2rem;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: clamp(2rem, 4vw, 3rem);
+      margin-bottom: 3rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00E5CC 0%, #00b8a0 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 3rem;
+      margin-bottom: 3rem;
+    }
+
+    .step-card {
+      position: relative;
+      padding: 2rem;
+      background: linear-gradient(135deg, rgba(0, 229, 204, 0.08) 0%, rgba(0, 229, 204, 0.02) 100%);
+      border: 1px solid rgba(0, 229, 204, 0.15);
+      border-radius: 16px;
+      transition: all 0.3s ease;
+    }
+
+    .step-card:hover {
+      border-color: rgba(0, 229, 204, 0.4);
+      box-shadow: 0 20px 60px rgba(0, 229, 204, 0.1);
+      transform: translateY(-5px);
+    }
+
+    .step-number {
+      display: inline-block;
+      width: 50px;
+      height: 50px;
+      background: linear-gradient(135deg, #00E5CC 0%, #00b8a0 100%);
+      color: #0a0e27;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .step-card h3 {
+      font-size: 1.3rem;
+      margin-bottom: 0.8rem;
+      color: #ffffff;
+    }
+
+    .step-card p {
+      color: #b8bfd4;
+      line-height: 1.7;
+    }
+
+    /* Video Section */
+    .video-section {
+      padding: 5rem 2rem;
+      background: linear-gradient(135deg, #0f1535 0%, #1a1f4a 100%);
+      border-top: 1px solid rgba(0, 229, 204, 0.1);
+    }
+
+    .video-container {
+      max-width: 900px;
+      margin: 0 auto;
+      position: relative;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 30px 60px rgba(0, 229, 204, 0.15);
+      border: 1px solid rgba(0, 229, 204, 0.2);
+    }
+
+    .video-container iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .video-placeholder {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #1a1f4a 0%, #0f1535 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .play-button {
+      width: 80px;
+      height: 80px;
+      background: rgba(0, 229, 204, 0.9);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 20px 40px rgba(0, 229, 204, 0.3);
+    }
+
+    .play-button:hover {
+      background: #00E5CC;
+      transform: scale(1.1);
+    }
+
+    .play-button::after {
+      content: '▶';
+      color: #0a0e27;
+      font-size: 2rem;
+      margin-left: 5px;
+    }
+
+    /* Testimonials */
+    .testimonials {
+      padding: 5rem 2rem;
+    }
+
+    .testimonial-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+    }
+
+    .testimonial-card {
+      background: linear-gradient(135deg, rgba(0, 229, 204, 0.08) 0%, rgba(0, 229, 204, 0.02) 100%);
+      border: 1px solid rgba(0, 229, 204, 0.15);
+      padding: 2rem;
+      border-radius: 12px;
+      transition: all 0.3s ease;
+    }
+
+    .testimonial-card:hover {
+      border-color: rgba(0, 229, 204, 0.4);
+      transform: translateY(-5px);
+    }
+
+    .stars {
+      color: #00E5CC;
+      font-size: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .testimonial-text {
+      color: #b8bfd4;
+      font-style: italic;
+      margin-bottom: 1.5rem;
+      line-height: 1.8;
+    }
+
+    .testimonial-author {
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    .testimonial-role {
+      color: #00E5CC;
+      font-size: 0.9rem;
+    }
+
+    /* Pricing */
+    .pricing {
+      padding: 5rem 2rem;
+      background: linear-gradient(135deg, #0f1535 0%, #1a1f4a 100%);
+      border-top: 1px solid rgba(0, 229, 204, 0.1);
+    }
+
+    .pricing-card {
+      max-width: 500px;
+      margin: 0 auto;
+      background: linear-gradient(135deg, rgba(0, 229, 204, 0.1) 0%, rgba(0, 229, 204, 0.02) 100%);
+      border: 2px solid rgba(0, 229, 204, 0.3);
+      border-radius: 16px;
+      padding: 3rem 2rem;
+      text-align: center;
+    }
+
+    .pricing-card h3 {
+      font-size: 1.8rem;
+      margin-bottom: 1rem;
+    }
+
+    .price {
+      font-size: 3rem;
+      font-weight: 800;
+      color: #00E5CC;
+      margin-bottom: 0.5rem;
+    }
+
+    .price-period {
+      color: #b8bfd4;
+      font-size: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .features-list {
+      text-align: left;
+      margin-bottom: 2rem;
+      list-style: none;
+    }
+
+    .features-list li {
+      padding: 0.75rem 0;
+      color: #b8bfd4;
+      border-bottom: 1px solid rgba(0, 229, 204, 0.1);
+      display: flex;
+      align-items: center;
+    }
+
+    .features-list li::before {
+      content: '✓';
+      color: #00E5CC;
+      font-weight: bold;
+      margin-right: 1rem;
+      font-size: 1.2rem;
+    }
+
+    .features-list li:last-child {
+      border-bottom: none;
+    }
+
+    /* FAQ */
+    .faq {
+      padding: 5rem 2rem;
+    }
+
+    .faq-container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .faq-item {
+      margin-bottom: 1.5rem;
+      border: 1px solid rgba(0, 229, 204, 0.1);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .faq-item.active {
+      border-color: rgba(0, 229, 204, 0.3);
+      background: rgba(0, 229, 204, 0.05);
+    }
+
+    .faq-question {
+      padding: 1.5rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+      background: linear-gradient(135deg, rgba(0, 229, 204, 0.05) 0%, transparent 100%);
+      transition: all 0.3s ease;
+    }
+
+    .faq-item.active .faq-question {
+      background: linear-gradient(135deg, rgba(0, 229, 204, 0.1) 0%, transparent 100%);
+    }
+
+    .faq-question:hover {
+      background: linear-gradient(135deg, rgba(0, 229, 204, 0.08) 0%, transparent 100%);
+    }
+
+    .faq-toggle {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #00E5CC;
+      transition: transform 0.3s ease;
+    }
+
+    .faq-item.active .faq-toggle {
+      transform: rotate(180deg);
+    }
+
+    .faq-answer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+      padding: 0 1.5rem;
+      color: #b8bfd4;
+    }
+
+    .faq-item.active .faq-answer {
+      max-height: 500px;
+      padding: 1.5rem;
+    }
+
+    /* Footer */
+    footer {
+      background: linear-gradient(135deg, #0a0e27 0%, #0f1535 100%);
+      border-top: 1px solid rgba(0, 229, 204, 0.1);
+      padding: 3rem 2rem 1rem;
+    }
+
+    footer .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .footer-content {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .footer-section h4 {
+      color: #ffffff;
+      margin-bottom: 1rem;
+      font-size: 1rem;
+    }
+
+    .footer-section ul {
+      list-style: none;
+    }
+
+    .footer-section ul li {
+      margin-bottom: 0.5rem;
+    }
+
+    .footer-section ul li a {
+      color: #b8bfd4;
+      text-decoration: none;
+      transition: color 0.3s ease;
+    }
+
+    .footer-section ul li a:hover {
+      color: #00E5CC;
+    }
+
+    .footer-bottom {
+      text-align: center;
+      padding-top: 2rem;
+      border-top: 1px solid rgba(0, 229, 204, 0.1);
+      color: #6b7280;
+      font-size: 0.9rem;
+    }
+
+    /* Animations */
+    @keyframes countUp {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .stat-number {
+      animation: countUp 0.6s ease-out forwards;
+    }
+
+    .stat-card:nth-child(1) .stat-number {
+      animation-delay: 0.1s;
+    }
+
+    .stat-card:nth-child(2) .stat-number {
+      animation-delay: 0.2s;
+    }
+
+    .stat-card:nth-child(3) .stat-number {
+      animation-delay: 0.3s;
+    }
+
+    .stat-card:nth-child(4) .stat-number {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .step-card {
+      animation: fadeInUp 0.6s ease-out forwards;
+    }
+
+    .step-card:nth-child(1) {
+      animation-delay: 0.1s;
+    }
+
+    .step-card:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .step-card:nth-child(3) {
+      animation-delay: 0.3s;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      nav .container {
+        padding: 0.5rem 0;
+      }
+
+      .hero {
+        min-height: 80vh;
+        padding: 2rem 1rem;
+      }
+
+      .stats {
+        padding: 3rem 1rem;
+      }
+
+      .how-it-works {
+        padding: 3rem 1rem;
+      }
+
+      .video-section {
+        padding: 3rem 1rem;
+      }
+
+      .testimonials {
+        padding: 3rem 1rem;
+      }
+
+      .pricing {
+        padding: 3rem 1rem;
+      }
+
+      .faq {
+        padding: 3rem 1rem;
+      }
+
+      .pricing-card {
+        padding: 2rem 1.5rem;
+      }
+
+      .hero h1 {
+        margin-bottom: 1rem;
+      }
+
+      .hero .subtitle {
+        margin-bottom: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Navigation -->
+  <nav>
+    <div class="container">
+      <div class="logo">ELYVN</div>
+      <ul class="nav-links">
+        <li><a href="#how-it-works">How It Works</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="content">
+      <h1>Never Miss A Lead Again</h1>
+      <p class="subtitle">AI-powered phone answering that qualifies leads, books appointments, and handles follow-ups 24/7. Get Telegram alerts when opportunities come in.</p>
+      <a href="https://cal.com/elyvn/quick" class="cta-button">Schedule Demo</a>
+    </div>
+  </section>
+
+  <!-- Stats Section -->
+  <section class="stats">
+    <div class="container">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-number">62%</div>
+          <div class="stat-label">of calls go unanswered</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number">$126K</div>
+          <div class="stat-label">lost per year</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number">78%</div>
+          <div class="stat-label">buy from first responder</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number">47h</div>
+          <div class="stat-label">average response time</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="how-it-works" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title">How It Works</h2>
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-number">1</div>
+          <h3>We Answer Your Calls 24/7</h3>
+          <p>ELYVN AI receptionist answers every call instantly, so you never miss an opportunity. Available around the clock, even outside business hours.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">2</div>
+          <h3>AI Qualifies & Books</h3>
+          <p>Our AI asks the right questions, qualifies leads in real-time, and automatically books qualified appointments into your calendar.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">3</div>
+          <h3>You Get Instant Alerts</h3>
+          <p>Receive Telegram notifications instantly when leads come in. Access your full dashboard anytime to track calls, leads, and bookings.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Video Section -->
+  <section class="video-section">
+    <div class="container">
+      <h2 class="section-title" style="margin-bottom: 2rem;">See It In Action</h2>
+      <div class="video-container">
+        <div class="video-placeholder" id="videoPlaceholder">
+          <div class="play-button" id="playButton"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Testimonials -->
+  <section class="testimonials">
+    <div class="container">
+      <h2 class="section-title">What Our Customers Say</h2>
+      <div class="testimonial-grid">
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <p class="testimonial-text">"ELYVN has been a game-changer for our HVAC business. We're now catching calls we used to miss, and the AI is so natural our customers don't even realize they're talking to a bot."</p>
+          <div class="testimonial-author">Marcus Johnson</div>
+          <div class="testimonial-role">Owner, Johnson HVAC Solutions</div>
+        </div>
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <p class="testimonial-text">"Within the first month, ELYVN booked 12 appointments that we would have completely missed. The ROI is insane. Best decision we made for our plumbing company."</p>
+          <div class="testimonial-author">Sarah Mitchell</div>
+          <div class="testimonial-role">Manager, Premier Plumbing Co.</div>
+        </div>
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <p class="testimonial-text">"The setup was painless and the support team is fantastic. We're a small electrical company and we finally feel like we have the infrastructure of a much larger business."</p>
+          <div class="testimonial-author">David Chen</div>
+          <div class="testimonial-role">Founder, Chen's Electrical Services</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing -->
+  <section class="pricing" id="pricing">
+    <div class="container">
+      <h2 class="section-title">Simple, Transparent Pricing</h2>
+      <div class="pricing-card">
+        <h3>Essential Plan</h3>
+        <div class="price">$497</div>
+        <div class="price-period">per month</div>
+        <ul class="features-list">
+          <li>AI Phone Answering 24/7</li>
+          <li>SMS Auto-Reply</li>
+          <li>Speed-to-Lead (3-minute callback)</li>
+          <li>Appointment Booking</li>
+          <li>Telegram Alerts</li>
+          <li>Dashboard & Analytics</li>
+          <li>Cold Outreach Engine</li>
+        </ul>
+        <a href="https://cal.com/elyvn/quick" class="cta-button">Start Free Trial</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="faq" id="faq">
+    <div class="container">
+      <h2 class="section-title">Frequently Asked Questions</h2>
+      <div class="faq-container">
+        <div class="faq-item">
+          <div class="faq-question">
+            How does ELYVN answer calls?
+            <div class="faq-toggle">▼</div>
+          </div>
+          <div class="faq-answer">ELYVN integrates with your existing phone system and uses AI to answer incoming calls instantly. When your team is busy or after hours, ELYVN steps in to greet callers, gather information, and route leads appropriately.</div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-question">
+            How long does setup take?
+            <div class="faq-toggle">▼</div>
+          </div>
+          <div class="faq-answer">Setup typically takes 15-30 minutes. We'll walk you through connecting your phone number, configuring your business details, and setting up your dashboard. You can be live within the same day.</div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-question">
+            Do I have to sign a long-term contract?
+            <div class="faq-toggle">▼</div>
+          </div>
+          <div class="faq-answer">No contracts required. We offer month-to-month billing so you can cancel anytime. We're confident you'll love ELYVN, and we believe in earning your business every month.</div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-question">
+            Can ELYVN book appointments directly into my calendar?
+            <div class="faq-toggle">▼</div>
+          </div>
+          <div class="faq-answer">Yes! ELYVN integrates with Cal.com, Google Calendar, and other popular scheduling tools. When a lead books, it goes straight into your calendar and you get an instant Telegram alert.</div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-question">
+            What if I need to customize how ELYVN responds?
+            <div class="faq-toggle">▼</div>
+          </div>
+          <div class="faq-answer">Our dashboard lets you customize call greetings, qualification questions, appointment availability, and more. If you need advanced customization, our support team is happy to help.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-section">
+          <h4>ELYVN</h4>
+          <p style="color: #b8bfd4; margin-bottom: 1rem;">AI phone answering for service businesses that want to never miss another lead.</p>
+        </div>
+        <div class="footer-section">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="https://cal.com/elyvn/quick">Pricing</a></li>
+            <li><a href="https://cal.com/elyvn/quick">Try for Free</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Company</h4>
+          <ul>
+            <li><a href="https://cal.com/elyvn/quick">About</a></li>
+            <li><a href="https://cal.com/elyvn/quick">Contact</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Legal</h4>
+          <ul>
+            <li><a href="https://cal.com/elyvn/quick">Privacy Policy</a></li>
+            <li><a href="https://cal.com/elyvn/quick">Terms of Service</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 ELYVN. All rights reserved. AI Receptionist for Service Businesses.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // FAQ Toggle
+    const faqItems = document.querySelectorAll('.faq-item');
+    faqItems.forEach(item => {
+      const question = item.querySelector('.faq-question');
+      question.addEventListener('click', () => {
+        item.classList.toggle('active');
+      });
+    });
+
+    // Video Placeholder
+    const playButton = document.getElementById('playButton');
+    const videoPlaceholder = document.getElementById('videoPlaceholder');
+
+    if (playButton) {
+      playButton.addEventListener('click', () => {
+        videoPlaceholder.innerHTML = '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>';
+      });
+    }
+
+    // Animate counters when visible
+    const observerOptions = {
+      threshold: 0.5,
+      rootMargin: '0px 0px -100px 0px'
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const card = entry.target;
+          const numberElement = card.querySelector('.stat-number');
+          if (numberElement && !card.dataset.animated) {
+            card.dataset.animated = 'true';
+            animateCounter(numberElement);
+          }
+        }
+      });
+    }, observerOptions);
+
+    document.querySelectorAll('.stat-card').forEach(card => {
+      observer.observe(card);
+    });
+
+    function animateCounter(element) {
+      const text = element.textContent;
+      const regex = /(\d+)/;
+      const match = text.match(regex);
+
+      if (!match) return;
+
+      const finalNumber = parseInt(match[1]);
+      const suffix = text.replace(match[0], '');
+      let current = 0;
+      const step = Math.ceil(finalNumber / 50);
+      const duration = 1000;
+      const stepDuration = duration / (finalNumber / step);
+
+      const interval = setInterval(() => {
+        current += step;
+        if (current >= finalNumber) {
+          current = finalNumber;
+          clearInterval(interval);
+        }
+        element.textContent = current + suffix;
+      }, stepDuration);
+    }
+
+    // Smooth scroll for navigation links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        const href = this.getAttribute('href');
+        if (href === '#') return;
+
+        const target = document.querySelector(href);
+        if (target) {
+          e.preventDefault();
+          target.scrollIntoView({ behavior: 'smooth' });
+        }
+      });
+    });
+  </script>
+</body>
+</html>

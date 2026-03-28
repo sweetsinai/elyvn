@@ -75,7 +75,7 @@ function safeCompare(a, b) {
 const corsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
   : (process.env.NODE_ENV === 'production'
-    ? ['https://joyful-trust-production.up.railway.app', 'https://api.elyvn.net', 'https://elyvn.net']
+    ? ['https://joyful-trust-production.up.railway.app', 'https://api.elyvn.net', 'https://elyvn.net', 'https://www.elyvn.net', 'https://elyvn.vercel.app']
     : '*');
 
 if (!process.env.CORS_ORIGINS && process.env.NODE_ENV === 'production') {
@@ -245,6 +245,23 @@ const API_KEY = process.env.ELYVN_API_KEY;
 const { logAudit } = require('./utils/auditLog');
 
 function apiAuth(req, res, next) {
+  // Check JWT Bearer token first
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      const { verifyToken } = require('./routes/auth');
+      const payload = verifyToken(authHeader.slice(7));
+      if (payload) {
+        req.clientId = payload.clientId;
+        req.email = payload.email;
+        req.isJwtAuth = true;
+        return next();
+      }
+    } catch (err) {
+      logger.error('[auth] JWT verification error:', err.message);
+    }
+  }
+
   const provided = req.headers['x-api-key'];
   if (!provided) {
     logAudit(db, { action: 'auth_failure', ip: req.ip, userAgent: req.get('user-agent'), details: { reason: 'no_api_key', path: req.path } });
@@ -307,6 +324,16 @@ app.use('/webhooks/twilio', webhookRateLimiter, twilioRouter);
 
 app.use('/webhooks/retell', webhookRateLimiter, retellRouter);
 app.use('/retell-webhook', webhookRateLimiter, retellRouter);
+
+// Auth routes (no auth required — signup/login)
+const authRouter = require('./routes/auth');
+app.use('/auth', authRateLimiter, authRouter);
+
+// Billing routes (webhook is public, others need JWT)
+const billingRouter = require('./routes/billing');
+app.use('/billing/webhook', webhookRateLimiter, billingRouter);
+app.use('/billing', billingRouter);
+
 app.use('/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
 // Mount onboard routes (before general /api to allow public access)
 app.use('/api', onboardRouter);

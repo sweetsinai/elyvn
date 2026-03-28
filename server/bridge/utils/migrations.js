@@ -552,6 +552,31 @@ const migrations = [
       // A full schema rebuild would require copying all data — too risky for production.
     },
   },
+  {
+    id: '022_auth_and_billing',
+    description: 'Add password_hash and billing columns to clients for JWT auth + Stripe',
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+      const addCol = (name, type) => {
+        if (!cols.includes(name)) {
+          db.exec(`ALTER TABLE clients ADD COLUMN ${name} ${type}`);
+        }
+      };
+      addCol('password_hash', 'TEXT');
+      addCol('plan', "TEXT DEFAULT 'trial'");
+      addCol('subscription_status', "TEXT DEFAULT 'active'");
+      addCol('stripe_customer_id', 'TEXT');
+      addCol('stripe_subscription_id', 'TEXT');
+      addCol('plan_started_at', 'TEXT');
+      addCol('onboarding_completed', "INTEGER DEFAULT 0");
+      addCol('onboarding_step', "INTEGER DEFAULT 0");
+
+      // Index for email lookup (login)
+      db.exec('CREATE INDEX IF NOT EXISTS idx_clients_owner_email ON clients(owner_email)');
+      // Index for Stripe customer lookup
+      db.exec('CREATE INDEX IF NOT EXISTS idx_clients_stripe_customer ON clients(stripe_customer_id)');
+    },
+  },
 ];
 
 /**

@@ -6,8 +6,10 @@ const API_BASE = '/api';
  * Get API key from session storage. All authenticated requests use this.
  */
 function getHeaders(extra = {}) {
+  const token = sessionStorage.getItem('elyvn_token');
   const apiKey = sessionStorage.getItem('elyvn_api_key');
   return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(apiKey ? { 'x-api-key': apiKey } : {}),
     ...extra,
   };
@@ -20,7 +22,7 @@ function jsonHeaders() {
 /**
  * Wrapper for fetch that auto-injects auth header and handles errors.
  */
-async function apiFetch(url, options = {}) {
+export async function apiFetch(url, options = {}) {
   const res = await fetch(url, {
     ...options,
     headers: { ...getHeaders(), ...(options.headers || {}) },

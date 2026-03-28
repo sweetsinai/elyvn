@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ELYVN - AI Call Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow-x: hidden;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+      animation: fadeIn 0.6s ease-out;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #00E5CC 0%, #00c4a8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header p {
+      font-size: 1.1rem;
+      color: #a0a0a0;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 768px) {
+      .header h1 {
+        font-size: 1.8rem;
+      }
+      .header p {
+        font-size: 0.95rem;
+      }
+    }
+
+    /* Demo Section */
+    .demo-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 30px;
+      margin-bottom: 40px;
+    }
+
+    /* Phone UI Mockup */
+    .phone-mockup {
+      width: 100%;
+      max-width: 380px;
+      aspect-ratio: 9 / 16;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      border-radius: 40px;
+      border: 12px solid #0a0a0f;
+      box-shadow: 0 20px 60px rgba(0, 229, 204, 0.15), 0 0 40px rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      animation: slideUp 0.8s ease-out;
+    }
+
+    .phone-mockup::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 150px;
+      height: 25px;
+      background: #0a0a0f;
+      border-radius: 0 0 30px 30px;
+      z-index: 10;
+    }
+
+    .phone-screen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 40px 20px 20px;
+      overflow-y: auto;
+    }
+
+    .phone-screen::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .phone-screen::-webkit-scrollbar-track {
+      background: rgba(0, 229, 204, 0.05);
+    }
+
+    .phone-screen::-webkit-scrollbar-thumb {
+      background: #00E5CC;
+      border-radius: 2px;
+    }
+
+    /* Call States */
+    .call-state {
+      opacity: 0;
+      transition: opacity 0.3s ease-out;
+    }
+
+    .call-state.active {
+      opacity: 1;
+    }
+
+    .initial-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      text-align: center;
+      gap: 20px;
+    }
+
+    .elyvn-logo {
+      width: 60px;
+      height: 60px;
+      background: #00E5CC;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 24px;
+      color: #0a0a0f;
+      margin: 0 auto;
+    }
+
+    .initial-state h2 {
+      font-size: 1.3rem;
+      margin-bottom: 10px;
+      color: #fff;
+    }
+
+    .initial-state p {
+      font-size: 0.9rem;
+      color: #888;
+    }
+
+    /* Ringing State */
+    .ringing-animation {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 30px;
+      text-align: center;
+    }
+
+    .phone-icon {
+      width: 80px;
+      height: 80px;
+      border: 3px solid #00E5CC;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      animation: ring 1s ease-in-out infinite, pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes ring {
+      0%, 100% { transform: rotate(-5deg); }
+      25% { transform: rotate(5deg); }
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(0, 229, 204, 0.4); }
+      50% { box-shadow: 0 0 0 15px rgba(0, 229, 204, 0); }
+    }
+
+    .ringing-animation h3 {
+      font-size: 1.2rem;
+      color: #fff;
+    }
+
+    .ringing-animation p {
+      font-size: 0.9rem;
+      color: #888;
+    }
+
+    /* Connected State */
+    .connected-state {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      height: 100%;
+      position: relative;
+    }
+
+    .connected-header {
+      text-align: center;
+      padding: 15px 0;
+      border-bottom: 1px solid rgba(0, 229, 204, 0.2);
+      margin-bottom: 10px;
+    }
+
+    .connected-header h3 {
+      font-size: 1.1rem;
+      color: #00E5CC;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #00E5CC;
+      border-radius: 50%;
+      animation: blink 1.5s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .connected-header p {
+      font-size: 0.8rem;
+      color: #888;
+      margin-top: 5px;
+    }
+
+    /* Transcript */
+    .transcript {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-right: 5px;
+    }
+
+    .message {
+      display: flex;
+      gap: 10px;
+      animation: slideInMessage 0.3s ease-out forwards;
+      opacity: 0;
+    }
+
+    @keyframes slideInMessage {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .message.ai {
+      justify-content: flex-start;
+    }
+
+    .message.caller {
+      justify-content: flex-end;
+    }
+
+    .message-avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .message.ai .message-avatar {
+      background: #00E5CC;
+      color: #0a0a0f;
+    }
+
+    .message.caller .message-avatar {
+      background: #444;
+      color: #fff;
+    }
+
+    .message-bubble {
+      max-width: 85%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      word-wrap: break-word;
+    }
+
+    .message.ai .message-bubble {
+      background: rgba(0, 229, 204, 0.15);
+      color: #e0e0e0;
+      border-left: 2px solid #00E5CC;
+    }
+
+    .message.caller .message-bubble {
+      background: rgba(100, 100, 120, 0.3);
+      color: #e0e0e0;
+    }
+
+    .typing-indicator {
+      display: flex;
+      gap: 4px;
+      padding: 10px 12px;
+      align-items: flex-end;
+    }
+
+    .typing-dot {
+      width: 6px;
+      height: 6px;
+      background: #888;
+      border-radius: 50%;
+      animation: typing 1.4s infinite;
+    }
+
+    .typing-dot:nth-child(1) {
+      animation-delay: 0s;
+    }
+
+    .typing-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes typing {
+      0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+      30% { opacity: 1; transform: translateY(-8px); }
+    }
+
+    /* End Call Buttons */
+    .call-controls {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      padding-top: 15px;
+      border-top: 1px solid rgba(0, 229, 204, 0.2);
+    }
+
+    .call-button {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+      background: rgba(0, 229, 204, 0.1);
+      color: #e0e0e0;
+    }
+
+    .call-button:hover {
+      transform: scale(1.1);
+      background: rgba(0, 229, 204, 0.2);
+    }
+
+    .call-button.end-call {
+      background: rgba(220, 50, 50, 0.3);
+      color: #ff6b6b;
+    }
+
+    .call-button.end-call:hover {
+      background: rgba(220, 50, 50, 0.5);
+    }
+
+    /* Results State */
+    .results-state {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      padding-bottom: 10px;
+    }
+
+    .results-header {
+      text-align: center;
+      padding-bottom: 15px;
+      border-bottom: 1px solid rgba(0, 229, 204, 0.2);
+    }
+
+    .results-header h3 {
+      font-size: 1.1rem;
+      color: #00E5CC;
+      margin-bottom: 5px;
+    }
+
+    .results-header p {
+      font-size: 0.8rem;
+      color: #888;
+    }
+
+    .result-card {
+      background: rgba(0, 229, 204, 0.08);
+      border: 1px solid rgba(0, 229, 204, 0.2);
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      animation: slideInCard 0.5s ease-out forwards;
+      opacity: 0;
+    }
+
+    @keyframes slideInCard {
+      from {
+        opacity: 0;
+        transform: translateX(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .result-icon {
+      width: 32px;
+      height: 32px;
+      background: rgba(0, 229, 204, 0.2);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+      color: #00E5CC;
+    }
+
+    .result-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .result-content h4 {
+      font-size: 0.9rem;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .result-content p {
+      font-size: 0.8rem;
+      color: #888;
+      word-wrap: break-word;
+    }
+
+    /* CTA Section */
+    .cta-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+      padding-top: 15px;
+    }
+
+    .cta-text {
+      text-align: center;
+    }
+
+    .cta-text h4 {
+      font-size: 0.95rem;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .cta-text p {
+      font-size: 0.8rem;
+      color: #888;
+    }
+
+    /* Main Controls */
+    .controls {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00E5CC 0%, #00c4a8 100%);
+      color: #0a0a0f;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0, 229, 204, 0.3);
+    }
+
+    .btn-secondary {
+      background: rgba(0, 229, 204, 0.1);
+      color: #00E5CC;
+      border: 1px solid rgba(0, 229, 204, 0.3);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(0, 229, 204, 0.2);
+      border-color: rgba(0, 229, 204, 0.6);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding-top: 20px;
+      border-top: 1px solid rgba(0, 229, 204, 0.1);
+      color: #666;
+      font-size: 0.85rem;
+    }
+
+    .footer a {
+      color: #00E5CC;
+      text-decoration: none;
+      transition: color 0.3s ease;
+    }
+
+    .footer a:hover {
+      color: #00d9ba;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(40px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Mobile adjustments */
+    @media (max-width: 480px) {
+      .phone-mockup {
+        max-width: 100%;
+        border-width: 8px;
+        border-radius: 30px;
+      }
+
+      .header h1 {
+        font-size: 1.5rem;
+      }
+
+      .btn {
+        padding: 10px 20px;
+        font-size: 0.9rem;
+      }
+
+      .message-bubble {
+        max-width: 90%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1>ELYVN Demo</h1>
+      <p>See how AI handles business calls in real-time</p>
+    </div>
+
+    <!-- Demo Section -->
+    <div class="demo-section">
+      <!-- Phone Mockup -->
+      <div class="phone-mockup">
+        <div class="phone-screen">
+          <!-- Initial State -->
+          <div class="call-state initial-state active" id="initialState">
+            <div class="elyvn-logo">E</div>
+            <div>
+              <h2>Phoenix HVAC Services</h2>
+              <p>Ready to start the demo</p>
+            </div>
+          </div>
+
+          <!-- Ringing State -->
+          <div class="call-state" id="ringingState">
+            <div class="ringing-animation">
+              <div class="phone-icon">☎️</div>
+              <h3>Calling...</h3>
+              <p>Phoenix HVAC Services</p>
+            </div>
+          </div>
+
+          <!-- Connected State -->
+          <div class="call-state" id="connectedState">
+            <div class="connected-header">
+              <h3>
+                <span class="status-dot"></span>
+                ELYVN Connected
+              </h3>
+              <p>Now speaking with AI assistant</p>
+            </div>
+            <div class="transcript" id="transcript"></div>
+            <div class="call-controls">
+              <button class="call-button end-call" id="endCallBtn" title="End call">📞</button>
+            </div>
+          </div>
+
+          <!-- Results State -->
+          <div class="call-state" id="resultsState">
+            <div class="results-header">
+              <h3>Call Completed</h3>
+              <p>See what happened next</p>
+            </div>
+            <div class="results-content" id="resultsContent"></div>
+            <div class="cta-section">
+              <div class="cta-text">
+                <h4>Want this for your business?</h4>
+                <p>Start a free demo with ELYVN</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="controls">
+        <button class="btn btn-primary" id="startBtn">Call Demo Business</button>
+        <button class="btn btn-secondary" id="replayBtn" style="display: none;">Replay Demo</button>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>Ready to deploy ELYVN? <a href="https://cal.com/elyvn/quick" target="_blank">Book a quick call →</a></p>
+    </div>
+  </div>
+
+  <script>
+    // Demo data
+    const callTranscript = [
+      { speaker: 'ai', text: 'Hi, thanks for calling Phoenix HVAC Services! This is our AI assistant. How can I help you today?' },
+      { speaker: 'caller', text: 'Hi, I need my AC looked at. It\'s not cooling properly.' },
+      { speaker: 'ai', text: 'I\'m sorry to hear that! I can help get a technician out to you. What\'s your address?' },
+      { speaker: 'caller', text: '123 Main St, Phoenix' },
+      { speaker: 'ai', text: 'Got it. I have availability tomorrow between 9 AM and 12 PM, or Thursday afternoon. Which works better?' },
+      { speaker: 'caller', text: 'Tomorrow morning works.' },
+      { speaker: 'ai', text: 'I\'ve booked you for tomorrow, 9-12 PM window. You\'ll get a confirmation text shortly. Is there anything else?' },
+      { speaker: 'caller', text: 'No, that\'s it. Thanks!' },
+      { speaker: 'ai', text: 'You\'re welcome! Have a great day.' },
+    ];
+
+    const results = [
+      { icon: '📱', title: 'SMS Sent', description: 'Confirmation text to customer' },
+      { icon: '🔔', title: 'Telegram Alert', description: 'Notification to business owner' },
+      { icon: '📅', title: 'Appointment Booked', description: 'Cal.com integration created' },
+      { icon: '⭐', title: 'Lead Scored', description: 'Lead score 8/10 • Stage: booked' },
+    ];
+
+    // State management
+    const states = {
+      initial: 'initialState',
+      ringing: 'ringingState',
+      connected: 'connectedState',
+      results: 'resultsState',
+    };
+
+    let currentState = states.initial;
+
+    function setState(newState) {
+      document.getElementById(states[currentState]).classList.remove('active');
+      currentState = Object.keys(states).find(key => states[key] === newState);
+      document.getElementById(newState).classList.add('active');
+    }
+
+    function showMessage(speaker, text, delay) {
+      return new Promise(resolve => {
+        setTimeout(() => {
+          const transcript = document.getElementById('transcript');
+          const messageDiv = document.createElement('div');
+          messageDiv.className = `message ${speaker}`;
+
+          const avatar = document.createElement('div');
+          avatar.className = 'message-avatar';
+          avatar.textContent = speaker === 'ai' ? 'E' : 'U';
+
+          const bubble = document.createElement('div');
+          bubble.className = 'message-bubble';
+
+          messageDiv.appendChild(avatar);
+          messageDiv.appendChild(bubble);
+          transcript.appendChild(messageDiv);
+
+          // Typewriter effect
+          let charIndex = 0;
+          const typeInterval = setInterval(() => {
+            if (charIndex < text.length) {
+              bubble.textContent += text[charIndex];
+              charIndex++;
+              transcript.scrollTop = transcript.scrollHeight;
+            } else {
+              clearInterval(typeInterval);
+              resolve();
+            }
+          }, 30);
+        }, delay);
+      });
+    }
+
+    async function startDemo() {
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('replayBtn').style.display = 'none';
+
+      // Ring for 1.5 seconds
+      setState(states.ringing);
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Switch to connected
+      setState(states.connected);
+      document.getElementById('transcript').innerHTML = '';
+
+      // Show messages with typewriter effect
+      let currentDelay = 300;
+      for (let i = 0; i < callTranscript.length; i++) {
+        const item = callTranscript[i];
+        await showMessage(item.speaker, item.text, currentDelay);
+        currentDelay = 800; // Gap between messages after first one
+      }
+
+      // Wait a bit then show results
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      showResults();
+    }
+
+    function showResults() {
+      setState(states.results);
+      const resultsContent = document.getElementById('resultsContent');
+      resultsContent.innerHTML = '';
+
+      results.forEach((result, index) => {
+        const card = document.createElement('div');
+        card.className = 'result-card';
+        card.style.animationDelay = `${index * 0.2}s`;
+
+        const icon = document.createElement('div');
+        icon.className = 'result-icon';
+        icon.textContent = result.icon;
+
+        const content = document.createElement('div');
+        content.className = 'result-content';
+
+        const title = document.createElement('h4');
+        title.textContent = result.title;
+
+        const desc = document.createElement('p');
+        desc.textContent = result.description;
+
+        content.appendChild(title);
+        content.appendChild(desc);
+        card.appendChild(icon);
+        card.appendChild(content);
+        resultsContent.appendChild(card);
+      });
+
+      // Show CTA button
+      setTimeout(() => {
+        const ctaBtn = document.createElement('a');
+        ctaBtn.href = 'https://cal.com/elyvn/quick';
+        ctaBtn.target = '_blank';
+        ctaBtn.className = 'btn btn-primary';
+        ctaBtn.style.marginTop = '10px';
+        ctaBtn.textContent = 'Start Your Free Demo';
+        document.querySelector('.cta-section').appendChild(ctaBtn);
+
+        document.getElementById('replayBtn').style.display = 'inline-block';
+        document.getElementById('startBtn').style.display = 'none';
+      }, results.length * 200 + 300);
+    }
+
+    function resetDemo() {
+      setState(states.initial);
+      document.getElementById('transcript').innerHTML = '';
+      document.getElementById('resultsContent').innerHTML = '';
+      const ctaBtn = document.querySelector('.cta-section .btn-primary');
+      if (ctaBtn) ctaBtn.remove();
+      document.getElementById('startBtn').style.display = 'inline-block';
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('replayBtn').style.display = 'none';
+    }
+
+    // Event listeners
+    document.getElementById('startBtn').addEventListener('click', startDemo);
+    document.getElementById('replayBtn').addEventListener('click', resetDemo);
+    document.getElementById('endCallBtn').addEventListener('click', () => {
+      showResults();
+    });
+  </script>
+</body>
+</html>
