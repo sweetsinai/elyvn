@@ -84,8 +84,10 @@ function smtpProbe(mxHost, email, timeoutMs = 7000) {
     };
 
     socket.setTimeout(timeoutMs);
-    socket.on('timeout', () => finish(false, 'timeout'));
-    socket.on('error', () => finish(false, 'connection_error'));
+    // Cloud hosts (Railway, Heroku, etc.) block outbound port 25.
+    // Treat timeout/connection errors as inconclusive → assume valid.
+    socket.on('timeout', () => finish(true, 'timeout'));
+    socket.on('error', () => finish(true, 'connection_error'));
 
     socket.on('data', (data) => {
       response += data.toString();
