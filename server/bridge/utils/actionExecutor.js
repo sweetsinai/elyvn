@@ -5,6 +5,7 @@
 const { randomUUID } = require('crypto');
 const { sendSMS } = require('./sms');
 const telegram = require('./telegram');
+const { logger } = require('./logger');
 
 async function executeActions(db, actions, leadMemory) {
   const results = [];
@@ -15,7 +16,7 @@ async function executeActions(db, actions, leadMemory) {
       const result = await executeOne(db, action, lead, client);
       results.push({ action: action.action, success: true, result });
     } catch (error) {
-      console.error(`[Executor] Failed ${action.action}:`, error.message);
+      logger.error(`[Executor] Failed ${action.action}:`, error.message);
       results.push({ action: action.action, success: false, error: error.message });
     }
   }
@@ -49,7 +50,7 @@ async function executeOne(db, action, lead, client) {
           }, scheduledAt);
           result = { success: true, scheduled: true, scheduledAt };
         } catch (err) {
-          console.error('[Executor] Job queue error:', err.message);
+          logger.error('[Executor] Job queue error:', err.message);
           result = { success: false, error: 'Failed to queue SMS' };
         }
       } else {
@@ -99,7 +100,7 @@ async function executeOne(db, action, lead, client) {
       if (!lead?.id) return { updated: false };
       const { isValidStage } = require('./validate');
       if (!isValidStage(action.stage)) {
-        console.warn(`[Executor] Invalid stage: ${action.stage}`);
+        logger.warn(`[Executor] Invalid stage: ${action.stage}`);
         return { updated: false, error: 'invalid_stage' };
       }
       db.prepare(
@@ -186,7 +187,7 @@ async function executeOne(db, action, lead, client) {
             return { booked: true, appointment_id: appointmentId, via: 'calcom_api' };
           }
         } catch (err) {
-          console.error('[Executor] Cal.com booking error:', err.message);
+          logger.error('[Executor] Cal.com booking error:', err.message);
         }
       }
 
@@ -208,17 +209,17 @@ async function executeOne(db, action, lead, client) {
     }
 
     case 'log_insight': {
-      console.log(`[Brain Insight] ${lead?.phone}: ${action.insight}`);
+      logger.info(`[Brain Insight] ${lead?.phone}: ${action.insight}`);
       return { logged: true };
     }
 
     case 'no_action': {
-      console.log(`[Brain] No action for ${lead?.phone}: ${action.reason}`);
+      logger.info(`[Brain] No action for ${lead?.phone}: ${action.reason}`);
       return { reason: action.reason };
     }
 
     default: {
-      console.warn(`[Executor] Unknown action: ${action.action}`);
+      logger.warn(`[Executor] Unknown action: ${action.action}`);
       return { unknown: true };
     }
   }

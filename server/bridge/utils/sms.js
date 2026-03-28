@@ -1,4 +1,5 @@
 const https = require('https');
+const { logger } = require('./logger');
 
 // === Provider config (auto-detect: Twilio first, then Telnyx) ===
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
@@ -17,9 +18,9 @@ const SMS_PROVIDER = (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) ? 'twilio'
 const DEFAULT_FROM = SMS_PROVIDER === 'twilio' ? TWILIO_PHONE : TELNYX_PHONE;
 
 if (SMS_PROVIDER) {
-  console.log(`[sms] Using ${SMS_PROVIDER} as SMS provider (from: ${DEFAULT_FROM || 'not set'})`);
+  logger.info(`[sms] Using ${SMS_PROVIDER} as SMS provider (from: ${DEFAULT_FROM || 'not set'})`);
 } else {
-  console.warn('[sms] No SMS provider configured — set TWILIO or TELNYX env vars');
+  logger.warn('[sms] No SMS provider configured — set TWILIO or TELNYX env vars');
 }
 
 const { SMS_MIN_GAP_MS, SMS_RATE_LIMIT_CLEANUP_MS, SMS_MAX_RATE_LIMIT_ENTRIES, DUPLICATE_SMS_LOOKBACK_MS } = require('../config/timing');
@@ -64,7 +65,7 @@ const smsRateLimitCleanupInterval = setInterval(() => {
     if (time < cutoff) lastSendTime.delete(phone);
   }
   if (lastSendTime.size > MAX_RATE_LIMIT_ENTRIES) {
-    console.warn(`[sms] Rate limit map too large (${lastSendTime.size}), clearing`);
+    logger.warn(`[sms] Rate limit map too large (${lastSendTime.size}), clearing`);
     lastSendTime.clear();
   }
 }, SMS_RATE_LIMIT_CLEANUP_MS); // Every 10 minutes
@@ -160,11 +161,11 @@ async function sendSMS(to, body, from, db, clientId) {
     try {
       const { isOptedOut } = require('./optOut');
       if (isOptedOut(db, to, clientId)) {
-        console.log(`[sms] Number ${to} is opted out — skipping send`);
+        logger.info(`[sms] Number ${to} is opted out — skipping send`);
         return { success: false, reason: 'opted_out' };
       }
     } catch (err) {
-      console.warn('[sms] Opt-out check error:', err.message);
+      logger.warn('[sms] Opt-out check error:', err.message);
     }
   }
 
@@ -177,7 +178,7 @@ async function sendSMS(to, body, from, db, clientId) {
   const lastSent = lastSendTime.get(to);
   if (lastSent && Date.now() - lastSent < MIN_GAP_MS) {
     const waitSec = Math.ceil((MIN_GAP_MS - (Date.now() - lastSent)) / 1000);
-    console.log(`[sms] Rate limited: ${to} (wait ${waitSec}s)`);
+    logger.info(`[sms] Rate limited: ${to} (wait ${waitSec}s)`);
     return { success: false, error: `Rate limited. Retry in ${waitSec}s` };
   }
 
@@ -197,7 +198,7 @@ async function sendSMS(to, body, from, db, clientId) {
     }
 
     lastSendTime.set(to, Date.now());
-    console.log(`[sms] [${SMS_PROVIDER}] Sent to ${to}: ${messageId}`);
+    logger.info(`[sms] [${SMS_PROVIDER}] Sent to ${to}: ${messageId}`);
 
     // Record metrics
     try {
@@ -207,7 +208,7 @@ async function sendSMS(to, body, from, db, clientId) {
 
     return { success: true, messageId };
   } catch (err) {
-    console.error(`[sms] [${SMS_PROVIDER}] Failed to send to ${to}:`, err.message);
+    logger.error(`[sms] [${SMS_PROVIDER}] Failed to send to ${to}:`, err.message);
 
     // Record failed metric
     try {
@@ -227,7 +228,7 @@ async function sendSMS(to, body, from, db, clientId) {
         // Silently fail if job queue not available
       }
     } else if (!isRetryable) {
-      console.error(`[sms] Non-retryable error for ${to}: ${err.message} — will not retry`);
+      logger.error(`[sms] Non-retryable error for ${to}: ${err.message} — will not retry`);
     }
 
     return { success: false, error: err.message };
@@ -247,7 +248,7 @@ async function sendSMSToOwner(db, clientId, body) {
     const client = db.prepare('SELECT owner_phone, telnyx_phone, twilio_phone FROM clients WHERE id = ?').get(clientId);
 
     if (!client?.owner_phone) {
-      console.error(`[sms] No owner_phone for client ${clientId}`);
+      logger.error(`[sms] No owner_phone for client ${clientId}`);
       return { success: false, error: 'No owner phone number' };
     }
 
@@ -255,7 +256,7 @@ async function sendSMSToOwner(db, clientId, body) {
     const fromPhone = client.telnyx_phone || client.twilio_phone;
     return sendSMS(client.owner_phone, body, fromPhone);
   } catch (err) {
-    console.error('[sms] sendSMSToOwner error:', err);
+    logger.error('[sms] sendSMSToOwner error:', err);
     return { success: false, error: err.message };
   }
 }

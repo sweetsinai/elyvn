@@ -2,6 +2,7 @@ const { randomUUID } = require('crypto');
 const { sendSMS } = require('./sms');
 const telegram = require('./telegram');
 const { normalizePhone } = require('./phone');
+const { logger } = require('./logger');
 
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
 
@@ -25,7 +26,7 @@ async function triggerSpeedSequence(db, leadData) {
   const { leadId, clientId, phone, name, email, message, service, source, client } = leadData;
 
   if (!phone || !client) {
-    console.error('[SpeedToLead] Missing phone or client data');
+    logger.error('[SpeedToLead] Missing phone or client data');
     return;
   }
 
@@ -62,9 +63,9 @@ async function triggerSpeedSequence(db, leadData) {
       VALUES (?, ?, ?, ?, 'sms', 'outbound', NULL, ?, 'system', 'sent', datetime('now'), datetime('now'))
     `).run(randomUUID(), clientId, leadId, phone, smsText);
 
-    console.log(`[SpeedToLead] Touch 1 SMS queued for ${phone}`);
+    logger.info(`[SpeedToLead] Touch 1 SMS queued for ${phone}`);
   } catch (err) {
-    console.error('[SpeedToLead] Touch 1 SMS failed:', err.message);
+    logger.error('[SpeedToLead] Touch 1 SMS failed:', err.message);
   }
 
   // === TOUCH 2: AI Callback (60 seconds, but respect business hours) ===
@@ -131,7 +132,7 @@ async function triggerSpeedSequence(db, leadData) {
           ]]
         }
       }
-    ).catch(err => console.error('[SpeedToLead] Telegram notify failed:', err.message));
+    ).catch(err => logger.error('[SpeedToLead] Telegram notify failed:', err.message));
   }
 }
 
@@ -157,12 +158,12 @@ function scheduleCallback(db, options) {
       retell_phone: client.retell_phone,
     }, scheduledAt);
 
-    console.log(`[SpeedToLead] AI callback to ${phone} queued for ${totalDelayMs / 1000}s`);
+    logger.info(`[SpeedToLead] AI callback to ${phone} queued for ${totalDelayMs / 1000}s`);
   } catch (err) {
-    console.error('[SpeedToLead] scheduleCallback error (job queue unavailable):', err.message);
+    logger.error('[SpeedToLead] scheduleCallback error (job queue unavailable):', err.message);
     // No setTimeout fallback — jobs lost on restart are unacceptable in production.
     // Log a clear error so it's visible in monitoring.
-    console.error(`[SpeedToLead] DROPPED callback for lead ${leadId} phone ${phone} — fix job queue!`);
+    logger.error(`[SpeedToLead] DROPPED callback for lead ${leadId} phone ${phone} — fix job queue!`);
   }
 }
 
@@ -192,10 +193,10 @@ function scheduleFollowUpSMS(db, options) {
       phone, message: followUpText, from: fromNumber, clientId, leadId,
     }, scheduledAt);
 
-    console.log(`[SpeedToLead] Touch 3 follow-up SMS queued for ${phone}`);
+    logger.info(`[SpeedToLead] Touch 3 follow-up SMS queued for ${phone}`);
   } catch (err) {
-    console.error('[SpeedToLead] scheduleFollowUpSMS error (job queue unavailable):', err.message);
-    console.error(`[SpeedToLead] DROPPED follow-up SMS for lead ${leadId} phone ${phone} — fix job queue!`);
+    logger.error('[SpeedToLead] scheduleFollowUpSMS error (job queue unavailable):', err.message);
+    logger.error(`[SpeedToLead] DROPPED follow-up SMS for lead ${leadId} phone ${phone} — fix job queue!`);
   }
 }
 

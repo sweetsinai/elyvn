@@ -20,7 +20,13 @@ function verifyPassword(password, stored) {
 }
 
 // Simple JWT using HMAC-SHA256 (no jsonwebtoken dependency needed)
-const JWT_SECRET = process.env.JWT_SECRET || process.env.ELYVN_API_KEY || crypto.randomBytes(32).toString('hex');
+// SECURITY: JWT_SECRET must be set in production. Fallback to ELYVN_API_KEY is acceptable
+// but random generation means tokens won't survive restarts (forces re-login).
+const JWT_SECRET = process.env.JWT_SECRET || process.env.ELYVN_API_KEY || (() => {
+  const fallback = crypto.randomBytes(32).toString('hex');
+  logger.warn('[auth] WARNING: JWT_SECRET not set — using random secret. Tokens will NOT survive server restarts. Set JWT_SECRET in your environment!');
+  return fallback;
+})();
 const JWT_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
 function createToken(payload) {
@@ -34,11 +40,22 @@ function createToken(payload) {
 
 function verifyToken(token) {
   try {
-    const [header, body, sig] = token.split('.');
+    if (typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [header, body, sig] = parts;
+    if (!header || !body || !sig) return null;
+
     const expected = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
-    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+
+    // Timing-safe comparison: ensure equal length before comparing
+    const sigBuf = Buffer.from(sig, 'utf8');
+    const expBuf = Buffer.from(expected, 'utf8');
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return null;
+
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
-    if (payload.exp < Date.now()) return null;
+    if (!payload || typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
+    if (!payload.clientId) return null;
     return payload;
   } catch { return null; }
 }
@@ -51,8 +68,14 @@ router.post('/signup', (req, res) => {
   if (!email || !password || !business_name) {
     return res.status(400).json({ error: 'email, password, and business_name are required' });
   }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (typeof email !== 'string' || typeof password !== 'string' || typeof business_name !== 'string') {
+    return res.status(400).json({ error: 'Invalid input types' });
+  }
+  if (password.length < 8 || password.length > 128) {
+    return res.status(400).json({ error: 'Password must be 8-128 characters' });
+  }
+  if (email.length > 254 || business_name.length > 200) {
+    return res.status(400).json({ error: 'Input too long' });
   }
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
@@ -167,4 +190,5 @@ router.get('/me', (req, res) => {
 // Export token utilities for use in other middleware
 module.exports = router;
 module.exports.verifyToken = verifyToken;
+module.exports.createToken = createToken;
 module.exports.createToken = createToken;

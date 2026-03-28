@@ -11,6 +11,7 @@ const config = require('./config');
 const fs = require('fs');
 const path = require('path');
 const { CircuitBreaker } = require('./resilience');
+const { logger } = require('./logger');
 
 const anthropic = new Anthropic();
 
@@ -46,7 +47,7 @@ async function think(eventType, eventData, leadMemory, db) {
       try {
         await Promise.race([existingLock, timeout]);
       } catch (err) {
-        console.error(`[Brain] ${err.message} — forcing lock release`);
+        logger.error(`[Brain] ${err.message} — forcing lock release`);
         leadLocks.delete(lockKey);
       }
     }
@@ -77,7 +78,7 @@ async function _think(eventType, eventData, leadMemory, db) {
       const kbDir = path.resolve(path.join(__dirname, '../../mcp/knowledge_bases'));
       if (!resolvedPath.startsWith(kbDir)) {
         // Path traversal attempt detected, skip KB load
-        console.error('[brain] KB path traversal attempt detected');
+        logger.error('[brain] KB path traversal attempt detected');
       } else {
         const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
         knowledgeBase = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
@@ -179,29 +180,29 @@ What actions should ELYVN take?`;
       const { isValidAction, isValidStage, VALID_ACTIONS } = require('./validate');
       decision.actions = decision.actions.filter(a => {
         if (!a.action || !isValidAction(a.action)) {
-          console.warn(`[Brain] Filtered invalid action type: ${a.action}. Valid: ${VALID_ACTIONS.join(', ')}`);
+          logger.warn(`[Brain] Filtered invalid action type: ${a.action}. Valid: ${VALID_ACTIONS.join(', ')}`);
           return false;
         }
         // Validate stage in update_lead_stage
         if (a.action === 'update_lead_stage' && a.stage && !isValidStage(a.stage)) {
-          console.warn(`[Brain] Invalid stage "${a.stage}" — filtering out`);
+          logger.warn(`[Brain] Invalid stage "${a.stage}" — filtering out`);
           return false;
         }
         // Validate score range
         if (a.action === 'update_lead_score' && (typeof a.score !== 'number' || a.score < 0 || a.score > 10)) {
-          console.warn(`[Brain] Invalid score ${a.score} — filtering out`);
+          logger.warn(`[Brain] Invalid score ${a.score} — filtering out`);
           return false;
         }
         return true;
       });
     }
 
-    console.log(`[Brain] ${lead?.phone || '?'}: ${decision.reasoning}`);
-    console.log(`[Brain] Actions: ${decision.actions.map(a => a.action).join(', ')}`);
+    logger.info(`[Brain] ${lead?.phone || '?'}: ${decision.reasoning}`);
+    logger.info(`[Brain] Actions: ${decision.actions.map(a => a.action).join(', ')}`);
 
     return decision;
   } catch (error) {
-    console.error('[Brain] Error:', error.message);
+    logger.error('[Brain] Error:', error.message);
     return {
       reasoning: 'Brain error — fallback to owner notification',
       actions: [{
@@ -247,7 +248,7 @@ function checkGuardrails(db, lead, client) {
       warnings.push('OPT_OUT: Lead may have opted out. Do NOT send_sms. Only notify_owner.');
     }
   } catch (err) {
-    console.error('[Brain] Guardrail check error:', err.message);
+    logger.error('[Brain] Guardrail check error:', err.message);
   }
 
   return warnings;
