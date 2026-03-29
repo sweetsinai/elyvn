@@ -167,20 +167,8 @@ async function sendSMS(to, body, from, db, clientId) {
       recordMetric('total_sms_failed', 1, 'counter');
     } catch (_) {}
 
-    // Only schedule retry for transient errors (not auth/config failures)
-    const NON_RETRYABLE = ['Authentication', 'Invalid API Key', 'not configured', 'suspended', 'balance', 'Authenticate', 'blacklist'];
-    const isRetryable = !NON_RETRYABLE.some(msg => err.message.includes(msg));
-    if (isRetryable && db) {
-      try {
-        const { enqueueJob } = require('./jobQueue');
-        const retryTime = new Date(Date.now() + MIN_GAP_MS).toISOString();
-        enqueueJob(db, 'followup_sms', { to, message: body, from: fromNumber, clientId }, retryTime);
-      } catch (_) {
-        // Silently fail if job queue not available
-      }
-    } else if (!isRetryable) {
-      logger.error(`[sms] Non-retryable error for ${to}: ${err.message} — will not retry`);
-    }
+    // Don't retry — failed messages stay failed
+    logger.error(`[sms] Failed for ${to}: ${err.message} — not retrying`);
 
     return { success: false, error: err.message };
   }
