@@ -147,14 +147,14 @@ describe('Provision Route', () => {
   });
 
   describe('POST / - Optional fields', () => {
-    test('should accept request without area_code and skip Telnyx provisioning', async () => {
+    test('should accept request without area_code', async () => {
       mockDb.prepare.mockReturnValue({
         run: jest.fn(),
         get: jest.fn().mockReturnValue({
           id: 'client-123',
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          telnyx_phone: null,
+          twilio_phone: null,
           retell_agent_id: null,
           created_at: new Date().toISOString(),
         }),
@@ -166,11 +166,9 @@ describe('Provision Route', () => {
           business_name: 'Test Business',
           owner_phone: '+14155551234',
           plan: 'growth',
-          // No area_code
         });
 
       expect(response.status).toBe(201);
-      expect(response.body.provisioning_status.telnyx_error).toBeDefined();
     });
 
     test('should accept request with all optional fields', async () => {
@@ -259,8 +257,8 @@ describe('Provision Route', () => {
     });
   });
 
-  describe('POST / - Telnyx integration', () => {
-    test('should handle Telnyx API errors gracefully', async () => {
+  describe('POST / - Retell integration', () => {
+    test('should handle Retell API errors gracefully', async () => {
       mockDb.prepare.mockReturnValue({
         run: jest.fn(),
         get: jest.fn().mockReturnValue({
@@ -295,11 +293,10 @@ describe('Provision Route', () => {
           business_name: 'Test Business',
           owner_phone: '+14155551234',
           plan: 'growth',
-          area_code: '415',
         });
 
       expect(response.status).toBe(201);
-      expect(response.body.provisioning_status.telnyx_error).toBeDefined();
+      expect(response.body.provisioning_status.retell_error).toBeDefined();
     });
 
     test('should continue provisioning even if Telnyx fails', async () => {
@@ -636,7 +633,7 @@ describe('Provision Route', () => {
       expect(response.body.client).toBeDefined();
       expect(response.body.provisioning_status).toBeDefined();
       expect(response.body.provisioning_status.client_id).toBeDefined();
-      expect(response.body.provisioning_status.telnyx_phone).toBeDefined();
+      expect(response.body.provisioning_status.client_id).toBeDefined();
       expect(response.body.provisioning_status.retell_agent_id).toBeDefined();
       expect(response.body.provisioning_status.db_save).toBeDefined();
       expect(response.body.success).toBe(true);

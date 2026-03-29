@@ -24,7 +24,7 @@ const ALLOWED_CLIENT_FIELDS = new Set([
   'google_review_link', 'ticket_price', 'timezone', 'ai_enabled',
   'booking_link', 'industry', 'auto_followup_enabled',
   'owner_name', 'owner_phone', 'owner_email',
-  'retell_agent_id', 'retell_phone', 'twilio_phone', 'telnyx_phone', 'transfer_phone',
+  'retell_agent_id', 'retell_phone', 'twilio_phone', 'transfer_phone',
   'calcom_event_type_id', 'calcom_booking_link', 'telegram_chat_id',
   'avg_ticket', 'is_active', 'plan'
 ]);
@@ -695,7 +695,7 @@ router.put('/clients/:clientId', async (req, res) => {
           }
         }
 
-        if (['phone', 'owner_phone', 'retell_phone', 'twilio_phone', 'telnyx_phone', 'transfer_phone'].includes(field) && value) {
+        if (['phone', 'owner_phone', 'retell_phone', 'twilio_phone', 'transfer_phone'].includes(field) && value) {
           const validation = validatePhone(value);
           if (!validation.valid) {
             return res.status(400).json({ error: `Invalid ${field}: ${validation.error}` });

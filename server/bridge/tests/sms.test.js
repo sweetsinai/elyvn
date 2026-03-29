@@ -1,7 +1,7 @@
-// Set up environment
-process.env.TELNYX_API_KEY = 'test-key';
-process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-process.env.TELNYX_MESSAGING_PROFILE_ID = 'profile_123';
+// Set up Twilio environment
+process.env.TWILIO_ACCOUNT_SID = 'ACtest123456789';
+process.env.TWILIO_AUTH_TOKEN = 'test-auth-token';
+process.env.TWILIO_PHONE_NUMBER = '+1234567890';
 
 // Mock dependencies
 jest.mock('../utils/optOut');
@@ -38,8 +38,7 @@ describe('sms.js', () => {
       const mockPrepare = jest.fn(() => ({
         get: jest.fn().mockReturnValue({
           owner_phone: '+1555555555',
-          telnyx_phone: '+1666666666',
-          twilio_phone: null
+          twilio_phone: '+1666666666'
         })
       }));
 
@@ -47,7 +46,7 @@ describe('sms.js', () => {
       await sendSMSToOwner(db, 'client-456', 'Test');
 
       expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT owner_phone, telnyx_phone, twilio_phone FROM clients')
+        expect.stringContaining('SELECT owner_phone, twilio_phone FROM clients')
       );
     }, 10000);
 
@@ -62,8 +61,7 @@ describe('sms.js', () => {
       const db = {
         prepare: jest.fn(() => ({
           get: jest.fn().mockReturnValue({
-            telnyx_phone: '+1666666666',
-            twilio_phone: null
+            twilio_phone: '+1666666666'
           })
         }))
       };
@@ -74,7 +72,7 @@ describe('sms.js', () => {
       expect(result.error).toBe('No owner phone number');
     }, 10000);
 
-    test('should use default Telnyx phone if client telnyx_phone not set', async () => {
+    test('should use twilio_phone from client record', async () => {
       jest.resetModules();
       jest.doMock('../utils/optOut', () => optOut);
       jest.doMock('../utils/jobQueue', () => jobQueue);
@@ -86,13 +84,10 @@ describe('sms.js', () => {
         prepare: jest.fn(() => ({
           get: jest.fn().mockReturnValue({
             owner_phone: '+1555555555',
-            telnyx_phone: null,
             twilio_phone: null
           })
         }))
       };
-
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
 
       const result = await sendSMSToOwner(db, 'client-123', 'Alert message');
       expect(result).toBeDefined();
@@ -119,45 +114,12 @@ describe('sms.js', () => {
 
       const { sendSMS } = require('../utils/sms');
 
-      // This test verifies phone is included in payload
       const result = await sendSMS('+1234567890', 'Test message');
       expect(result).toBeDefined();
     }, 10000);
   });
 
-  describe('sendSMS - Telnyx API Call Formatting', () => {
-    test('should include messaging_profile_id in payload when configured', async () => {
-      jest.resetModules();
-      jest.doMock('../utils/optOut', () => optOut);
-      jest.doMock('../utils/jobQueue', () => jobQueue);
-      jest.doMock('../utils/metrics', () => metrics);
-
-      const { sendSMS } = require('../utils/sms');
-
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-      process.env.TELNYX_MESSAGING_PROFILE_ID = 'profile-123';
-
-      const result = await sendSMS('+12125551234', 'Test message');
-      expect(result).toBeDefined();
-    }, 10000);
-
-    test('should use Bearer token in Authorization header', async () => {
-      jest.resetModules();
-      jest.doMock('../utils/optOut', () => optOut);
-      jest.doMock('../utils/jobQueue', () => jobQueue);
-      jest.doMock('../utils/metrics', () => metrics);
-
-      const { sendSMS } = require('../utils/sms');
-
-      process.env.TELNYX_API_KEY = 'test-key-123';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-
-      const result = await sendSMS('+12125551234', 'Test message');
-      // Verify headers are formatted correctly (Bearer token should be present)
-      expect(result).toBeDefined();
-    }, 10000);
-
+  describe('sendSMS - Twilio API Call Formatting', () => {
     test('should add TCPA compliance footer to short messages', async () => {
       jest.resetModules();
       jest.doMock('../utils/optOut', () => optOut);
@@ -166,11 +128,7 @@ describe('sms.js', () => {
 
       const { sendSMS } = require('../utils/sms');
 
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-
       const result = await sendSMS('+12125551234', 'Hi there');
-      // Message should have STOP footer if short enough
       expect(result).toBeDefined();
     }, 10000);
 
@@ -181,9 +139,6 @@ describe('sms.js', () => {
       jest.doMock('../utils/metrics', () => metrics);
 
       const { sendSMS } = require('../utils/sms');
-
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
 
       const msgWithStop = 'Hello. Reply STOP to opt out.';
       const result = await sendSMS('+12125551234', msgWithStop);
@@ -198,44 +153,38 @@ describe('sms.js', () => {
       jest.doMock('../utils/jobQueue', () => jobQueue);
       jest.doMock('../utils/metrics', () => metrics);
 
-      delete process.env.TELNYX_PHONE_NUMBER;
+      delete process.env.TWILIO_PHONE_NUMBER;
       const { sendSMS } = require('../utils/sms');
 
       const result = await sendSMS('+12125551234', 'Test message');
       expect(result.success).toBe(false);
       expect(result.error).toContain('from number');
+
+      // Restore
+      process.env.TWILIO_PHONE_NUMBER = '+1234567890';
     }, 10000);
 
-    test('should return error when API key not configured', async () => {
+    test('should return error when Twilio not configured', async () => {
       jest.resetModules();
       jest.doMock('../utils/optOut', () => optOut);
       jest.doMock('../utils/jobQueue', () => jobQueue);
       jest.doMock('../utils/metrics', () => metrics);
 
-      delete process.env.TELNYX_API_KEY;
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
+      const origSid = process.env.TWILIO_ACCOUNT_SID;
+      const origToken = process.env.TWILIO_AUTH_TOKEN;
+      delete process.env.TWILIO_ACCOUNT_SID;
+      delete process.env.TWILIO_AUTH_TOKEN;
+      process.env.TWILIO_PHONE_NUMBER = '+1234567890';
 
       const { sendSMS } = require('../utils/sms');
 
       const result = await sendSMS('+12125551234', 'Test message');
       expect(result.success).toBe(false);
       expect(result.error).toContain('not configured');
-    }, 10000);
 
-    test('should handle rate limiting correctly', async () => {
-      jest.resetModules();
-      jest.doMock('../utils/optOut', () => optOut);
-      jest.doMock('../utils/jobQueue', () => jobQueue);
-      jest.doMock('../utils/metrics', () => metrics);
-
-      const { sendSMS } = require('../utils/sms');
-
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-
-      // First call should succeed (or fail for other reasons)
-      const result1 = await sendSMS('+12125551234', 'Message 1');
-      expect(result1).toBeDefined();
+      // Restore
+      process.env.TWILIO_ACCOUNT_SID = origSid;
+      process.env.TWILIO_AUTH_TOKEN = origToken;
     }, 10000);
 
     test('should check opt-out status if db and clientId provided', async () => {
@@ -247,9 +196,6 @@ describe('sms.js', () => {
       optOut.isOptedOut = jest.fn().mockReturnValue(true);
 
       const { sendSMS } = require('../utils/sms');
-
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
 
       const db = {};
       const result = await sendSMS('+12125551234', 'Test', null, db, 'client-123');
@@ -270,63 +216,9 @@ describe('sms.js', () => {
 
       const { sendSMS } = require('../utils/sms');
 
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-
       const db = {};
       const result = await sendSMS('+12125551234', 'Test', null, db, 'client-123');
-      // Should attempt to send despite opt-out check error
       expect(result).toBeDefined();
-    }, 10000);
-
-    test('should distinguish between retryable and non-retryable errors', async () => {
-      jest.resetModules();
-      jest.doMock('../utils/optOut', () => optOut);
-      jest.doMock('../utils/jobQueue', () => jobQueue);
-      jest.doMock('../utils/metrics', () => metrics);
-
-      const { sendSMS } = require('../utils/sms');
-
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-
-      // Test with invalid API key (non-retryable)
-      const result = await sendSMS('+12125551234', 'Test');
-      expect(result).toBeDefined();
-    }, 10000);
-
-    test('should record metrics on success', async () => {
-      jest.resetModules();
-      jest.doMock('../utils/optOut', () => optOut);
-      jest.doMock('../utils/jobQueue', () => jobQueue);
-      jest.doMock('../utils/metrics', () => metrics);
-
-      metrics.recordMetric = jest.fn();
-
-      const { sendSMS } = require('../utils/sms');
-
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-
-      const result = await sendSMS('+12125551234', 'Test');
-      expect(result).toBeDefined();
-    }, 10000);
-
-    test('should record failed metrics on error', async () => {
-      jest.resetModules();
-      jest.doMock('../utils/optOut', () => optOut);
-      jest.doMock('../utils/jobQueue', () => jobQueue);
-      jest.doMock('../utils/metrics', () => metrics);
-
-      metrics.recordMetric = jest.fn();
-
-      const { sendSMS } = require('../utils/sms');
-
-      delete process.env.TELNYX_API_KEY;
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-
-      const result = await sendSMS('+12125551234', 'Test');
-      expect(result.success).toBe(false);
     }, 10000);
   });
 

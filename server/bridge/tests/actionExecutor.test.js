@@ -6,9 +6,21 @@ jest.mock('../utils/sms');
 jest.mock('../utils/telegram');
 jest.mock('../utils/businessHours');
 
+// Mock logger to capture log output
+jest.mock('../utils/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  },
+  setupLogger: jest.fn(),
+  closeLogger: jest.fn(),
+}));
+
 const { sendSMS } = require('../utils/sms');
 const telegram = require('../utils/telegram');
 const { shouldDelayUntilBusinessHours } = require('../utils/businessHours');
+const { logger: mockLogger } = require('../utils/logger');
 
 describe('actionExecutor.executeActions', () => {
   let db;
@@ -385,8 +397,6 @@ describe('actionExecutor.executeActions', () => {
 
   describe('log_insight action', () => {
     it('should log insight to console', async () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-
       const actions = [{
         action: 'log_insight',
         insight: 'User shows buying intent',
@@ -396,13 +406,11 @@ describe('actionExecutor.executeActions', () => {
 
       expect(results[0].success).toBe(true);
       expect(results[0].result.logged).toBe(true);
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(mockLogger.info).toHaveBeenCalledWith(
         expect.stringContaining('[Brain Insight]')
       );
-      const callArg = consoleSpy.mock.calls[0][0];
-      expect(callArg).toContain('User shows buying intent');
-
-      consoleSpy.mockRestore();
+      const brainCalls = mockLogger.info.mock.calls.filter(c => typeof c[0] === 'string' && c[0].includes('[Brain Insight]'));
+      expect(brainCalls[0][0]).toContain('User shows buying intent');
     });
   });
 

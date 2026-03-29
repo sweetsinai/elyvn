@@ -1,26 +1,18 @@
 const https = require('https');
 const { logger } = require('./logger');
 
-// === Provider config (auto-detect: Twilio first, then Telnyx) ===
+// === Twilio config ===
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER;
 
-const TELNYX_API_KEY = process.env.TELNYX_API_KEY;
-const TELNYX_PHONE = process.env.TELNYX_PHONE_NUMBER;
-const TELNYX_MESSAGING_PROFILE_ID = process.env.TELNYX_MESSAGING_PROFILE_ID;
-
-// Determine active provider
-const SMS_PROVIDER = (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) ? 'twilio'
-  : TELNYX_API_KEY ? 'telnyx'
-  : null;
-
-const DEFAULT_FROM = SMS_PROVIDER === 'twilio' ? TWILIO_PHONE : TELNYX_PHONE;
+const SMS_PROVIDER = (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) ? 'twilio' : null;
+const DEFAULT_FROM = TWILIO_PHONE;
 
 if (SMS_PROVIDER) {
-  logger.info(`[sms] Using ${SMS_PROVIDER} as SMS provider (from: ${DEFAULT_FROM || 'not set'})`);
+  logger.info(`[sms] Using Twilio as SMS provider (from: ${DEFAULT_FROM || 'not set'})`);
 } else {
-  logger.warn('[sms] No SMS provider configured — set TWILIO or TELNYX env vars');
+  logger.warn('[sms] No SMS provider configured — set TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN env vars');
 }
 
 const { SMS_MIN_GAP_MS, SMS_RATE_LIMIT_CLEANUP_MS, SMS_MAX_RATE_LIMIT_ENTRIES, DUPLICATE_SMS_LOOKBACK_MS } = require('../config/timing');
@@ -105,45 +97,10 @@ async function sendViaTwilio(to, body, from) {
 }
 
 /**
- * Send SMS via Telnyx REST API
- */
-async function sendViaTelnyx(to, body, from) {
-  const payload = {
-    from: from,
-    to: to,
-    text: body,
-  };
-
-  if (TELNYX_MESSAGING_PROFILE_ID) {
-    payload.messaging_profile_id = TELNYX_MESSAGING_PROFILE_ID;
-  }
-
-  const options = {
-    hostname: 'api.telnyx.com',
-    port: 443,
-    path: '/v2/messages',
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${TELNYX_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-  };
-
-  const response = await httpsRequest(options, payload);
-
-  if (response.status !== 200 && response.status !== 201) {
-    const errorMsg = response.body?.errors?.[0]?.detail || response.body || 'Unknown error';
-    throw new Error(`Telnyx API error (${response.status}): ${errorMsg}`);
-  }
-
-  return response.body?.data?.id;
-}
-
-/**
- * Send SMS via the configured provider (Twilio or Telnyx) with retry logic.
+ * Send SMS via Twilio with rate limiting, opt-out checking, and retry logic.
  * @param {string} to - Recipient phone number
  * @param {string} body - Message body
- * @param {string} [from] - Sender phone number (defaults to provider default)
+ * @param {string} [from] - Sender phone number (defaults to TWILIO_PHONE_NUMBER)
  * @param {object} [db] - better-sqlite3 instance for opt-out checking
  * @param {string} [clientId] - Client ID for opt-out checking
  * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
@@ -189,16 +146,10 @@ async function sendSMS(to, body, from, db, clientId) {
   }
 
   try {
-    let messageId;
-
-    if (SMS_PROVIDER === 'twilio') {
-      messageId = await sendViaTwilio(to, bodyWithFooter, fromNumber);
-    } else {
-      messageId = await sendViaTelnyx(to, bodyWithFooter, fromNumber);
-    }
+    const messageId = await sendViaTwilio(to, bodyWithFooter, fromNumber);
 
     lastSendTime.set(to, Date.now());
-    logger.info(`[sms] [${SMS_PROVIDER}] Sent to ${to}: ${messageId}`);
+    logger.info(`[sms] [twilio] Sent to ${to}: ${messageId}`);
 
     // Record metrics
     try {
@@ -208,7 +159,7 @@ async function sendSMS(to, body, from, db, clientId) {
 
     return { success: true, messageId };
   } catch (err) {
-    logger.error(`[sms] [${SMS_PROVIDER}] Failed to send to ${to}:`, err.message);
+    logger.error(`[sms] [twilio] Failed to send to ${to}:`, err.message);
 
     // Record failed metric
     try {
@@ -245,15 +196,14 @@ async function sendSMS(to, body, from, db, clientId) {
  */
 async function sendSMSToOwner(db, clientId, body) {
   try {
-    const client = db.prepare('SELECT owner_phone, telnyx_phone, twilio_phone FROM clients WHERE id = ?').get(clientId);
+    const client = db.prepare('SELECT owner_phone, twilio_phone FROM clients WHERE id = ?').get(clientId);
 
     if (!client?.owner_phone) {
       logger.error(`[sms] No owner_phone for client ${clientId}`);
       return { success: false, error: 'No owner phone number' };
     }
 
-    // Use whichever phone the client has configured
-    const fromPhone = client.telnyx_phone || client.twilio_phone;
+    const fromPhone = client.twilio_phone;
     return sendSMS(client.owner_phone, body, fromPhone);
   } catch (err) {
     logger.error('[sms] sendSMSToOwner error:', err);

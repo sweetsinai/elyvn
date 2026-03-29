@@ -29,10 +29,13 @@ const JWT_SECRET = process.env.JWT_SECRET || process.env.ELYVN_API_KEY || (() =>
 })();
 const JWT_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
+const JWT_ISSUER = 'elyvn-api';
+const JWT_AUDIENCE = 'elyvn-dashboard';
+
 function createToken(payload) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const now = Date.now();
-  const data = { ...payload, iat: now, exp: now + JWT_EXPIRY };
+  const data = { ...payload, iat: now, exp: now + JWT_EXPIRY, iss: JWT_ISSUER, aud: JWT_AUDIENCE };
   const body = Buffer.from(JSON.stringify(data)).toString('base64url');
   const sig = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${sig}`;
@@ -46,6 +49,12 @@ function verifyToken(token) {
     const [header, body, sig] = parts;
     if (!header || !body || !sig) return null;
 
+    // Reject 'none' algorithm attack
+    try {
+      const hdr = JSON.parse(Buffer.from(header, 'base64url').toString());
+      if (hdr.alg !== 'HS256') return null;
+    } catch { return null; }
+
     const expected = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
 
     // Timing-safe comparison: ensure equal length before comparing
@@ -56,6 +65,9 @@ function verifyToken(token) {
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
     if (!payload || typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
     if (!payload.clientId) return null;
+    // Validate issuer and audience (accept tokens without these for backward compat)
+    if (payload.iss && payload.iss !== JWT_ISSUER) return null;
+    if (payload.aud && payload.aud !== JWT_AUDIENCE) return null;
     return payload;
   } catch { return null; }
 }
@@ -187,8 +199,23 @@ router.get('/me', (req, res) => {
   }
 });
 
+// POST /auth/refresh — issue a new token before the current one expires
+router.post('/refresh', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  const payload = verifyToken(authHeader.slice(7));
+  if (!payload) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  const newToken = createToken({ clientId: payload.clientId, email: payload.email });
+  res.json({ token: newToken });
+});
+
 // Export token utilities for use in other middleware
 module.exports = router;
 module.exports.verifyToken = verifyToken;
-module.exports.createToken = createToken;
 module.exports.createToken = createToken;

@@ -54,84 +54,6 @@ function httpsRequest(options, data = null) {
 }
 
 /**
- * Search for available Telnyx phone numbers
- */
-async function searchTelnyxNumber(areaCode) {
-  const apiKey = process.env.TELNYX_API_KEY;
-
-  if (!apiKey) {
-    throw new Error('TELNYX_API_KEY is required');
-  }
-
-  const options = {
-    hostname: 'api.telnyx.com',
-    port: 443,
-    path: `/v2/available_phone_numbers?filter[country_code]=US&filter[national_destination_code]=${areaCode}&filter[features][]=sms&filter[features][]=voice&filter[limit]=1`,
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Accept': 'application/json',
-    },
-  };
-
-  const response = await httpsRequest(options);
-  if (response.status !== 200) {
-    throw new Error(`Telnyx search failed (${response.status}): ${JSON.stringify(response.body || response.parseError)}`);
-  }
-
-  const available = response.body?.data || [];
-  if (available.length === 0) {
-    throw new Error(`No available phone numbers in area code ${areaCode}`);
-  }
-
-  return available[0].phone_number;
-}
-
-/**
- * Purchase a Telnyx phone number
- */
-async function purchaseTelnyxNumber(phoneNumber) {
-  const apiKey = process.env.TELNYX_API_KEY;
-  const messagingProfileId = process.env.TELNYX_MESSAGING_PROFILE_ID;
-
-  if (!apiKey) {
-    throw new Error('TELNYX_API_KEY is required');
-  }
-
-  const payload = {
-    phone_numbers: [{ phone_number: phoneNumber }]
-  };
-
-  if (messagingProfileId) {
-    payload.messaging_profile_id = messagingProfileId;
-  }
-
-  const options = {
-    hostname: 'api.telnyx.com',
-    port: 443,
-    path: '/v2/number_orders',
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-    },
-  };
-
-  const response = await httpsRequest(options, payload);
-  if (response.status !== 200 && response.status !== 201) {
-    throw new Error(`Telnyx purchase failed (${response.status}): ${JSON.stringify(response.body || response.parseError)}`);
-  }
-
-  const phoneNumbers = response.body?.data?.phone_numbers || [];
-  if (phoneNumbers.length === 0) {
-    throw new Error('No phone numbers returned from Telnyx order');
-  }
-
-  return phoneNumbers[0].phone_number;
-}
-
-/**
  * Create a Retell AI agent
  */
 async function createRetellAgent(businessName, knowledgeBaseSummary) {
@@ -211,8 +133,6 @@ router.post('/', async (req, res) => {
     const now = new Date().toISOString();
     const provisioning_status = {
       client_id: clientId,
-      telnyx_phone: null,
-      telnyx_error: null,
       retell_agent_id: null,
       retell_error: null,
       db_save: null,
@@ -223,27 +143,7 @@ router.post('/', async (req, res) => {
 
     console.log(`[provision] Starting provisioning for ${business_name} (${clientId})`);
 
-    // Step 1: Buy Telnyx number (skip if no area_code provided)
-    let telnyxPhone = null;
-    try {
-      if (!area_code) {
-        provisioning_status.telnyx_error = 'area_code is required to provision Telnyx number';
-        console.warn(`[provision] ${provisioning_status.telnyx_error}`);
-      } else {
-        console.log(`[provision] Searching Telnyx numbers in area code ${area_code}...`);
-        const availableNumber = await searchTelnyxNumber(area_code);
-        console.log(`[provision] Found number: ${availableNumber}, purchasing...`);
-        telnyxPhone = await purchaseTelnyxNumber(availableNumber);
-        provisioning_status.telnyx_phone = telnyxPhone;
-        console.log(`[provision] Successfully purchased Telnyx number: ${telnyxPhone}`);
-      }
-    } catch (err) {
-      provisioning_status.telnyx_error = err.message;
-      console.error(`[provision] Telnyx provisioning failed: ${err.message}`);
-      // Continue with provisioning even if Telnyx fails
-    }
-
-    // Step 2: Create Retell agent (optional, don't fail overall provisioning if this fails)
+    // Step 1: Create Retell agent (optional, don't fail overall provisioning if this fails)
     let retellAgentId = null;
     try {
       const kbSummary = knowledge_base
@@ -260,14 +160,14 @@ router.post('/', async (req, res) => {
       // Don't return — allow client creation without Retell
     }
 
-    // Step 3: Save client to database
+    // Step 2: Save client to database
     try {
       db.prepare(`
         INSERT INTO clients (
           id, business_name, owner_name, owner_phone, owner_email,
-          retell_agent_id, telnyx_phone, twilio_phone, industry, timezone,
+          retell_agent_id, twilio_phone, industry, timezone,
           avg_ticket, plan, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         clientId,
         business_name,
@@ -275,8 +175,7 @@ router.post('/', async (req, res) => {
         owner_phone,
         owner_email || null,
         retellAgentId || null,
-        telnyxPhone || null,
-        telnyxPhone || null,
+        process.env.TWILIO_PHONE_NUMBER || null,
         industry || null,
         timezone || 'UTC',
         avg_ticket || 0,
@@ -297,7 +196,7 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Step 4: Save knowledge base JSON
+    // Step 3: Save knowledge base JSON
     if (knowledge_base) {
       try {
         const kbDir = path.join(__dirname, '../../mcp/knowledge_bases');

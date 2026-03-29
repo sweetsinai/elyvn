@@ -66,9 +66,9 @@ module.exports = {
     googleMapsKey: process.env.GOOGLE_MAPS_API_KEY,
     anthropicKey: process.env.ANTHROPIC_API_KEY,
     retellKey: process.env.RETELL_API_KEY,
-    telnyxKey: process.env.TELNYX_API_KEY,
-    telnyxPhoneNumber: process.env.TELNYX_PHONE_NUMBER,
-    telnyxMessagingProfileId: process.env.TELNYX_MESSAGING_PROFILE_ID,
+    twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
+    twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
+    twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER,
     telegramToken: process.env.TELEGRAM_BOT_TOKEN,
     calcomApiKey: process.env.CALCOM_API_KEY,
   },
@@ -102,9 +102,8 @@ module.exports = {
       this.apis.anthropicKey &&
       this.apis.googleMapsKey &&
       this.apis.retellKey &&
-      this.apis.telnyxKey &&
-      this.apis.telnyxPhoneNumber &&
-      this.apis.telnyxMessagingProfileId
+      this.apis.twilioAccountSid &&
+      this.apis.twilioAuthToken
     );
   },
 };

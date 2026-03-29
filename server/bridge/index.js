@@ -8,17 +8,34 @@ setupLogger();
 const { initMonitoring, captureException } = require('./utils/monitoring');
 initMonitoring();
 
+// Send critical errors to Telegram (admin chat)
+async function alertCriticalError(context, error) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+  if (!token || !chatId) return;
+  const msg = `ELYVN Error\n\nContext: ${context}\nError: ${String(error?.message || error).slice(0, 500)}\nTime: ${new Date().toISOString()}`;
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: msg }),
+    });
+  } catch (_) { /* alerting failure is non-fatal */ }
+}
+
 // Catch unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   const err = reason instanceof Error ? reason : new Error(String(reason));
   captureException(err, { type: 'unhandledRejection' });
   logger.error('[CRASH] UNHANDLED REJECTION:', reason);
+  alertCriticalError('Unhandled Rejection', err);
 });
 
 // Catch uncaught exceptions — don't exit
 process.on('uncaughtException', (error) => {
   captureException(error, { type: 'uncaughtException' });
   logger.error('[CRASH] UNCAUGHT EXCEPTION:', error);
+  alertCriticalError('Uncaught Exception', error);
 });
 
 const express = require('express');
@@ -32,7 +49,7 @@ const { isValidUUID } = require('./utils/validate');
 
 // === STARTUP ENV VALIDATION ===
 const REQUIRED_ENV = ['ANTHROPIC_API_KEY'];
-const RECOMMENDED_ENV = ['RETELL_API_KEY', 'TELNYX_API_KEY', 'TELNYX_PHONE_NUMBER', 'TELNYX_MESSAGING_PROFILE_ID', 'ELYVN_API_KEY'];
+const RECOMMENDED_ENV = ['RETELL_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'ELYVN_API_KEY'];
 const missingRequired = REQUIRED_ENV.filter(v => !process.env[v]);
 if (missingRequired.length > 0) {
   logger.error(`[FATAL] Missing required env vars: ${missingRequired.join(', ')}`);
@@ -46,9 +63,29 @@ if (missingRecommended.length > 0) {
 if (!process.env.ELYVN_API_KEY) {
   logger.warn('[WARN] ELYVN_API_KEY not set — API endpoints are UNPROTECTED. Set this before going live!');
 }
+if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+  logger.error('[FATAL] JWT_SECRET must be at least 32 characters for security');
+  process.exit(1);
+}
+if (process.env.NODE_ENV === 'production' && !process.env.STRIPE_SECRET_KEY) {
+  logger.warn('[WARN] STRIPE_SECRET_KEY not set — billing features disabled');
+}
+if (process.env.NODE_ENV === 'production' && !process.env.TELEGRAM_ADMIN_CHAT_ID) {
+  logger.warn('[WARN] TELEGRAM_ADMIN_CHAT_ID not set — critical error alerts to Telegram disabled');
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Force HTTPS in production (Railway sets x-forwarded-proto)
+if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
+  app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] !== 'https') {
+      return res.redirect(301, `https://${req.hostname}${req.url}`);
+    }
+    next();
+  });
+}
 
 // Security headers via Helmet
 app.use(helmet({
@@ -58,11 +95,19 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Required for dashboard (React)
       styleSrc: ["'self'", "'unsafe-inline'"], // Required for dashboard styles
       imgSrc: ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'", 'https://api.anthropic.com', 'https://api.retellai.com', 'https://api.telnyx.com', 'https://api.stripe.com'],
+      connectSrc: ["'self'", 'https://api.anthropic.com', 'https://api.retellai.com', 'https://api.stripe.com', 'wss:'],
       frameSrc: ["'self'", 'https://checkout.stripe.com', 'https://js.stripe.com'],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
     },
   },
   crossOriginEmbedderPolicy: false,
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 
@@ -85,7 +130,14 @@ function safeCompare(a, b) {
 const corsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
   : (process.env.NODE_ENV === 'production'
-    ? ['https://joyful-trust-production.up.railway.app', 'https://api.elyvn.net', 'https://elyvn.net', 'https://www.elyvn.net', 'https://elyvn.vercel.app']
+    ? [
+        'https://joyful-trust-production.up.railway.app',
+        'https://api.elyvn.net',
+        'https://elyvn.net',
+        'https://www.elyvn.net',
+        'https://elyvn.vercel.app',
+        process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null,
+      ].filter(Boolean)
     : '*');
 
 if (!process.env.CORS_ORIGINS && process.env.NODE_ENV === 'production') {
@@ -107,7 +159,7 @@ app.use(cors({
 const { correlationMiddleware } = require('./utils/correlationId');
 app.use(correlationMiddleware);
 
-// Capture raw body for webhook signature verification (Telnyx Ed25519)
+// Capture raw body for webhook signature verification (Stripe, Twilio)
 app.use(express.json({
   limit: '10mb',
   verify: (req, res, buf) => {
@@ -226,9 +278,8 @@ app.get('/health', async (req, res) => {
   const envVars = {
     ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY,
     RETELL_API_KEY: !!process.env.RETELL_API_KEY,
-    TELNYX_API_KEY: !!process.env.TELNYX_API_KEY,
-    TELNYX_PHONE_NUMBER: !!process.env.TELNYX_PHONE_NUMBER,
-    TELNYX_MESSAGING_PROFILE_ID: !!process.env.TELNYX_MESSAGING_PROFILE_ID,
+    TWILIO_ACCOUNT_SID: !!process.env.TWILIO_ACCOUNT_SID,
+    TWILIO_AUTH_TOKEN: !!process.env.TWILIO_AUTH_TOKEN,
     TELEGRAM_BOT_TOKEN: !!process.env.TELEGRAM_BOT_TOKEN,
     CALCOM_API_KEY: !!process.env.CALCOM_API_KEY,
     ELYVN_API_KEY: !!process.env.ELYVN_API_KEY,
@@ -331,10 +382,6 @@ const onboardRouter = require('./routes/onboard');
 const provisionRouter = require('./routes/provision');
 const trackingRouter = require('./routes/tracking');
 const { enforceClientIsolation } = require('./utils/clientIsolation');
-
-// Telnyx inbound SMS webhook
-const telnyxRouter = require('./routes/telnyx');
-app.use('/webhooks/telnyx', webhookRateLimiter, telnyxRouter);
 
 // Twilio inbound SMS webhook
 const twilioRouter = require('./routes/twilio');
@@ -440,6 +487,9 @@ app.use((err, req, res, _next) => {
       method: req.method,
       path: req.path,
     });
+
+    // Alert on 500s via Telegram
+    alertCriticalError(`${req.method} ${req.path}`, err);
 
     // Don't expose error details to client
     res.status(500).json({ error: 'Internal server error' });

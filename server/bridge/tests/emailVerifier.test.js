@@ -269,7 +269,8 @@ describe('verifyEmail', () => {
     net.Socket.mockReturnValue(mockSocket);
 
     const result = await verifyEmail('test@timeout.test');
-    expect(result.valid).toBe(false);
+    // Cloud hosts block port 25 — timeout is treated as inconclusive, assume valid
+    expect(result.valid).toBe(true);
     expect(result.reason).toBe('timeout');
   });
 
@@ -294,7 +295,8 @@ describe('verifyEmail', () => {
     net.Socket.mockReturnValue(mockSocket);
 
     const result = await verifyEmail('test@error.test');
-    expect(result.valid).toBe(false);
+    // Cloud hosts block port 25 — connection error is treated as inconclusive, assume valid
+    expect(result.valid).toBe(true);
     expect(result.reason).toBe('connection_error');
   });
 

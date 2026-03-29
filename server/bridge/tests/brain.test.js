@@ -17,6 +17,18 @@ jest.mock('path', () => ({
   join: jest.fn((...args) => args.join('/')),
 }));
 
+// Mock logger to capture log output
+const mockLogger = {
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+};
+jest.mock('../utils/logger', () => ({
+  logger: mockLogger,
+  setupLogger: jest.fn(),
+  closeLogger: jest.fn(),
+}));
+
 const { think } = require('../utils/brain');
 
 describe('brain.think', () => {
@@ -289,8 +301,6 @@ describe('brain.think', () => {
   });
 
   it('should log brain reasoning to console', async () => {
-    const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-
     const mockClient = new Anthropic();
     mockClient.messages.create.mockResolvedValue({
       content: [{
@@ -301,13 +311,12 @@ describe('brain.think', () => {
 
     await think('call_ended', {}, mockLeadMemory, mockDb);
 
-    expect(consoleSpy).toHaveBeenCalledWith(
+    expect(mockLogger.info).toHaveBeenCalledWith(
       expect.stringContaining('[Brain]')
     );
-    const firstCall = consoleSpy.mock.calls[0][0];
-    expect(firstCall).toContain('User is interested');
-
-    consoleSpy.mockRestore();
+    const brainCalls = mockLogger.info.mock.calls.filter(c => typeof c[0] === 'string' && c[0].includes('[Brain]'));
+    expect(brainCalls.length).toBeGreaterThan(0);
+    expect(brainCalls[0][0]).toContain('User is interested');
   });
 
   it('should handle null lead gracefully', async () => {
@@ -544,16 +553,12 @@ describe('brain.think', () => {
       content: [{ type: 'text', text: '{"reasoning": "test", "actions": []}' }],
     });
 
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-
     const result = await think('call_ended', {}, mockLeadMemory, failingDb);
 
     expect(result).toBeDefined();
-    // Check that console.error was called with a message containing the pattern
-    const calls = consoleSpy.mock.calls.map(c => c[0]);
+    // Check that logger.error was called with a message containing the pattern
+    const calls = mockLogger.error.mock.calls.map(c => c[0]);
     expect(calls.some(c => typeof c === 'string' && c.includes('[Brain] Guardrail check error'))).toBe(true);
-
-    consoleSpy.mockRestore();
   });
 
   it('should serialize concurrent calls to same lead', async () => {

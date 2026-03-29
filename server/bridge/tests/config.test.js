@@ -22,9 +22,8 @@ describe('config.js', () => {
       process.env.ANTHROPIC_API_KEY = 'test-key-1';
       process.env.GOOGLE_MAPS_API_KEY = 'test-key-2';
       process.env.RETELL_API_KEY = 'test-key-3';
-      process.env.TELNYX_API_KEY = 'test-key-4';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-      process.env.TELNYX_MESSAGING_PROFILE_ID = 'profile-123';
+      process.env.TWILIO_ACCOUNT_SID = 'ACtest123';
+      process.env.TWILIO_AUTH_TOKEN = 'test-token';
 
       const config = require('../utils/config');
       expect(config.isFullyConfigured()).toBe(true);
@@ -34,9 +33,8 @@ describe('config.js', () => {
       delete process.env.ANTHROPIC_API_KEY;
       process.env.GOOGLE_MAPS_API_KEY = 'test-key';
       process.env.RETELL_API_KEY = 'test-key';
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-      process.env.TELNYX_MESSAGING_PROFILE_ID = 'profile-123';
+      process.env.TWILIO_ACCOUNT_SID = 'ACtest123';
+      process.env.TWILIO_AUTH_TOKEN = 'test-token';
 
       const config = require('../utils/config');
       expect(config.isFullyConfigured()).toBe(false);
@@ -46,9 +44,8 @@ describe('config.js', () => {
       process.env.ANTHROPIC_API_KEY = 'test-key';
       delete process.env.GOOGLE_MAPS_API_KEY;
       process.env.RETELL_API_KEY = 'test-key';
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-      process.env.TELNYX_MESSAGING_PROFILE_ID = 'profile-123';
+      process.env.TWILIO_ACCOUNT_SID = 'ACtest123';
+      process.env.TWILIO_AUTH_TOKEN = 'test-token';
 
       const config = require('../utils/config');
       expect(config.isFullyConfigured()).toBe(false);
@@ -58,82 +55,67 @@ describe('config.js', () => {
       process.env.ANTHROPIC_API_KEY = 'test-key';
       process.env.GOOGLE_MAPS_API_KEY = 'test-key';
       delete process.env.RETELL_API_KEY;
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-      process.env.TELNYX_MESSAGING_PROFILE_ID = 'profile-123';
+      process.env.TWILIO_ACCOUNT_SID = 'ACtest123';
+      process.env.TWILIO_AUTH_TOKEN = 'test-token';
 
       const config = require('../utils/config');
       expect(config.isFullyConfigured()).toBe(false);
     });
 
-    test('should return false when TELNYX_API_KEY is missing', () => {
+    test('should return false when TWILIO_ACCOUNT_SID is missing', () => {
       process.env.ANTHROPIC_API_KEY = 'test-key';
       process.env.GOOGLE_MAPS_API_KEY = 'test-key';
       process.env.RETELL_API_KEY = 'test-key';
-      delete process.env.TELNYX_API_KEY;
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-      process.env.TELNYX_MESSAGING_PROFILE_ID = 'profile-123';
+      delete process.env.TWILIO_ACCOUNT_SID;
+      process.env.TWILIO_AUTH_TOKEN = 'test-token';
 
       const config = require('../utils/config');
       expect(config.isFullyConfigured()).toBe(false);
     });
 
-    test('should return false when TELNYX_PHONE_NUMBER is missing', () => {
+    test('should return false when TWILIO_AUTH_TOKEN is missing', () => {
       process.env.ANTHROPIC_API_KEY = 'test-key';
       process.env.GOOGLE_MAPS_API_KEY = 'test-key';
       process.env.RETELL_API_KEY = 'test-key';
-      process.env.TELNYX_API_KEY = 'test-key';
-      delete process.env.TELNYX_PHONE_NUMBER;
-      process.env.TELNYX_MESSAGING_PROFILE_ID = 'profile-123';
-
-      const config = require('../utils/config');
-      expect(config.isFullyConfigured()).toBe(false);
-    });
-
-    test('should return false when TELNYX_MESSAGING_PROFILE_ID is missing', () => {
-      process.env.ANTHROPIC_API_KEY = 'test-key';
-      process.env.GOOGLE_MAPS_API_KEY = 'test-key';
-      process.env.RETELL_API_KEY = 'test-key';
-      process.env.TELNYX_API_KEY = 'test-key';
-      process.env.TELNYX_PHONE_NUMBER = '+1234567890';
-      delete process.env.TELNYX_MESSAGING_PROFILE_ID;
+      process.env.TWILIO_ACCOUNT_SID = 'ACtest123';
+      delete process.env.TWILIO_AUTH_TOKEN;
 
       const config = require('../utils/config');
       expect(config.isFullyConfigured()).toBe(false);
     });
   });
 
-  describe('getTelnyxConfig', () => {
-    test('should return Telnyx API key from config', () => {
-      process.env.TELNYX_API_KEY = 'telnyx-key-test';
+  describe('getTwilioConfig', () => {
+    test('should return Twilio account SID from config', () => {
+      process.env.TWILIO_ACCOUNT_SID = 'ACtest123';
 
       const config = require('../utils/config');
-      expect(config.apis.telnyxKey).toBe('telnyx-key-test');
+      expect(config.apis.twilioAccountSid).toBe('ACtest123');
     });
 
-    test('should return Telnyx phone number from config', () => {
-      process.env.TELNYX_PHONE_NUMBER = '+1555123456';
+    test('should return Twilio auth token from config', () => {
+      process.env.TWILIO_AUTH_TOKEN = 'test-token-123';
 
       const config = require('../utils/config');
-      expect(config.apis.telnyxPhoneNumber).toBe('+1555123456');
+      expect(config.apis.twilioAuthToken).toBe('test-token-123');
     });
 
-    test('should return Telnyx messaging profile ID from config', () => {
-      process.env.TELNYX_MESSAGING_PROFILE_ID = 'profile-abc123';
+    test('should return Twilio phone number from config', () => {
+      process.env.TWILIO_PHONE_NUMBER = '+1555123456';
 
       const config = require('../utils/config');
-      expect(config.apis.telnyxMessagingProfileId).toBe('profile-abc123');
+      expect(config.apis.twilioPhoneNumber).toBe('+1555123456');
     });
 
-    test('should return undefined for missing Telnyx keys', () => {
-      delete process.env.TELNYX_API_KEY;
-      delete process.env.TELNYX_PHONE_NUMBER;
-      delete process.env.TELNYX_MESSAGING_PROFILE_ID;
+    test('should return undefined for missing Twilio keys', () => {
+      delete process.env.TWILIO_ACCOUNT_SID;
+      delete process.env.TWILIO_AUTH_TOKEN;
+      delete process.env.TWILIO_PHONE_NUMBER;
 
       const config = require('../utils/config');
-      expect(config.apis.telnyxKey).toBeUndefined();
-      expect(config.apis.telnyxPhoneNumber).toBeUndefined();
-      expect(config.apis.telnyxMessagingProfileId).toBeUndefined();
+      expect(config.apis.twilioAccountSid).toBeUndefined();
+      expect(config.apis.twilioAuthToken).toBeUndefined();
+      expect(config.apis.twilioPhoneNumber).toBeUndefined();
     });
   });
 
@@ -234,7 +216,8 @@ describe('config.js', () => {
       process.env.ANTHROPIC_API_KEY = 'anthropic-key';
       process.env.GOOGLE_MAPS_API_KEY = 'maps-key';
       process.env.RETELL_API_KEY = 'retell-key';
-      process.env.TELNYX_API_KEY = 'telnyx-key';
+      process.env.TWILIO_ACCOUNT_SID = 'ACtwilio-sid';
+      process.env.TWILIO_AUTH_TOKEN = 'twilio-token';
       process.env.TELEGRAM_BOT_TOKEN = 'telegram-token';
       process.env.CALCOM_API_KEY = 'calcom-key';
 
@@ -242,7 +225,7 @@ describe('config.js', () => {
       expect(config.apis.anthropicKey).toBe('anthropic-key');
       expect(config.apis.googleMapsKey).toBe('maps-key');
       expect(config.apis.retellKey).toBe('retell-key');
-      expect(config.apis.telnyxKey).toBe('telnyx-key');
+      expect(config.apis.twilioAccountSid).toBe('ACtwilio-sid');
       expect(config.apis.telegramToken).toBe('telegram-token');
       expect(config.apis.calcomApiKey).toBe('calcom-key');
     });

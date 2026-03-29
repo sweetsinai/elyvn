@@ -35,6 +35,7 @@ describe('Telegram Route Handler', () => {
     telegram.setClientCommands.mockResolvedValue({ ok: true });
     telegram.answerCallback.mockResolvedValue({ ok: true });
     telegram.sendDocument.mockResolvedValue({ ok: true });
+    telegram.getHelpText.mockReturnValue('<b>Commands</b>\n\n/status - Dashboard\n/leads - Leads');
 
     app = express();
     app.use(express.json());
@@ -909,7 +910,12 @@ describe('Telegram Route Handler', () => {
       expect(res.status).toBe(200);
       expect(telegram.sendMessage).toHaveBeenCalledWith(
         'chat-456',
-        expect.stringContaining('Type /status')
+        expect.stringContaining("didn't catch that"),
+        expect.objectContaining({
+          reply_markup: expect.objectContaining({
+            inline_keyboard: expect.any(Array)
+          })
+        })
       );
     });
   });
