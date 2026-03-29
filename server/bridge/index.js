@@ -200,6 +200,16 @@ try {
 // Make db available to routes
 app.locals.db = db;
 
+// Cancel all pending followup_sms jobs (prevent burning Twilio credits on fake numbers)
+try {
+  const cancelled = db.prepare("UPDATE job_queue SET status = 'cancelled' WHERE status = 'pending' AND type = 'followup_sms'").run();
+  if (cancelled.changes > 0) {
+    logger.info(`[server] Cancelled ${cancelled.changes} pending followup_sms jobs`);
+  }
+} catch (err) {
+  logger.error('[server] Failed to cancel pending SMS jobs:', err.message);
+}
+
 // Recover stalled jobs from crashes
 (async () => {
   try {
