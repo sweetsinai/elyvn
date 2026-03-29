@@ -145,7 +145,12 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   const sig = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
+  // In production, require webhook signature verification
   if (!webhookSecret) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[billing] STRIPE_WEBHOOK_SECRET not set in production — rejecting webhook');
+      return res.status(500).json({ error: 'Webhook not configured' });
+    }
     logger.warn('[billing] STRIPE_WEBHOOK_SECRET not set — skipping signature verification');
   }
 
@@ -154,11 +159,19 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
     const stripe = getStripe();
     if (webhookSecret && sig) {
       event = stripe.webhooks.constructEvent(req.rawBody || req.body, sig, webhookSecret);
-    } else {
+    } else if (process.env.NODE_ENV !== 'production') {
       event = JSON.parse(typeof req.body === 'string' ? req.body : req.rawBody || JSON.stringify(req.body));
+    } else {
+      logger.error('[billing] Unsigned webhook rejected in production');
+      return res.status(400).json({ error: 'Webhook signature required' });
     }
   } catch (err) {
     logger.error('[billing] Webhook signature verification failed:', err.message);
+    try {
+      const { logAudit } = require('../utils/auditLog');
+      const db = req.app?.locals?.db;
+      if (db) logAudit(db, { action: 'webhook_signature_invalid', ip: req.ip, details: { source: 'stripe', error: err.message } });
+    } catch (_) {}
     return res.status(400).json({ error: 'Invalid webhook signature' });
   }
 

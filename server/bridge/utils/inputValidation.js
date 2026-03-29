@@ -253,6 +253,32 @@ function validateParameters(params, schema) {
   };
 }
 
+/**
+ * Validate and normalize pagination parameters
+ */
+function validatePaginationParams(page, limit) {
+  return {
+    page: Math.max(1, Math.min(1000, parseInt(page) || 1)),
+    limit: Math.max(1, Math.min(100, parseInt(limit) || 20)),
+  };
+}
+
+/**
+ * Validate sort column against an allowlist (prevents SQL injection in ORDER BY)
+ */
+const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'score', 'name', 'phone', 'stage', 'duration', 'sentiment'];
+function validateSortColumn(column) {
+  return ALLOWED_SORT_COLUMNS.includes(column) ? column : 'created_at';
+}
+
+/**
+ * Validate sort direction
+ */
+function validateSortDirection(dir) {
+  const upper = (dir || 'DESC').toUpperCase();
+  return upper === 'ASC' || upper === 'DESC' ? upper : 'DESC';
+}
+
 module.exports = {
   LENGTH_LIMITS,
   validateEmail,
@@ -263,4 +289,7 @@ module.exports = {
   stripHtmlTags,
   validateStringField,
   validateParameters,
+  validatePaginationParams,
+  validateSortColumn,
+  validateSortDirection,
 };

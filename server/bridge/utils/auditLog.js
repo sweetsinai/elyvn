@@ -16,7 +16,7 @@ const VALID_ACTIONS = new Set([
   'call_started', 'call_completed', 'sms_sent', 'sms_received', 'email_sent',
   'settings_changed', 'client_created', 'client_updated', 'brain_decision',
   'speed_lead_triggered', 'webhook_received', 'isolation_violation',
-  'job_completed', 'job_failed', 'rate_limited'
+  'job_completed', 'job_failed', 'rate_limited', 'webhook_signature_invalid'
 ]);
 
 /**

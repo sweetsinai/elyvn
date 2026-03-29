@@ -229,6 +229,13 @@ function createRateLimiterMiddleware(limiter) {
 
     if (!result.allowed) {
       res.set('Retry-After', String(result.retryAfter || 60));
+      // Audit log rate limit hits (lazy-load to avoid circular deps)
+      try {
+        const { logAudit: logRateLimit } = require('./utils/auditLog');
+        if (req.app?.locals?.db) {
+          logRateLimit(req.app.locals.db, { action: 'rate_limited', ip: req.ip, details: { path: req.path, method: req.method } });
+        }
+      } catch (_) {}
       return res.status(429).json({ error: 'Too many requests, please try again later' });
     }
     next();
