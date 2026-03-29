@@ -80,7 +80,9 @@ const PORT = process.env.PORT || 3001;
 // Force HTTPS in production (Railway sets x-forwarded-proto)
 if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
   app.use((req, res, next) => {
-    if (req.headers['x-forwarded-proto'] !== 'https') {
+    // Skip redirect for health checks (Railway internal healthcheck has no x-forwarded-proto)
+    if (req.path === '/health') return next();
+    if (req.headers['x-forwarded-proto'] === 'http') {
       return res.redirect(301, `https://${req.hostname}${req.url}`);
     }
     next();
