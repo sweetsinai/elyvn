@@ -505,6 +505,128 @@ section { position: relative; z-index: 2; }
 }
 
 /* ==========================================
+   AI BRAIN SECTION
+   ========================================== */
+
+.brain-intro {
+  font-size: 17px;
+  color: var(--grey-1);
+  line-height: 1.7;
+  font-weight: 300;
+  max-width: 680px;
+  margin-bottom: 64px;
+}
+
+.brain-flow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  margin-bottom: 64px;
+}
+
+.brain-step {
+  flex: 1;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 4px;
+  padding: 36px 28px;
+  transition: all var(--transition);
+}
+
+.brain-step:hover {
+  border-color: rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.04);
+  transform: translateY(-4px);
+}
+
+.brain-step-highlight {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.15);
+}
+
+.brain-icon {
+  margin-bottom: 20px;
+  opacity: 0.8;
+}
+
+.brain-label {
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--white);
+  margin-bottom: 10px;
+  letter-spacing: -0.2px;
+}
+
+.brain-step p {
+  font-size: 13px;
+  color: var(--grey-1);
+  line-height: 1.7;
+  font-weight: 300;
+}
+
+.brain-arrow {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  margin-top: 50px;
+  flex-shrink: 0;
+}
+
+.brain-tech-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.tech-badge {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--grey-1);
+  padding: 8px 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 2px;
+  transition: all var(--transition);
+}
+
+.tech-badge:hover {
+  border-color: rgba(255,255,255,0.25);
+  color: var(--white);
+}
+
+/* Comparison labels */
+.compare-label {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 2px;
+  margin-bottom: 16px;
+}
+
+.compare-old {
+  color: #ff6b6b;
+  background: rgba(255,107,107,0.1);
+  border: 1px solid rgba(255,107,107,0.2);
+}
+
+.compare-new {
+  color: #51cf66;
+  background: rgba(81,207,102,0.1);
+  border: 1px solid rgba(81,207,102,0.2);
+}
+
+.compare-stat {
+  color: var(--white);
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+/* ==========================================
    ROI CALCULATOR
    ========================================== */
 
@@ -1012,7 +1134,18 @@ section { position: relative; z-index: 2; }
   .cta-inner { padding: 100px 40px; }
 }
 
+@media (max-width: 1024px) {
+  .brain-flow { flex-wrap: wrap; gap: 16px; }
+  .brain-arrow { display: none; }
+  .brain-step { min-width: calc(50% - 8px); }
+}
+
 @media (max-width: 768px) {
+  .brain-flow { flex-direction: column; }
+  .brain-step { min-width: 100%; }
+  .brain-arrow { display: none; }
+  .brain-tech-strip { gap: 8px; }
+  .tech-badge { font-size: 10px; padding: 6px 12px; }
   #navbar { padding: 0 20px; height: 60px; }
   .nav-links {
     display: none;

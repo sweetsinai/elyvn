@@ -296,6 +296,23 @@ gsap.registerPlugin(ScrollTrigger);
     ease: 'power2.out'
   });
 
+  // --- BRAIN SECTION — cascade flow steps ---
+  gsap.from('.brain-step', {
+    scrollTrigger: { trigger: '#brain', start: 'top 76%' },
+    y: 50, opacity: 0, duration: 0.7,
+    stagger: 0.12, ease: 'power3.out'
+  });
+  gsap.from('.brain-arrow', {
+    scrollTrigger: { trigger: '#brain', start: 'top 74%' },
+    scaleX: 0, opacity: 0, duration: 0.4,
+    stagger: 0.1, delay: 0.3, ease: 'power2.out'
+  });
+  gsap.from('.tech-badge', {
+    scrollTrigger: { trigger: '.brain-tech-strip', start: 'top 90%' },
+    scale: 0.8, opacity: 0, duration: 0.35,
+    stagger: 0.06, ease: 'back.out(1.4)'
+  });
+
   // --- ROI — split horizontal reveal ---
   gsap.from('.roi-left', {
     scrollTrigger: { trigger: '#roi', start: 'top 80%' },
