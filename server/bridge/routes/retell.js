@@ -477,16 +477,17 @@ async function handleCallEnded(db, call) {
     // === Telegram notification ===
     try {
       const clientForNotify = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
-      if (clientForNotify && clientForNotify.telegram_chat_id) {
+      const telegramChatId = (clientForNotify && clientForNotify.telegram_chat_id) || process.env.TELEGRAM_ADMIN_CHAT_ID;
+      if (telegramChatId) {
         const processedCall = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(callId);
         if (processedCall) {
           if (outcome === 'transferred') {
             const { text } = telegram.formatTransferAlert(processedCall, summary, clientForNotify);
-            telegram.sendMessage(clientForNotify.telegram_chat_id, text)
+            telegram.sendMessage(telegramChatId, text)
               .catch(err => logger.error('[retell] Telegram transfer notify failed:', err.message));
           } else {
             const { text, buttons } = telegram.formatCallNotification(processedCall, clientForNotify);
-            telegram.sendMessage(clientForNotify.telegram_chat_id, text, { reply_markup: { inline_keyboard: buttons } })
+            telegram.sendMessage(telegramChatId, text, { reply_markup: { inline_keyboard: buttons } })
               .catch(err => logger.error('[retell] Telegram call notify failed:', err.message));
           }
         }
