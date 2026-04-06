@@ -1272,6 +1272,50 @@ section { position: relative; z-index: 2; }
    SEO INTRO PARAGRAPH
    ========================================== */
 
+/* ==========================================
+   INDUSTRIES GRID
+   ========================================== */
+
+.industries-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.industry-card {
+  background: var(--black);
+  padding: 36px 28px;
+  transition: background var(--transition);
+}
+
+.industry-card:hover { background: rgba(255,255,255,0.03); }
+
+.industry-card h3 {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  margin-bottom: 14px;
+  color: var(--white);
+}
+
+.industry-card p {
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 1.7;
+  color: var(--grey-1);
+}
+
+@media (max-width: 1024px) {
+  .industries-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .industries-grid { grid-template-columns: 1fr; }
+  .industry-card { padding: 28px 20px; }
+}
+
 .seo-intro {
   position: relative;
   z-index: 2;

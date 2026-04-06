@@ -5,10 +5,12 @@
 
 gsap.registerPlugin(ScrollTrigger);
 
+const isMobile = window.innerWidth <= 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
 // ==========================================
 // 1. LIQUID MORPHING BACKGROUND (WebGL)
 // ==========================================
-(function initLiquidBackground() {
+if (!isMobile) (function initLiquidBackground() {
   const canvas = document.getElementById('liquid-canvas');
   const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
   if (!gl) return;
@@ -123,7 +125,7 @@ gsap.registerPlugin(ScrollTrigger);
 // 2. THREE.JS — HERO 3D SCENE
 //    Floating rings + dot grid + sphere
 // ==========================================
-(function initHero3D() {
+if (!isMobile) (function initHero3D() {
   const canvas = document.getElementById('hero-3d');
   if (!canvas) return;
 
@@ -278,6 +280,14 @@ gsap.registerPlugin(ScrollTrigger);
         }
       })
     });
+  });
+
+  // --- INDUSTRY CARDS — grid wave ---
+  gsap.from('.industry-card', {
+    scrollTrigger: { trigger: '#industries', start: 'top 78%' },
+    y: 44, opacity: 0, duration: 0.55,
+    stagger: { each: 0.07, grid: [2, 3], from: 'start' },
+    ease: 'power2.out'
   });
 
   // --- STEP CARDS — 3D cascade with perspective ---
