@@ -1,96 +1,14 @@
-const express = require('express');
-const router = express.Router();
-const telegram = require('../utils/telegram');
-const { isValidURL } = require('../utils/validate');
-const { logger } = require('../utils/logger');
+'use strict';
+
+const telegram = require('../../utils/telegram');
+const { isValidURL } = require('../../utils/validate');
+const { logger } = require('../../utils/logger');
 
 // HTML-escape user/stored data before sending via Telegram HTML parse mode
 function esc(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-
-// Rate limiting for Telegram callback queries
-const callbackRateLimits = new Map();
-const CALLBACK_RATE_LIMIT = 10; // max callbacks per minute per chatId
-const CALLBACK_RATE_WINDOW = 60000; // 1 minute
-
-function callbackRateLimit(chatId) {
-  const now = Date.now();
-  const record = callbackRateLimits.get(chatId);
-
-  if (record) {
-    // Clean old entries
-    record.timestamps = record.timestamps.filter(t => now - t < CALLBACK_RATE_WINDOW);
-    if (record.timestamps.length >= CALLBACK_RATE_LIMIT) {
-      logger.warn(`[telegram] Callback rate limit exceeded for chatId ${chatId}`);
-      return false; // Rate limited
-    }
-    record.timestamps.push(now);
-  } else {
-    callbackRateLimits.set(chatId, { timestamps: [now] });
-  }
-
-  // Cleanup old entries every 5 minutes
-  if (callbackRateLimits.size > 10000) {
-    for (const [k, v] of callbackRateLimits) {
-      if (now - Math.max(...v.timestamps) > CALLBACK_RATE_WINDOW) callbackRateLimits.delete(k);
-    }
-  }
-
-  return true; // Not rate limited
-}
-
-// Verify webhook secret (skip if not configured)
-router.use((req, res, next) => {
-  const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (!expectedSecret) {
-    if (process.env.NODE_ENV === 'production') {
-      logger.error('[telegram] TELEGRAM_WEBHOOK_SECRET not configured in production');
-      return res.status(500).json({ error: 'Webhook not configured' });
-    }
-    return next();
-  }
-  if (expectedSecret) {
-    const secret = req.headers['x-telegram-bot-api-secret-token'];
-    if (!secret) {
-      return res.sendStatus(403);
-    }
-    // Use timing-safe comparison to prevent timing attacks
-    try {
-      const crypto = require('crypto');
-      if (secret.length === expectedSecret.length) {
-        if (!crypto.timingSafeEqual(Buffer.from(secret), Buffer.from(expectedSecret))) {
-          return res.sendStatus(403);
-        }
-      } else {
-        // Different lengths — fail securely
-        return res.sendStatus(403);
-      }
-    } catch (err) {
-      // Comparison error — fail closed
-      return res.sendStatus(403);
-    }
-  }
-  next();
-});
-
-router.post('/', (req, res) => {
-  res.sendStatus(200);
-
-  const db = req.app.locals.db;
-  if (!db) {
-    logger.error('[telegram] No database connection');
-    return;
-  }
-  const update = req.body || {};
-
-  if (update.message) {
-    handleCommand(db, update.message).catch(err => logger.error('Telegram command error:', err));
-  } else if (update.callback_query) {
-    handleCallback(db, update.callback_query).catch(err => logger.error('Telegram callback error:', err));
-  }
-});
 
 // ─── Helper: format duration ───
 function fmtDuration(sec) {
@@ -215,7 +133,7 @@ async function handleCommand(db, message) {
     case '/start':
     case '/status': {
       // Refresh plan-specific command menu on every /start or /status
-      telegram.setClientCommands(chatId, client.plan || 'starter').catch(err => logger.warn('[telegram] setClientCommands failed', err.message));
+      telegram.setClientCommands(chatId, client.plan || 'starter').catch(() => {});
       const today = new Date().toISOString().split('T')[0];
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -945,82 +863,4 @@ async function handleCommand(db, message) {
   }
 }
 
-async function handleCallback(db, callbackQuery) {
-  if (!callbackQuery) return;
-  const chatId = String(callbackQuery.message?.chat?.id || '');
-  const data = callbackQuery.data || '';
-  const callbackId = callbackQuery.id;
-
-  if (!chatId || !data) return;
-
-  // Rate limit callback queries
-  if (!callbackRateLimit(chatId)) {
-    logger.warn(`[telegram] Callback rate limited for chatId ${chatId}`);
-    return;
-  }
-
-  // ── Quick-action buttons (no typing needed) ──
-  if (data.startsWith('quick:')) {
-    const action = data.split(':')[1];
-    await telegram.answerCallback(callbackId, 'Loading...');
-    // Simulate the command by building a fake message and running handleCommand
-    const fakeMessage = {
-      chat: { id: chatId },
-      from: callbackQuery.from,
-      text: `/${action}`,
-    };
-    await handleCommand(db, fakeMessage).catch(err =>
-      logger.error('[telegram] quick-action error:', err)
-    );
-    return;
-  }
-
-  if (data.startsWith('transcript:')) {
-    const callId = data.split(':')[1];
-    const call = db.prepare('SELECT transcript, caller_phone, created_at, summary FROM calls WHERE call_id = ?').get(callId);
-    if (call && call.transcript) {
-      const transcript = call.transcript;
-      if (transcript.length > 3500) {
-        // Send as downloadable .txt file for long transcripts
-        const header = [
-          `ELYVN Call Transcript`,
-          `Call ID: ${callId}`,
-          `Caller: ${call.caller_phone || 'unknown'}`,
-          `Date: ${call.created_at || 'unknown'}`,
-          call.summary ? `Summary: ${call.summary}` : '',
-          '─'.repeat(50),
-          '',
-        ].filter(Boolean).join('\n');
-        const filename = `transcript-${callId.substring(0, 8)}.txt`;
-        await telegram.sendDocument(chatId, header + transcript, filename, `<b>Full transcript</b> (${transcript.length} chars)`);
-      } else {
-        await telegram.sendMessage(chatId, `<b>Transcript</b>\n\n${transcript}`);
-      }
-    } else {
-      await telegram.sendMessage(chatId, 'Transcript not available.');
-    }
-    await telegram.answerCallback(callbackId, 'Transcript sent');
-  } else if (data.startsWith('msg_ok:')) {
-    await telegram.answerCallback(callbackId, 'Noted — AI reply was good');
-  } else if (data.startsWith('msg_takeover:')) {
-    const parts = data.split(':');
-    const phone = parts[2] || '';
-    await telegram.answerCallback(callbackId, "You're handling this one");
-    if (chatId) {
-      await telegram.sendMessage(chatId, `You're handling this one.${phone ? ` Contact: ${phone}` : ''}`);
-    }
-  } else if (data.startsWith('cancel_speed:')) {
-    const leadId = data.split(':')[1];
-    try {
-      const { cancelJobs } = require('../utils/jobQueue');
-      const cancelled = cancelJobs(db, { payloadContains: leadId });
-      db.prepare("UPDATE followups SET status = 'cancelled' WHERE lead_id = ? AND status = 'scheduled'").run(leadId);
-      await telegram.answerCallback(callbackId, `Cancelled ${cancelled} jobs`);
-      await telegram.sendMessage(chatId, `⏹ Speed sequence cancelled for lead.`);
-    } catch (err) {
-      await telegram.answerCallback(callbackId, 'Error cancelling');
-    }
-  }
-}
-
-module.exports = router;
+module.exports = { handleCommand };

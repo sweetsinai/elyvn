@@ -104,7 +104,7 @@ router.get('/leads/:clientId', (req, res) => {
     }));
 
     const totalPages = Math.ceil(total / limitNum);
-    res.json({ leads: leadsWithInteractions, total, page: pageNum, limit: limitNum, total_pages: totalPages });
+    res.json({ data: leadsWithInteractions, meta: { page: pageNum, limit: limitNum, total, total_pages: totalPages } });
   } catch (err) {
     logger.error('[api] leads error:', err);
     res.status(500).json({ error: 'Failed to fetch leads' });
@@ -137,7 +137,7 @@ router.put('/leads/:clientId/:leadId', (req, res) => {
       return res.status(404).json({ error: 'Lead not found' });
     }
 
-    res.json({ success: true, stage });
+    res.json({ data: { success: true, stage } });
   } catch (err) {
     logger.error('[api] update lead error:', err);
     res.status(500).json({ error: 'Failed to update lead' });

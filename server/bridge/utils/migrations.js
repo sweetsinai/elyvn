@@ -761,6 +761,13 @@ const migrations = [
       db.exec('PRAGMA foreign_keys = ON');
     },
   },
+  {
+    id: '027_drop_duplicate_leads_index',
+    description: 'Remove duplicate unique index idx_leads_client_phone_unique (identical to idx_leads_client_phone)',
+    up(db) {
+      db.exec('DROP INDEX IF EXISTS idx_leads_client_phone_unique');
+    },
+  },
 ];
 
 /**

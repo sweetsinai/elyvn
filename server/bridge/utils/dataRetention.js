@@ -12,6 +12,12 @@ const RETENTION_POLICIES = {
   audit_log: { condition: "created_at < datetime('now', '-90 days')" },
   // Clean up old messages (keep 6 months)
   messages: { condition: "created_at < datetime('now', '-180 days')", archive: true },
+  // Clean up completed followups after 90 days
+  followups: { condition: "status IN ('completed', 'sent') AND updated_at < datetime('now', '-90 days')" },
+  // Clean up old calls after 365 days
+  calls: { condition: "created_at < datetime('now', '-365 days')" },
+  // Clean up lost/completed leads after 365 days
+  leads: { condition: "stage IN ('lost', 'completed') AND updated_at < datetime('now', '-365 days')" },
 };
 
 /**

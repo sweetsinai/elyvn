@@ -62,7 +62,7 @@ router.get('/calls/:clientId', (req, res) => {
     ).all(...queryParams);
 
     const totalPages = Math.ceil(total / limitNum);
-    res.json({ calls, total, page: pageNum, limit: limitNum, total_pages: totalPages });
+    res.json({ data: calls, meta: { page: pageNum, limit: limitNum, total, total_pages: totalPages } });
   } catch (err) {
     logger.error('[api] calls error:', err);
     res.status(500).json({ error: 'Failed to fetch calls' });
@@ -83,7 +83,7 @@ router.get('/calls/:clientId/:callId/transcript', async (req, res) => {
     }
 
     const callData = await retellResp.json();
-    res.json({ transcript: callData.transcript || [] });
+    res.json({ data: { transcript: callData.transcript || [] } });
   } catch (err) {
     logger.error('[api] transcript error:', err);
     res.status(500).json({ error: 'Failed to fetch transcript' });

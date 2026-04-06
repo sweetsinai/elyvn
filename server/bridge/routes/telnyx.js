@@ -20,6 +20,10 @@ const ANTHROPIC_TIMEOUT = 30000;
 router.use((req, res, next) => {
   const publicKey = process.env.TELNYX_PUBLIC_KEY;
   if (!publicKey) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[telnyx] TELNYX_PUBLIC_KEY not configured in production — rejecting');
+      return res.status(500).json({ error: 'Webhook signature verification not configured' });
+    }
     logger.warn('[telnyx] TELNYX_PUBLIC_KEY not configured — skipping signature validation');
     return next();
   }
@@ -234,7 +238,7 @@ async function handleCancel(db, client, from, replyFrom) {
     }
   } catch (err) {
     logger.error('[telnyx] handleCancel error:', err);
-    await sendSMS(from, 'Sorry, something went wrong. Please call us directly.', replyFrom).catch(() => {});
+    await sendSMS(from, 'Sorry, something went wrong. Please call us directly.', replyFrom).catch(err => logger.warn('[telnyx] Error SMS send failed', err.message));
   }
 }
 
@@ -286,7 +290,7 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
         tg.sendMessage(
           client.telegram_chat_id,
           `⏸ <b>AI paused</b> — message received (no auto-reply)\n\nFrom: ${from}\nMessage: "${escapedBody}"`
-        ).catch(() => {});
+        ).catch(err => logger.warn('[telnyx] Telegram AI-paused notification failed', err.message));
       }
       return;
     }

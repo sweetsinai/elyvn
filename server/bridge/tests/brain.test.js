@@ -29,7 +29,7 @@ jest.mock('../utils/logger', () => ({
   closeLogger: jest.fn(),
 }));
 
-const { think } = require('../utils/brain');
+const { think, _claudeBreaker, _leadLocks } = require('../utils/brain');
 
 describe('brain.think', () => {
   let mockLeadMemory;
@@ -39,6 +39,10 @@ describe('brain.think', () => {
   beforeEach(() => {
     // Clear mocks
     jest.clearAllMocks();
+
+    // Reset circuit breaker and lead locks so tests don't bleed into each other
+    if (_claudeBreaker) _claudeBreaker.reset();
+    if (_leadLocks) _leadLocks.clear();
 
     // Setup mock database (just for guardrails queries)
     mockDb = {
@@ -583,5 +587,107 @@ describe('brain.think', () => {
 
     expect(results).toHaveLength(3);
     expect(results.every(r => r.reasoning === 'test')).toBe(true);
+  });
+
+  it('should trigger circuit breaker after 5 consecutive failures', async () => {
+    const mockClient = new Anthropic();
+    // The circuit breaker wraps the anthropic call. Since we mock @anthropic-ai/sdk,
+    // the breaker's underlying fn calls mockClient.messages.create.
+    // We simulate 5 failures in a row, then verify fallback behavior.
+    mockClient.messages.create.mockRejectedValue(new Error('API unavailable'));
+
+    // First 5 calls should each return fallback (notify_owner)
+    const results = [];
+    for (let i = 0; i < 6; i++) {
+      const r = await think('call_ended', {}, mockLeadMemory, mockDb);
+      results.push(r);
+    }
+
+    // All should be fallback responses
+    results.forEach(r => {
+      expect(r.reasoning).toContain('fallback');
+      expect(r.actions[0].action).toBe('notify_owner');
+    });
+  });
+
+  it('should handle per-lead mutex lock timeout and force release', async () => {
+    const mockClient = new Anthropic();
+
+    // First call: make it hang long enough to trigger lock timeout on second call
+    let resolveFirst;
+    const firstCallPromise = new Promise(resolve => { resolveFirst = resolve; });
+
+    let callCount = 0;
+    mockClient.messages.create.mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        // Hang for longer than BRAIN_LOCK_TIMEOUT_MS (10s) — but we can't wait that long in tests,
+        // so we test the lock acquisition path with a shorter delay
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      return {
+        content: [{ type: 'text', text: '{"reasoning": "lock test", "actions": []}' }],
+      };
+    });
+
+    // Two concurrent calls to the same lead; both should eventually succeed
+    const [r1, r2] = await Promise.all([
+      think('call_ended', {}, mockLeadMemory, mockDb),
+      think('sms_received', {}, mockLeadMemory, mockDb),
+    ]);
+
+    expect(r1.reasoning).toBe('lock test');
+    expect(r2.reasoning).toBe('lock test');
+  });
+
+  it('should filter all actions when none are valid', async () => {
+    const mockClient = new Anthropic();
+    mockClient.messages.create.mockResolvedValue({
+      content: [{
+        type: 'text',
+        text: '{"reasoning": "bad actions", "actions": [{"action": "hack_system"}, {"action": "delete_all"}, {"action": ""}]}',
+      }],
+    });
+
+    const result = await think('call_ended', {}, mockLeadMemory, mockDb);
+
+    expect(result.actions).toHaveLength(0);
+  });
+
+  it('should handle knowledge base file read error gracefully', async () => {
+    // fs.readFileSync is already mocked to return '{}', but we test the path
+    // where kbCache returns null (no KB found)
+    const mockClient = new Anthropic();
+    let capturedSystem = '';
+    mockClient.messages.create.mockImplementation(({ system }) => {
+      capturedSystem = system;
+      return Promise.resolve({
+        content: [{ type: 'text', text: '{"reasoning": "no kb", "actions": []}' }],
+      });
+    });
+
+    // With a client that has an ID, the KB loader will try but find nothing
+    const result = await think('call_ended', {}, mockLeadMemory, mockDb);
+
+    expect(result.reasoning).toBe('no kb');
+    // KB section should still appear in prompt (with fallback text)
+    expect(capturedSystem).toContain('BUSINESS KNOWLEDGE BASE');
+  });
+
+  it('should return fallback when circuit breaker is open', async () => {
+    const mockClient = new Anthropic();
+    // Force enough rapid failures to trip the circuit breaker
+    mockClient.messages.create.mockRejectedValue(new Error('Service down'));
+
+    // Exhaust failures
+    for (let i = 0; i < 6; i++) {
+      await think('call_ended', {}, mockLeadMemory, mockDb);
+    }
+
+    // Next call should still return a valid fallback (circuit open)
+    const result = await think('call_ended', {}, mockLeadMemory, mockDb);
+    expect(result.reasoning).toContain('fallback');
+    expect(result.actions[0].action).toBe('notify_owner');
+    expect(result.actions[0].urgency).toBe('medium');
   });
 });

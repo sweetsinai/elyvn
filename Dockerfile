@@ -1,41 +1,64 @@
-FROM python:3.12-slim
-
-# Install Node.js 20 LTS + build tools for native modules (better-sqlite3)
-RUN apt-get update && apt-get install -y curl build-essential python3 && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
+# =============================================================================
+# Stage 1: Builder — install all dependencies and build dashboard
+# =============================================================================
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Install Python dependencies
-COPY server/requirements.txt server/requirements.txt
-RUN pip install --no-cache-dir -r server/requirements.txt
-
-# Install Node dependencies (root)
-COPY package*.json ./
-RUN npm install
+# Install build tools for native modules (better-sqlite3 needs python3 + build-essential)
+RUN apt-get update && \
+    apt-get install -y python3 build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install bridge dependencies (includes better-sqlite3 native build)
 COPY server/bridge/package*.json server/bridge/
-RUN cd server/bridge && npm install
+RUN cd server/bridge && npm ci
 
 # Install dashboard dependencies
 COPY dashboard/package*.json dashboard/
-RUN cd dashboard && npm install
+RUN cd dashboard && npm ci
 
-# Copy all source
-COPY . .
+# Copy source
+COPY server/ ./server/
+COPY dashboard/ ./dashboard/
 
-# Build dashboard → server/bridge/public/
-RUN npm run build
+# Build dashboard into server/bridge/public/
+RUN cd dashboard && npx vite build
 
-EXPOSE 3001 8000
+# Prune dev dependencies from bridge after build
+RUN cd server/bridge && npm prune --production
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD node -e "fetch('http://localhost:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+# =============================================================================
+# Stage 2: Production — minimal runtime image
+# =============================================================================
+FROM node:20-slim AS production
 
+WORKDIR /app
+
+# Only python3 needed at runtime for better-sqlite3 rebuild edge cases
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy production node_modules (already pruned)
+COPY --from=builder /app/server/bridge/node_modules ./server/bridge/node_modules
+
+# Copy server source (bridge + config)
+COPY --from=builder /app/server/bridge/ ./server/bridge/
+
+# Copy built dashboard assets (already in server/bridge/public from vite build)
+# (included via the server/bridge/ copy above)
+
+# Copy root package.json for metadata only
+COPY package*.json ./
+
+# Non-root user
 RUN addgroup --system app && adduser --system --ingroup app app
 USER app
 
-CMD ["npm", "run", "start"]
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD node -e "fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "server/bridge/index.js"]

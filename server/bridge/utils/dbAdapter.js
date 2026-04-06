@@ -44,6 +44,28 @@ function createDatabase(options = {}) {
   const { runMigrations } = require('./migrations');
   runMigrations(db);
 
+  // Slow query logging — wrap prepare to add timing to all statement methods
+  const originalPrepare = db.prepare.bind(db);
+  db.prepare = function(sql) {
+    const stmt = originalPrepare(sql);
+    const originalRun = stmt.run.bind(stmt);
+    const originalGet = stmt.get.bind(stmt);
+    const originalAll = stmt.all.bind(stmt);
+
+    const wrapWithTiming = (fn) => function(...args) {
+      const start = Date.now();
+      const result = fn(...args);
+      const ms = Date.now() - start;
+      if (ms > 100) logger.warn(`[db] Slow query (${ms}ms): ${sql.substring(0, 200)}`);
+      return result;
+    };
+
+    stmt.run = wrapWithTiming(originalRun);
+    stmt.get = wrapWithTiming(originalGet);
+    stmt.all = wrapWithTiming(originalAll);
+    return stmt;
+  };
+
   // Attach connection metadata
   db._adapter = 'sqlite';
   db._path = dbPath;

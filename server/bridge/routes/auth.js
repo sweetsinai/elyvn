@@ -65,9 +65,8 @@ function verifyToken(token) {
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
     if (!payload || typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
     if (!payload.clientId) return null;
-    // Validate issuer and audience (accept tokens without these for backward compat)
-    if (payload.iss && payload.iss !== JWT_ISSUER) return null;
-    if (payload.aud && payload.aud !== JWT_AUDIENCE) return null;
+    if (payload.iss !== JWT_ISSUER) return null;
+    if (payload.aud !== JWT_AUDIENCE) return null;
     return payload;
   } catch { return null; }
 }

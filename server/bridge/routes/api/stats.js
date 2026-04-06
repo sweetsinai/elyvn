@@ -73,15 +73,17 @@ router.get('/stats/:clientId', (req, res) => {
     }
 
     res.json({
-      calls_this_week: callsThisWeek,
-      calls_last_week: callsLastWeek,
-      calls_trend: callsTrend,
-      messages_this_week: messagesThisWeek,
-      messages_last_week: messagesLastWeek,
-      messages_trend: messagesTrend,
-      bookings_this_week: bookingsThisWeek,
-      estimated_revenue: estimatedRevenue,
-      leads_by_stage: leadsByStage
+      data: {
+        calls_this_week: callsThisWeek,
+        calls_last_week: callsLastWeek,
+        calls_trend: callsTrend,
+        messages_this_week: messagesThisWeek,
+        messages_last_week: messagesLastWeek,
+        messages_trend: messagesTrend,
+        bookings_this_week: bookingsThisWeek,
+        estimated_revenue: estimatedRevenue,
+        leads_by_stage: leadsByStage
+      }
     });
   } catch (err) {
     logger.error('[api] stats error:', err);

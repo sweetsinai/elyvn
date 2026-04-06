@@ -50,7 +50,7 @@ router.get('/messages/:clientId', (req, res) => {
     ).all(...queryParams);
 
     const totalPages = Math.ceil(total / limitNum);
-    res.json({ messages, total, page: pageNum, limit: limitNum, total_pages: totalPages });
+    res.json({ data: messages, meta: { page: pageNum, limit: limitNum, total, total_pages: totalPages } });
   } catch (err) {
     logger.error('[api] messages error:', err);
     res.status(500).json({ error: 'Failed to fetch messages' });

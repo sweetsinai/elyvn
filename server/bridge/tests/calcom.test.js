@@ -430,4 +430,177 @@ describe('calcom', () => {
       expect(headers['cal-api-version']).toBeDefined();
     });
   });
+
+  describe('cancelBooking edge cases', () => {
+    test('cancels booking and returns success with valid ID', async () => {
+      const { cancelBooking } = getModule();
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ status: 'cancelled' })
+      });
+
+      const result = await cancelBooking('booking-cancel-1');
+
+      expect(result.success).toBe(true);
+      const url = global.fetch.mock.calls[0][0];
+      expect(url).toContain('/bookings/booking-cancel-1/cancel');
+    });
+
+    test('handles cancellation of already cancelled booking', async () => {
+      const { cancelBooking } = getModule();
+      global.fetch.mockResolvedValue({
+        ok: false,
+        text: jest.fn().mockResolvedValue('Booking already cancelled')
+      });
+
+      const result = await cancelBooking('booking-already-cancelled');
+
+      expect(result.success).toBe(false);
+    });
+
+    test('handles cancellation with empty booking ID', async () => {
+      const { cancelBooking } = getModule();
+      global.fetch.mockResolvedValue({
+        ok: false,
+        text: jest.fn().mockResolvedValue('Not found')
+      });
+
+      const result = await cancelBooking('');
+
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('reschedule booking (cancel + create)', () => {
+    test('reschedules by cancelling then creating new booking', async () => {
+      const { cancelBooking, createBooking } = getModule();
+
+      // First call: cancel
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ ok: true })
+      });
+
+      const cancelResult = await cancelBooking('booking-old');
+      expect(cancelResult.success).toBe(true);
+
+      // Second call: create new booking at different time
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          data: { id: 'booking-new', uid: 'uid-new', startTime: '2025-04-01T10:00:00Z' }
+        })
+      });
+
+      const createResult = await createBooking({
+        eventTypeId: '123',
+        startTime: '2025-04-01T10:00:00Z',
+        name: 'Jane Smith',
+        email: 'jane@example.com'
+      });
+
+      expect(createResult.success).toBe(true);
+      expect(createResult.booking.id).toBe('booking-new');
+    });
+
+    test('handles reschedule when cancel fails', async () => {
+      const { cancelBooking, createBooking } = getModule();
+
+      global.fetch.mockResolvedValueOnce({
+        ok: false,
+        text: jest.fn().mockResolvedValue('Cannot cancel')
+      });
+
+      const cancelResult = await cancelBooking('booking-old');
+      expect(cancelResult.success).toBe(false);
+      // Should not proceed to create if cancel fails
+    });
+
+    test('handles reschedule when create fails after cancel', async () => {
+      const { cancelBooking, createBooking } = getModule();
+
+      // Cancel succeeds
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ ok: true })
+      });
+
+      const cancelResult = await cancelBooking('booking-old');
+      expect(cancelResult.success).toBe(true);
+
+      // Create fails
+      global.fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        text: jest.fn().mockResolvedValue('Time slot no longer available')
+      });
+
+      const createResult = await createBooking({
+        eventTypeId: '123',
+        startTime: '2025-04-01T10:00:00Z',
+        name: 'Jane Smith',
+        email: 'jane@example.com'
+      });
+
+      expect(createResult.success).toBe(false);
+      expect(createResult.error).toContain('409');
+    });
+  });
+
+  describe('idempotent booking (duplicate calcom_booking_id)', () => {
+    test('creating same booking twice returns success both times', async () => {
+      const { createBooking } = getModule();
+      const bookingData = {
+        eventTypeId: '123',
+        startTime: '2025-03-30T14:00:00Z',
+        name: 'John Doe',
+        email: 'john@example.com',
+        metadata: { calcom_booking_id: 'idempotent-123' }
+      };
+
+      // First call succeeds
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          data: { id: 'booking-1', uid: 'uid-1' }
+        })
+      });
+
+      const first = await createBooking(bookingData);
+      expect(first.success).toBe(true);
+
+      // Second call with same metadata — API might return 409 or succeed
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          data: { id: 'booking-1', uid: 'uid-1' }
+        })
+      });
+
+      const second = await createBooking(bookingData);
+      expect(second.success).toBe(true);
+      expect(second.booking.id).toBe('booking-1');
+    });
+
+    test('duplicate booking returns API error gracefully', async () => {
+      const { createBooking } = getModule();
+
+      global.fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        text: jest.fn().mockResolvedValue('Booking already exists for this time slot')
+      });
+
+      const result = await createBooking({
+        eventTypeId: '123',
+        startTime: '2025-03-30T14:00:00Z',
+        name: 'John Doe',
+        email: 'john@example.com',
+        metadata: { calcom_booking_id: 'dup-456' }
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('409');
+    });
+  });
 });

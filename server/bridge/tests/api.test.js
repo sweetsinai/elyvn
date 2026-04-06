@@ -352,9 +352,9 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get('/api/clients')
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('clients');
-      expect(Array.isArray(res.body.clients)).toBe(true);
-      expect(res.body.clients.length).toBeGreaterThan(0);
+      expect(res.body).toHaveProperty('data');
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data.length).toBeGreaterThan(0);
     });
 
     test('should include test client in response', async () => {
@@ -362,7 +362,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get('/api/clients')
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      const testClient = res.body.clients.find(c => c.id === testClientId);
+      const testClient = res.body.data.find(c => c.id === testClientId);
       expect(testClient).toBeDefined();
       expect(testClient.business_name).toBe('Test Business');
     });
@@ -398,12 +398,12 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/stats/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('calls_this_week');
-      expect(res.body).toHaveProperty('calls_trend');
-      expect(res.body).toHaveProperty('messages_this_week');
-      expect(res.body).toHaveProperty('bookings_this_week');
-      expect(res.body).toHaveProperty('estimated_revenue');
-      expect(res.body).toHaveProperty('leads_by_stage');
+      expect(res.body.data).toHaveProperty('calls_this_week');
+      expect(res.body.data).toHaveProperty('calls_trend');
+      expect(res.body.data).toHaveProperty('messages_this_week');
+      expect(res.body.data).toHaveProperty('bookings_this_week');
+      expect(res.body.data).toHaveProperty('estimated_revenue');
+      expect(res.body.data).toHaveProperty('leads_by_stage');
     });
 
     test('should calculate trends correctly', async () => {
@@ -411,8 +411,8 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/stats/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(typeof res.body.calls_trend).toBe('number');
-      expect(res.body.calls_trend).toBeGreaterThanOrEqual(-100);
+      expect(typeof res.body.data.calls_trend).toBe('number');
+      expect(res.body.data.calls_trend).toBeGreaterThanOrEqual(-100);
     });
 
     test('should include all lead stages', async () => {
@@ -422,7 +422,7 @@ describe('API Routes - Comprehensive Coverage', () => {
       expect(res.status).toBe(200);
       const stages = ['new', 'contacted', 'qualified', 'booked', 'completed', 'lost'];
       stages.forEach(stage => {
-        expect(res.body.leads_by_stage).toHaveProperty(stage);
+        expect(res.body.data.leads_by_stage).toHaveProperty(stage);
       });
     });
 
@@ -431,7 +431,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/stats/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body.estimated_revenue).toBeGreaterThanOrEqual(0);
+      expect(res.body.data.estimated_revenue).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -449,11 +449,12 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/leads/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('leads');
-      expect(res.body).toHaveProperty('total');
-      expect(res.body).toHaveProperty('page');
-      expect(res.body).toHaveProperty('limit');
-      expect(res.body).toHaveProperty('total_pages');
+      expect(res.body).toHaveProperty('data');
+      expect(res.body).toHaveProperty('meta');
+      expect(res.body.meta).toHaveProperty('total');
+      expect(res.body.meta).toHaveProperty('page');
+      expect(res.body.meta).toHaveProperty('limit');
+      expect(res.body.meta).toHaveProperty('total_pages');
     });
 
     test('should include test lead in results', async () => {
@@ -461,7 +462,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/leads/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      const testLead = res.body.leads.find(l => l.id === testLeadId);
+      const testLead = res.body.data.find(l => l.id === testLeadId);
       expect(testLead).toBeDefined();
       expect(testLead.name).toBe('John Doe');
       expect(testLead.phone).toBe('+14155551234');
@@ -472,7 +473,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/leads/${testClientId}?stage=contacted`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      res.body.leads.forEach(lead => {
+      res.body.data.forEach(lead => {
         expect(lead.stage).toBe('contacted');
       });
     });
@@ -482,9 +483,9 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/leads/${testClientId}?page=1&limit=10`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body.page).toBe(1);
-      expect(res.body.limit).toBe(10);
-      expect(res.body.leads.length).toBeLessThanOrEqual(10);
+      expect(res.body.meta.page).toBe(1);
+      expect(res.body.meta.limit).toBe(10);
+      expect(res.body.data.length).toBeLessThanOrEqual(10);
     });
 
     test('should include recent interactions with leads', async () => {
@@ -492,7 +493,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/leads/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      const testLead = res.body.leads.find(l => l.id === testLeadId);
+      const testLead = res.body.data.find(l => l.id === testLeadId);
       if (testLead) {
         expect(testLead).toHaveProperty('recent_calls');
         expect(testLead).toHaveProperty('recent_messages');
@@ -506,7 +507,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/leads/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      res.body.leads.forEach(lead => {
+      res.body.data.forEach(lead => {
         expect(lead.recent_calls.length).toBeLessThanOrEqual(3);
         expect(lead.recent_messages.length).toBeLessThanOrEqual(3);
       });
@@ -527,12 +528,13 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/calls/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('calls');
-      expect(res.body).toHaveProperty('total');
-      expect(res.body).toHaveProperty('page');
-      expect(res.body).toHaveProperty('limit');
-      expect(res.body).toHaveProperty('total_pages');
-      expect(Array.isArray(res.body.calls)).toBe(true);
+      expect(res.body).toHaveProperty('data');
+      expect(res.body).toHaveProperty('meta');
+      expect(res.body.meta).toHaveProperty('total');
+      expect(res.body.meta).toHaveProperty('page');
+      expect(res.body.meta).toHaveProperty('limit');
+      expect(res.body.meta).toHaveProperty('total_pages');
+      expect(Array.isArray(res.body.data)).toBe(true);
     });
 
     test('should include test call in results', async () => {
@@ -540,7 +542,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/calls/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      const testCall = res.body.calls.find(c => c.id === testCallId);
+      const testCall = res.body.data.find(c => c.id === testCallId);
       expect(testCall).toBeDefined();
       expect(testCall.outcome).toBe('booked');
       expect(testCall.duration).toBe(600);
@@ -551,7 +553,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/calls/${testClientId}?outcome=booked`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      res.body.calls.forEach(call => {
+      res.body.data.forEach(call => {
         expect(call.outcome).toBe('booked');
       });
     });
@@ -561,9 +563,9 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/calls/${testClientId}?page=1&limit=5`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body.page).toBe(1);
-      expect(res.body.limit).toBe(5);
-      expect(res.body.calls.length).toBeLessThanOrEqual(5);
+      expect(res.body.meta.page).toBe(1);
+      expect(res.body.meta.limit).toBe(5);
+      expect(res.body.data.length).toBeLessThanOrEqual(5);
     });
 
     test('should clamp limit to maximum of 100', async () => {
@@ -571,7 +573,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/calls/${testClientId}?limit=999`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body.limit).toBeLessThanOrEqual(100);
+      expect(res.body.meta.limit).toBeLessThanOrEqual(100);
     });
 
     test('should filter by minimum score', async () => {
@@ -579,7 +581,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/calls/${testClientId}?minScore=5`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      res.body.calls.forEach(call => {
+      res.body.data.forEach(call => {
         if (call.score !== null && call.score !== undefined) {
           expect(call.score).toBeGreaterThanOrEqual(5);
         }
@@ -621,8 +623,8 @@ describe('API Routes - Comprehensive Coverage', () => {
         .set('x-api-key', 'test-api-key-12345')
         .send({ stage: 'qualified' });
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.stage).toBe('qualified');
+      expect(res.body.data.success).toBe(true);
+      expect(res.body.data.stage).toBe('qualified');
     });
 
     test('should return 404 for non-existent lead', async () => {
@@ -643,7 +645,7 @@ describe('API Routes - Comprehensive Coverage', () => {
           .set('x-api-key', 'test-api-key-12345')
           .send({ stage });
         expect(res.status).toBe(200);
-        expect(res.body.stage).toBe(stage);
+        expect(res.body.data.stage).toBe(stage);
       }
     });
   });
@@ -667,8 +669,8 @@ describe('API Routes - Comprehensive Coverage', () => {
           owner_name: 'Jane Doe'
         });
       expect(res.status).toBe(201);
-      expect(res.body.client).toBeDefined();
-      expect(res.body.client.business_name).toBe('New Test Business');
+      expect(res.body.data).toBeDefined();
+      expect(res.body.data.business_name).toBe('New Test Business');
     });
   });
 
@@ -698,8 +700,8 @@ describe('API Routes - Comprehensive Coverage', () => {
         .set('x-api-key', 'test-api-key-12345')
         .send({ business_name: 'Updated Business Name', avg_ticket: 200 });
       expect(res.status).toBe(200);
-      expect(res.body.client.business_name).toBe('Updated Business Name');
-      expect(res.body.client.avg_ticket).toBe(200);
+      expect(res.body.data.business_name).toBe('Updated Business Name');
+      expect(res.body.data.avg_ticket).toBe(200);
     });
 
     test('should reject non-whitelisted fields', async () => {
@@ -711,7 +713,7 @@ describe('API Routes - Comprehensive Coverage', () => {
           business_name: 'Safe Update'
         });
       expect(res.status).toBe(200);
-      expect(res.body.client.business_name).toBe('Safe Update');
+      expect(res.body.data.business_name).toBe('Safe Update');
     });
 
     test('should return 400 with no valid fields', async () => {
@@ -738,11 +740,12 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/messages/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('messages');
-      expect(res.body).toHaveProperty('total');
-      expect(res.body).toHaveProperty('page');
-      expect(res.body).toHaveProperty('limit');
-      expect(res.body).toHaveProperty('total_pages');
+      expect(res.body).toHaveProperty('data');
+      expect(res.body).toHaveProperty('meta');
+      expect(res.body.meta).toHaveProperty('total');
+      expect(res.body.meta).toHaveProperty('page');
+      expect(res.body.meta).toHaveProperty('limit');
+      expect(res.body.meta).toHaveProperty('total_pages');
     });
 
     test('should include test message in results', async () => {
@@ -750,7 +753,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/messages/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      const testMsg = res.body.messages.find(m => m.id === testMessageId);
+      const testMsg = res.body.data.find(m => m.id === testMessageId);
       expect(testMsg).toBeDefined();
       expect(testMsg.body).toBe('Hello, interested in your service');
     });
@@ -760,8 +763,8 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/messages/${testClientId}?page=1&limit=5`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body.page).toBe(1);
-      expect(res.body.limit).toBe(5);
+      expect(res.body.meta.page).toBe(1);
+      expect(res.body.meta.limit).toBe(5);
     });
   });
 
@@ -779,8 +782,8 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/bookings/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('bookings');
-      expect(Array.isArray(res.body.bookings)).toBe(true);
+      expect(res.body).toHaveProperty('data');
+      expect(Array.isArray(res.body.data)).toBe(true);
     });
   });
 
@@ -798,8 +801,8 @@ describe('API Routes - Comprehensive Coverage', () => {
         .get(`/api/reports/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345');
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('reports');
-      expect(Array.isArray(res.body.reports)).toBe(true);
+      expect(res.body).toHaveProperty('data');
+      expect(Array.isArray(res.body.data)).toBe(true);
     });
   });
 

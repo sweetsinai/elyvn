@@ -1,0 +1,116 @@
+'use strict';
+
+const telegram = require('../../utils/telegram');
+const { logger } = require('../../utils/logger');
+const { handleCommand } = require('./commands');
+
+// Rate limiting for Telegram callback queries
+const callbackRateLimits = new Map();
+const CALLBACK_RATE_LIMIT = 10; // max callbacks per minute per chatId
+const CALLBACK_RATE_WINDOW = 60000; // 1 minute
+
+function callbackRateLimit(chatId) {
+  const now = Date.now();
+  const record = callbackRateLimits.get(chatId);
+
+  if (record) {
+    // Clean old entries
+    record.timestamps = record.timestamps.filter(t => now - t < CALLBACK_RATE_WINDOW);
+    if (record.timestamps.length >= CALLBACK_RATE_LIMIT) {
+      logger.warn(`[telegram] Callback rate limit exceeded for chatId ${chatId}`);
+      return false; // Rate limited
+    }
+    record.timestamps.push(now);
+  } else {
+    callbackRateLimits.set(chatId, { timestamps: [now] });
+  }
+
+  // Cleanup old entries every 5 minutes
+  if (callbackRateLimits.size > 10000) {
+    for (const [k, v] of callbackRateLimits) {
+      if (now - Math.max(...v.timestamps) > CALLBACK_RATE_WINDOW) callbackRateLimits.delete(k);
+    }
+  }
+
+  return true; // Not rate limited
+}
+
+async function handleCallback(db, callbackQuery) {
+  if (!callbackQuery) return;
+  const chatId = String(callbackQuery.message?.chat?.id || '');
+  const data = callbackQuery.data || '';
+  const callbackId = callbackQuery.id;
+
+  if (!chatId || !data) return;
+
+  // Rate limit callback queries
+  if (!callbackRateLimit(chatId)) {
+    logger.warn(`[telegram] Callback rate limited for chatId ${chatId}`);
+    return;
+  }
+
+  // ── Quick-action buttons (no typing needed) ──
+  if (data.startsWith('quick:')) {
+    const action = data.split(':')[1];
+    await telegram.answerCallback(callbackId, 'Loading...');
+    // Simulate the command by building a fake message and running handleCommand
+    const fakeMessage = {
+      chat: { id: chatId },
+      from: callbackQuery.from,
+      text: `/${action}`,
+    };
+    await handleCommand(db, fakeMessage).catch(err =>
+      logger.error('[telegram] quick-action error:', err)
+    );
+    return;
+  }
+
+  if (data.startsWith('transcript:')) {
+    const callId = data.split(':')[1];
+    const call = db.prepare('SELECT transcript, caller_phone, created_at, summary FROM calls WHERE call_id = ?').get(callId);
+    if (call && call.transcript) {
+      const transcript = call.transcript;
+      if (transcript.length > 3500) {
+        // Send as downloadable .txt file for long transcripts
+        const header = [
+          `ELYVN Call Transcript`,
+          `Call ID: ${callId}`,
+          `Caller: ${call.caller_phone || 'unknown'}`,
+          `Date: ${call.created_at || 'unknown'}`,
+          call.summary ? `Summary: ${call.summary}` : '',
+          '─'.repeat(50),
+          '',
+        ].filter(Boolean).join('\n');
+        const filename = `transcript-${callId.substring(0, 8)}.txt`;
+        await telegram.sendDocument(chatId, header + transcript, filename, `<b>Full transcript</b> (${transcript.length} chars)`);
+      } else {
+        await telegram.sendMessage(chatId, `<b>Transcript</b>\n\n${transcript}`);
+      }
+    } else {
+      await telegram.sendMessage(chatId, 'Transcript not available.');
+    }
+    await telegram.answerCallback(callbackId, 'Transcript sent');
+  } else if (data.startsWith('msg_ok:')) {
+    await telegram.answerCallback(callbackId, 'Noted — AI reply was good');
+  } else if (data.startsWith('msg_takeover:')) {
+    const parts = data.split(':');
+    const phone = parts[2] || '';
+    await telegram.answerCallback(callbackId, "You're handling this one");
+    if (chatId) {
+      await telegram.sendMessage(chatId, `You're handling this one.${phone ? ` Contact: ${phone}` : ''}`);
+    }
+  } else if (data.startsWith('cancel_speed:')) {
+    const leadId = data.split(':')[1];
+    try {
+      const { cancelJobs } = require('../../utils/jobQueue');
+      const cancelled = cancelJobs(db, { payloadContains: leadId });
+      db.prepare("UPDATE followups SET status = 'cancelled' WHERE lead_id = ? AND status = 'scheduled'").run(leadId);
+      await telegram.answerCallback(callbackId, `Cancelled ${cancelled} jobs`);
+      await telegram.sendMessage(chatId, `⏹ Speed sequence cancelled for lead.`);
+    } catch (err) {
+      await telegram.answerCallback(callbackId, 'Error cancelling');
+    }
+  }
+}
+
+module.exports = { handleCallback };

@@ -40,7 +40,7 @@ router.get('/clients', (req, res) => {
     } else {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    res.json({ clients, page, limit, total, total_pages: Math.ceil(total / limit) });
+    res.json({ data: clients, meta: { page, limit, total, total_pages: Math.ceil(total / limit) } });
   } catch (err) {
     logger.error('[api] clients error:', err);
     res.status(500).json({ error: 'Failed to fetch clients' });
@@ -158,7 +158,7 @@ router.post('/clients', async (req, res) => {
     }
 
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
-    res.status(201).json({ client });
+    res.status(201).json({ data: client });
   } catch (err) {
     logger.error('[api] create client error:', err);
     res.status(500).json({ error: 'Failed to create client' });
@@ -251,7 +251,7 @@ router.put('/clients/:clientId', async (req, res) => {
     }
 
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
-    res.json({ client });
+    res.json({ data: client });
   } catch (err) {
     logger.error('[api] update client error:', err);
     res.status(500).json({ error: 'Failed to update client' });

@@ -365,8 +365,8 @@ describe('Integration Tests - Webhook → DB Flows', () => {
         .set('x-api-key', testApiKey)
         .expect(200);
 
-      expect(response.body.clients).toBeDefined();
-      expect(Array.isArray(response.body.clients)).toBe(true);
+      expect(response.body.data).toBeDefined();
+      expect(Array.isArray(response.body.data)).toBe(true);
     });
 
     test('GET /api/clients with invalid key → returns 401', async () => {
@@ -389,9 +389,9 @@ describe('Integration Tests - Webhook → DB Flows', () => {
         .set('x-api-key', testApiKey)
         .expect(200);
 
-      expect(Array.isArray(response.body.clients)).toBe(true);
-      if (response.body.clients.length > 0) {
-        const client = response.body.clients[0];
+      expect(Array.isArray(response.body.data)).toBe(true);
+      if (response.body.data.length > 0) {
+        const client = response.body.data[0];
         expect(client.id).toBeDefined();
         expect(client.name).toBeDefined();
       }

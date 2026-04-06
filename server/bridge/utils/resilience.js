@@ -142,6 +142,13 @@ class CircuitBreaker {
       throw err;
     }
   }
+
+  reset() {
+    this.state = 'closed';
+    this.failures = [];
+    this.lastFailureTime = null;
+    this.cooldownUntil = null;
+  }
 }
 
 module.exports = { withFallback, withTimeout, withRetry, CircuitBreaker };

@@ -250,4 +250,4 @@ function checkGuardrails(db, lead, client) {
   return warnings;
 }
 
-module.exports = { think };
+module.exports = { think, _claudeBreaker: claudeBreaker, _leadLocks: leadLocks };

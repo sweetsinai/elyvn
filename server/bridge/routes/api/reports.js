@@ -18,7 +18,7 @@ router.get('/reports/:clientId', (req, res) => {
       'SELECT * FROM weekly_reports WHERE client_id = ? ORDER BY created_at DESC LIMIT 12'
     ).all(clientId);
 
-    res.json({ reports });
+    res.json({ data: reports });
   } catch (err) {
     logger.error('[api] reports error:', err);
     res.status(500).json({ error: 'Failed to fetch reports' });
