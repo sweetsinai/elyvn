@@ -2,6 +2,22 @@ const express = require('express');
 const router = express.Router();
 const { randomUUID } = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
+
+// Replay prevention: track recently seen webhook IDs (bounded in-memory set)
+const MAX_NONCE_SET_SIZE = 10000;
+const processedNonces = new Set();
+const nonceQueue = []; // For FIFO eviction
+
+function trackNonce(nonce) {
+  if (processedNonces.has(nonce)) return false; // Already seen
+  if (processedNonces.size >= MAX_NONCE_SET_SIZE) {
+    const oldest = nonceQueue.shift();
+    processedNonces.delete(oldest);
+  }
+  processedNonces.add(nonce);
+  nonceQueue.push(nonce);
+  return true; // First time seen
+}
 const { sendSMS, sendSMSToOwner } = require('../utils/sms');
 const telegram = require('../utils/telegram');
 const config = require('../utils/config');
@@ -57,6 +73,13 @@ router.post('/', (req, res) => {
   const body = req.body || {};
   const event = body.event;
   const call = body.call || {};
+
+  // Nonce / replay prevention — deduplicate within the 5-minute timestamp window
+  const webhookNonce = `${body.call_id || (call && call.call_id) || ''}-${event || req.path}`;
+  if (webhookNonce && webhookNonce !== '-' && !trackNonce(webhookNonce)) {
+    logger.warn(`[retell] Duplicate webhook rejected: ${webhookNonce}`);
+    return res.status(200).json({ received: true }); // 200 to prevent retries
+  }
 
   // Always respond 200 immediately
   res.status(200).json({ received: true });

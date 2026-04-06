@@ -90,10 +90,11 @@ async function processJobs(db, handlers) {
           continue;
         }
 
-        // Mark as processing IMMEDIATELY to prevent another tick from picking up the same job (TOCTOU fix)
-        db.prepare(
-          "UPDATE job_queue SET status = 'processing', updated_at = datetime('now') WHERE id = ?"
+        // Atomically claim the job — if another worker already claimed it, changes === 0 → skip
+        const claimed = db.prepare(
+          "UPDATE job_queue SET status = 'processing', updated_at = datetime('now') WHERE id = ? AND status = 'pending'"
         ).run(job.id);
+        if (claimed.changes === 0) continue;
 
         let payload = job.payload;
         if (typeof payload === 'string') {

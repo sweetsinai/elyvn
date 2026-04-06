@@ -101,14 +101,38 @@ async function handleCallback(db, callbackQuery) {
     }
   } else if (data.startsWith('cancel_speed:')) {
     const leadId = data.split(':')[1];
+
+    // Validate UUID format before touching the DB
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!leadId || !UUID_RE.test(leadId)) {
+      logger.warn(`[telegram] cancel_speed: invalid leadId "${leadId}"`);
+      await telegram.answerCallback(callbackId, 'Invalid lead ID.');
+      return;
+    }
+
     try {
-      const { cancelJobs } = require('../../utils/jobQueue');
-      const cancelled = cancelJobs(db, { payloadContains: leadId });
-      db.prepare("UPDATE followups SET status = 'cancelled' WHERE lead_id = ? AND status = 'scheduled'").run(leadId);
-      await telegram.answerCallback(callbackId, `Cancelled ${cancelled} jobs`);
-      await telegram.sendMessage(chatId, `⏹ Speed sequence cancelled for lead.`);
+      const result = db.prepare(
+        `UPDATE followups
+         SET status = 'cancelled'
+         WHERE lead_id = ?
+           AND status = 'scheduled'
+           AND (
+             content_source IN ('speed_to_lead', 'template')
+             OR touch_number IN (1, 2, 3, 4, 5)
+           )`
+      ).run(leadId);
+
+      const n = result.changes;
+      logger.info(`[telegram] cancel_speed: cancelled ${n} scheduled followup(s) for lead ${leadId}`);
+
+      if (n === 0) {
+        await telegram.answerCallback(callbackId, 'No scheduled jobs found for this lead.');
+      } else {
+        await telegram.answerCallback(callbackId, `Speed sequence cancelled for this lead. ${n} job${n !== 1 ? 's' : ''} removed.`);
+      }
     } catch (err) {
-      await telegram.answerCallback(callbackId, 'Error cancelling');
+      logger.error('[telegram] cancel_speed error:', err);
+      await telegram.answerCallback(callbackId, 'Error cancelling speed sequence.');
     }
   }
 }

@@ -2,6 +2,22 @@ const express = require('express');
 const router = express.Router();
 const { randomUUID } = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
+
+// Replay prevention: track recently seen webhook message IDs (bounded in-memory set)
+const MAX_NONCE_SET_SIZE = 10000;
+const processedNonces = new Set();
+const nonceQueue = []; // For FIFO eviction
+
+function trackNonce(nonce) {
+  if (processedNonces.has(nonce)) return false; // Already seen
+  if (processedNonces.size >= MAX_NONCE_SET_SIZE) {
+    const oldest = nonceQueue.shift();
+    processedNonces.delete(oldest);
+  }
+  processedNonces.add(nonce);
+  nonceQueue.push(nonce);
+  return true; // First time seen
+}
 const { sendSMS } = require('../utils/sms');
 const telegram = require('../utils/telegram');
 const { cancelBooking } = require('../utils/calcom');
@@ -141,6 +157,12 @@ router.post('/', (req, res) => {
 async function handleInboundSMS(db, { from, to, body, messageId }) {
   try {
     logger.info(`[telnyx] SMS from ${from ? from.replace(/\d(?=\d{4})/g, '*') : '?'} to ${to} (${(body || '').length} chars)`);
+
+    // Fast in-memory nonce check before hitting the DB
+    if (messageId && !trackNonce(messageId)) {
+      logger.warn(`[telnyx] Duplicate webhook rejected: ${messageId}`);
+      return; // Already responded 200 to caller above
+    }
 
     // Idempotency: skip if this messageId was already processed (webhook retry)
     if (messageId) {

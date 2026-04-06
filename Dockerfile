@@ -29,31 +29,32 @@ RUN cd dashboard && npx vite build
 RUN cd server/bridge && npm prune --production
 
 # =============================================================================
-# Stage 2: Production — minimal runtime image
+# Stage 2: Runtime — minimal production image
 # =============================================================================
-FROM node:20-slim AS production
+FROM node:20-slim AS runtime
+
+# Install dumb-init for proper signal handling and process reaping
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends dumb-init python3 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN addgroup --system app && adduser --system --ingroup app app
 
 WORKDIR /app
 
-# Only python3 needed at runtime for better-sqlite3 rebuild edge cases
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 && \
-    rm -rf /var/lib/apt/lists/*
-
-# Copy production node_modules (already pruned)
+# Copy production node_modules (already pruned in builder)
 COPY --from=builder /app/server/bridge/node_modules ./server/bridge/node_modules
 
-# Copy server source (bridge + config)
+# Copy server source (bridge + built dashboard assets in server/bridge/public/)
 COPY --from=builder /app/server/bridge/ ./server/bridge/
-
-# Copy built dashboard assets (already in server/bridge/public from vite build)
-# (included via the server/bridge/ copy above)
 
 # Copy root package.json for metadata only
 COPY package*.json ./
 
-# Non-root user
-RUN addgroup --system app && adduser --system --ingroup app app
+# Set proper ownership
+RUN chown -R app:app /app
+
 USER app
 
 EXPOSE 3001
@@ -61,4 +62,5 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD node -e "fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "server/bridge/index.js"]

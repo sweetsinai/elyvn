@@ -142,7 +142,7 @@ describe('jobQueue', () => {
       };
 
       mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 0 });
+      mockStatement.run.mockReturnValue({ changes: 1 });
 
       const result = await processJobs(mockDb, { test_job: handler });
 
@@ -164,7 +164,7 @@ describe('jobQueue', () => {
       };
 
       mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 0 });
+      mockStatement.run.mockReturnValue({ changes: 1 });
 
       await processJobs(mockDb, { test_job: handler });
 
@@ -182,7 +182,7 @@ describe('jobQueue', () => {
       };
 
       mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 0 });
+      mockStatement.run.mockReturnValue({ changes: 1 });
 
       await processJobs(mockDb, { test_job: handler });
 
@@ -204,7 +204,7 @@ describe('jobQueue', () => {
       };
 
       mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 0 });
+      mockStatement.run.mockReturnValue({ changes: 1 });
 
       await processJobs(mockDb, { test_job: handler });
 
@@ -380,7 +380,7 @@ describe('jobQueue', () => {
       ];
 
       mockStatement.all.mockReturnValue(jobs);
-      mockStatement.run.mockReturnValue({ changes: 0 });
+      mockStatement.run.mockReturnValue({ changes: 1 });
 
       const result = await processJobs(mockDb, { test_job: handler });
 
@@ -410,7 +410,7 @@ describe('jobQueue', () => {
       ];
 
       mockStatement.all.mockReturnValue(jobs);
-      mockStatement.run.mockReturnValue({ changes: 0 });
+      mockStatement.run.mockReturnValue({ changes: 1 });
 
       const result = await processJobs(mockDb, { test_job: handler });
 
@@ -429,7 +429,7 @@ describe('jobQueue', () => {
       };
 
       mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 0 });
+      mockStatement.run.mockReturnValue({ changes: 1 });
 
       await processJobs(mockDb, { test_job: handler });
 

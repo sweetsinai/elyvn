@@ -255,6 +255,9 @@ const authRateLimiter = createRateLimiterMiddleware(authLimiter);
 const webhookLimiter = new BoundedRateLimiter({ windowMs: 60000, maxRequests: 60, maxEntries: 5000 });
 const webhookRateLimiter = createRateLimiterMiddleware(webhookLimiter);
 
+// Per-API-key rate limit tracking (in-memory, keyed by key record id)
+const apiKeyUsage = new Map(); // { keyId -> { count, windowStart } }
+
 // Apply general rate limiter to all routes
 app.use(generalRateLimiter);
 
@@ -378,6 +381,25 @@ function apiAuth(req, res, next) {
         // Update last_used_at
         db.prepare("UPDATE client_api_keys SET last_used_at = datetime('now') WHERE id = ?").run(keyRecord.id);
         logAudit(db, { action: 'auth_success', clientId: keyRecord.client_id, ip: req.ip, userAgent: req.get('user-agent'), details: { key_id: keyRecord.id, path: req.path } });
+
+        // Enforce per-key rate limit
+        const keyId = keyRecord.id;
+        const now = Date.now();
+        const WINDOW_MS = 60 * 1000; // 1 minute
+        const limit = keyRecord.rate_limit || 60; // default 60 req/min
+        const usage = apiKeyUsage.get(keyId) || { count: 0, windowStart: now };
+        if (now - usage.windowStart > WINDOW_MS) {
+          usage.count = 1;
+          usage.windowStart = now;
+        } else {
+          usage.count++;
+        }
+        apiKeyUsage.set(keyId, usage);
+        if (usage.count > limit) {
+          logger.warn(`[auth] Per-key rate limit exceeded for key ${keyId} (client ${keyRecord.client_id})`);
+          return res.status(429).json({ error: 'Rate limit exceeded', limit, window: '1m' });
+        }
+
         return next();
       }
     } catch (err) {
