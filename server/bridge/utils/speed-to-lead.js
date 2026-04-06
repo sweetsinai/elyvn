@@ -139,8 +139,8 @@ async function triggerSpeedSequence(db, leadData) {
       (email ? `<b>Email:</b> ${email}\n` : '') +
       (service ? `<b>Service:</b> ${service}\n` : '') +
       (message ? `<b>Message:</b> "${String(message).substring(0, 150)}"\n` : '') +
-      `\n✅ Instant SMS sent (0 sec)\n` +
-      `✅ AI callback scheduled (60 sec)\n` +
+      `\n✅ Instant SMS sent\n` +
+      `✅ AI callback scheduled (${callbackDelay < 120000 ? Math.round(callbackDelay / 1000) + 's' : Math.round(callbackDelay / 60000) + 'min'})\n` +
       `✅ Follow-up SMS queued (5 min)\n\n` +
       `<i>Triple-touch sequence running.</i>`,
       {
