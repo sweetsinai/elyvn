@@ -1267,3 +1267,20 @@ section { position: relative; z-index: 2; }
 .footer-legal a:hover {
   color: var(--white) !important;
 }
+
+/* ==========================================
+   SEO INTRO PARAGRAPH
+   ========================================== */
+
+.seo-intro {
+  position: relative;
+  z-index: 2;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px 32px;
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 1.8;
+  color: var(--grey-1);
+  text-align: center;
+}

@@ -16,6 +16,78 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="canonical" href="https://elyvn.net/" />
+  <link rel="apple-touch-icon" href="icon.png" />
+  <meta name="robots" content="index, follow" />
+  <meta property="og:image" content="https://elyvn.net/og-image.png" />
+  <meta name="twitter:image" content="https://elyvn.net/og-image.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "ELYVN",
+    "url": "https://elyvn.net",
+    "logo": "https://elyvn.net/icon.png",
+    "description": "AI-powered receptionist that answers calls, qualifies leads, and books appointments for local service businesses.",
+    "sameAs": ["https://github.com/sweetsinai/elyvn"]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "How does the AI know about my business?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "During setup, you enter your services, hours, and FAQs. The AI uses this as its knowledge base to answer calls accurately. You can update it anytime."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does it sound robotic?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. We use the latest voice AI technology. Callers typically can't tell the difference. It handles natural conversation, interruptions, and complex questions."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can I keep my existing phone number?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. You just set up call forwarding from your existing number to your ELYVN number. Takes 2 minutes. We walk you through it."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What happens if the AI can't handle a call?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "It transfers to you or your team immediately. You get a Telegram alert with the caller's info and what was discussed so you can pick up right where the AI left off."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is there a contract?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. Month-to-month. Cancel anytime. We also offer a 7-day free trial so you can see real results before paying."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How fast can I get started?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "15 minutes. Sign up, enter your business info, and your AI receptionist is live. Most businesses start seeing results within the first week."
+        }
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
 
@@ -23,6 +95,7 @@
   <canvas id="liquid-canvas"></canvas>
 
   <!-- NAV -->
+  <header>
   <nav id="navbar">
     <div class="nav-logo">
       <div class="nav-symbol">
@@ -44,7 +117,9 @@
       <span></span><span></span><span></span>
     </button>
   </nav>
+  </header>
 
+  <main>
   <!-- HERO -->
   <section id="hero">
     <div class="hero-3d-container">
@@ -67,6 +142,8 @@
       <div class="scroll-line"></div>
     </div>
   </section>
+
+  <p class="seo-intro">ELYVN is an AI receptionist and virtual answering service for local businesses. Our AI phone answering service handles inbound calls, qualifies leads, sends follow-up SMS, and books appointments automatically — for dental clinics, HVAC companies, salons, med spas, real estate agents, and more.</p>
 
   <!-- SOCIAL PROOF BAR -->
   <section id="proof-bar">
@@ -145,7 +222,7 @@
   <section id="features" class="section-features">
     <div class="section-inner">
       <div class="section-eyebrow">What's Live Now</div>
-      <h2 class="section-title">Everything running at<br/><span class="mono-text">api.elyvn.net</span></h2>
+      <h2 class="section-title">AI-Powered Features<br/>That Work 24/7</h2>
       <div class="features-grid">
         <div class="feature-card">
           <div class="feature-status">LIVE</div>
@@ -501,6 +578,7 @@
       </div>
     </div>
   </section>
+  </main>
 
   <!-- FOOTER -->
   <footer id="footer">
@@ -529,9 +607,9 @@
   </footer>
 
   <!-- THREE.JS + GSAP -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
-  <script src="app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+  <script defer src="app.js"></script>
 </body>
 </html>
