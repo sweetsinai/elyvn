@@ -149,7 +149,6 @@ async function handleCallEnded(db, call) {
     logger.info(`[retell] call_ended: ${callId}`);
 
     // Idempotency: skip if this call_ended was already processed (webhook retry)
-    // Check outcome (not summary) because call_analyzed can set summary before call_ended arrives
     const alreadyProcessed = db.prepare(
       "SELECT id FROM calls WHERE call_id = ? AND outcome IS NOT NULL"
     ).get(callId);
@@ -159,24 +158,7 @@ async function handleCallEnded(db, call) {
     }
 
     // 1. Fetch full call data from Retell (fall back to webhook payload on failure)
-    let callData = {};
-    if (RETELL_API_KEY) {
-      try {
-        const retellResp = await fetch(`${RETELL_BASE}/get-call/${callId}`, {
-          headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` },
-          signal: AbortSignal.timeout(30000),
-        });
-        if (retellResp.ok) {
-          callData = await retellResp.json();
-        } else {
-          logger.warn(`[retell] Retell API fetch failed for ${callId} (${retellResp.status}), using webhook payload`);
-        }
-      } catch (fetchErr) {
-        logger.warn(`[retell] Retell API fetch error for ${callId}:`, fetchErr.message, '— using webhook payload');
-      }
-    } else {
-      logger.warn('[retell] No RETELL_API_KEY — using webhook payload data only');
-    }
+    const callData = await fetchCallTranscript(callId);
 
     const transcript = callData.transcript || '';
     const duration = callData.call_length || call.duration || call.call_length || 0;
@@ -224,69 +206,11 @@ async function handleCallEnded(db, call) {
         : JSON.stringify(transcript);
 
     // 3. Generate summary and score
-    let summary = '';
-    let score = 5;
+    const { summary, score } = await generateCallSummaryAndScore(transcriptText, callAnalysis, duration);
 
-    // Determine the best text source for summary + scoring
-    const hasTranscript = transcriptText && transcriptText.trim().length >= 10;
-    const analysisSummary = callAnalysis.call_summary || '';
-    const scoringText = hasTranscript ? transcriptText : analysisSummary;
-
-    if (duration <= 15 && !hasTranscript && !analysisSummary) {
-      // Genuinely short call with no content
-      summary = 'Call too short for summary';
-    } else if (scoringText.length >= 10) {
-      // We have text to work with (transcript or call_summary from webhook)
-      try {
-        const summaryResp = await anthropic.messages.create({
-          model: config.ai.model,
-          max_tokens: 150,
-          messages: [{ role: 'user', content: hasTranscript
-            ? `Summarize this phone call transcript in exactly 2 lines. Be specific about what was discussed and any outcomes:\n\n${transcriptText}`
-            : `Rewrite this call summary in 2 clear lines for a business owner:\n\n${analysisSummary}` }]
-        });
-        summary = summaryResp.content[0]?.text || analysisSummary;
-      } catch (err) {
-        logger.error('[retell] Summary generation failed:', err.message);
-        summary = analysisSummary || 'Summary unavailable';
-      }
-
-      // 4. Score lead 1-10
-      try {
-        const scoreResp = await anthropic.messages.create({
-          model: config.ai.model,
-          max_tokens: 10,
-          messages: [{ role: 'user', content: `Score this lead 1-10 based on their interest, urgency, and qualification from this call ${hasTranscript ? 'transcript' : 'summary'}. Reply with ONLY a single number:\n\n${scoringText}` }]
-        });
-        const parsed = parseInt(scoreResp.content[0]?.text?.trim(), 10);
-        if (parsed >= 1 && parsed <= 10) score = parsed;
-      } catch (err) {
-        logger.error('[retell] Lead scoring failed:', err.message);
-      }
-    } else {
-      // No transcript, no analysis summary — use what we have
-      summary = analysisSummary || 'Summary unavailable';
-    }
-
-    // 5. Determine outcome
-    let outcome = 'info_provided';
+    // 4. Determine outcome
     const bookingId = customAnalysis.calcom_booking_id || callData.metadata?.calcom_booking_id;
-    const disconnectionReason = callData.disconnection_reason || call.disconnection_reason || '';
-
-    if (bookingId) {
-      outcome = 'booked';
-    } else if (
-      callAnalysis.agent_transfer ||
-      customAnalysis.transferred ||
-      disconnectionReason === 'agent_transfer' ||
-      disconnectionReason === 'transfer_to_human'
-    ) {
-      outcome = 'transferred';
-    } else if (callAnalysis.voicemail_detected || disconnectionReason === 'voicemail_reached') {
-      outcome = 'voicemail';
-    } else if (duration < 10) {
-      outcome = 'missed';
-    }
+    const outcome = determineOutcome(callData, call, callAnalysis, customAnalysis, duration, bookingId);
 
     // Record metrics
     try {
@@ -298,7 +222,7 @@ async function handleCallEnded(db, call) {
 
     const sentiment = callAnalysis.user_sentiment || 'neutral';
 
-    // 6. Update call record
+    // 5. Update call record
     db.prepare(`
       UPDATE calls SET
         duration = ?,
@@ -326,7 +250,7 @@ async function handleCallEnded(db, call) {
       logger.warn('[retell] WebSocket broadcast error:', err.message);
     }
 
-    // 7. Upsert lead
+    // 6. Upsert lead
     const callerPhone = callRecord.caller_phone;
     const clientId = callRecord.client_id;
 
@@ -356,7 +280,7 @@ async function handleCallEnded(db, call) {
       });
       upsertLead();
 
-      // 8. Store booking reference
+      // 7. Store booking reference
       if (bookingId) {
         const lead = db.prepare('SELECT id FROM leads WHERE phone = ? AND client_id = ?').get(callerPhone, clientId);
         if (lead) {
@@ -366,12 +290,12 @@ async function handleCallEnded(db, call) {
         }
       }
 
-      // 9. Schedule follow-up SMS sequence
+      // 8. Schedule follow-up SMS sequence
       if (outcome !== 'missed' && outcome !== 'voicemail') {
         scheduleFollowUp(db, clientId, callerPhone, outcome);
       }
 
-      // 9a. Voicemail handling — different from missed call
+      // 8a. Voicemail handling — different from missed call
       if (outcome === 'voicemail') {
         try {
           const voicemailLead = db.prepare('SELECT id FROM leads WHERE phone = ? AND client_id = ?').get(callerPhone, clientId);
@@ -413,58 +337,15 @@ async function handleCallEnded(db, call) {
         }
       }
 
-      // 9b. Missed call (but not voicemail) — instant text-back + speed-to-lead + brain
+      // 8b. Missed call (but not voicemail) — instant text-back + speed-to-lead + brain
       if (outcome === 'missed' || duration === 0) {
-        try {
-          const missedClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
-          if (missedClient) {
-            const missedLead = db.prepare('SELECT id FROM leads WHERE phone = ? AND client_id = ?').get(callerPhone, clientId);
-            const missedLeadId = missedLead?.id || randomUUID();
-            if (!missedLead) {
-              db.prepare(`
-                INSERT INTO leads (id, client_id, phone, source, score, stage, last_contact, created_at, updated_at)
-                VALUES (?, ?, ?, 'missed_call', 5, 'new', datetime('now'), datetime('now'), datetime('now'))
-              `).run(missedLeadId, clientId, callerPhone);
-            }
-
-            // Instant text-back (with opt-out check)
-            const textBackMsg = `Hi! Sorry we missed your call. How can we help you today? — ${missedClient.business_name || 'Our team'}`;
-            const missedCallPhone = missedClient.telnyx_phone || missedClient.twilio_phone;
-            await sendSMS(callerPhone, textBackMsg, missedCallPhone, db, clientId)
-              .catch(err => logger.error('[retell] Missed call text-back failed:', err.message));
-
-            // Log text-back in messages
-            db.prepare(`
-              INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at)
-              VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'missed_call_textback', datetime('now'))
-            `).run(randomUUID(), clientId, missedLeadId, callerPhone, textBackMsg);
-
-            // Telegram: missed call alert (always send — missed calls are critical)
-            if (missedClient.telegram_chat_id) {
-              await telegram.sendMessage(missedClient.telegram_chat_id,
-                `&#10060; <b>Missed call</b> from ${callerPhone}\n\nAuto text-back sent.`
-              ).catch(err => logger.error('[retell] Telegram missed-call alert failed:', err.message));
-            }
-
-            // Speed-to-lead sequence
-            const { triggerSpeedSequence } = require('../utils/speed-to-lead');
-            triggerSpeedSequence(db, {
-              leadId: missedLeadId, clientId, phone: callerPhone,
-              name: null, email: null, message: null, service: null,
-              source: 'missed_call', client: missedClient
-            })
-              .catch(err => logger.error('[retell] Missed call speed sequence failed:', err.message));
-
-            // NOTE: Brain decision for missed calls is handled by the general post-call
-            // brain block below (line ~443). Removed duplicate brain call here to prevent
-            // double SMS sends and duplicate follow-ups.
-          }
-        } catch (missedErr) {
-          logger.error('[retell] Missed call handler error:', missedErr.message);
+        const missedClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+        if (missedClient) {
+          await handleMissedCall(db, clientId, callerPhone, missedClient);
         }
       }
 
-      // 10. Notify owner on transfer or complaint
+      // 9. Notify owner on transfer or complaint
       const isComplaint = sentiment === 'negative' || (summary && summary.toLowerCase().includes('complaint'));
       if (outcome === 'transferred' || isComplaint) {
         const client = db.prepare('SELECT owner_phone, business_name FROM clients WHERE id = ?').get(clientId);
@@ -479,26 +360,7 @@ async function handleCallEnded(db, call) {
     }
 
     // === Telegram notification ===
-    try {
-      const clientForNotify = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
-      const telegramChatId = (clientForNotify && clientForNotify.telegram_chat_id) || process.env.TELEGRAM_ADMIN_CHAT_ID;
-      if (telegramChatId && (!clientForNotify || clientForNotify.notification_mode !== 'digest')) {
-        const processedCall = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(callId);
-        if (processedCall) {
-          if (outcome === 'transferred') {
-            const { text } = telegram.formatTransferAlert(processedCall, summary, clientForNotify);
-            telegram.sendMessage(telegramChatId, text)
-              .catch(err => logger.error('[retell] Telegram transfer notify failed:', err.message));
-          } else {
-            const { text, buttons } = telegram.formatCallNotification(processedCall, clientForNotify);
-            telegram.sendMessage(telegramChatId, text, { reply_markup: { inline_keyboard: buttons } })
-              .catch(err => logger.error('[retell] Telegram call notify failed:', err.message));
-          }
-        }
-      }
-    } catch (tgErr) {
-      logger.error('[retell] Telegram notification failed:', tgErr.message);
-    }
+    await notifyOwnerOfCall(db, clientId, callId, outcome, summary);
 
     logger.info(`[retell] call_ended processed: ${callId} outcome=${outcome} score=${score}`);
 
@@ -706,6 +568,182 @@ function scheduleFollowUp(db, clientId, callerPhone, outcome) {
     logger.info(`[retell] Scheduled ${touches.length} follow-ups for ${callerPhone}`);
   } catch (err) {
     logger.error('[retell] scheduleFollowUp error:', err);
+  }
+}
+
+// === Extracted helper functions for handleCallEnded ===
+
+async function fetchCallTranscript(callId) {
+  if (!RETELL_API_KEY) {
+    logger.warn('[retell] No RETELL_API_KEY — using webhook payload data only');
+    return {};
+  }
+  try {
+    const retellResp = await fetch(`${RETELL_BASE}/get-call/${callId}`, {
+      headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (retellResp.ok) {
+      return await retellResp.json();
+    }
+    logger.warn(`[retell] Retell API fetch failed for ${callId} (${retellResp.status}), using webhook payload`);
+    return {};
+  } catch (fetchErr) {
+    logger.warn(`[retell] Retell API fetch error for ${callId}:`, fetchErr.message, '— using webhook payload');
+    return {};
+  }
+}
+
+async function generateCallSummary(transcriptText, callAnalysis) {
+  const hasTranscript = transcriptText && transcriptText.trim().length >= 10;
+  const analysisSummary = callAnalysis.call_summary || '';
+
+  if (!hasTranscript && !analysisSummary) {
+    return 'Summary unavailable';
+  }
+
+  try {
+    const summaryResp = await anthropic.messages.create({
+      model: config.ai.model,
+      max_tokens: 150,
+      messages: [{ role: 'user', content: hasTranscript
+        ? `Summarize this phone call transcript in exactly 2 lines. Be specific about what was discussed and any outcomes:\n\n${transcriptText}`
+        : `Rewrite this call summary in 2 clear lines for a business owner:\n\n${analysisSummary}` }]
+    });
+    return summaryResp.content[0]?.text || analysisSummary || 'Summary unavailable';
+  } catch (err) {
+    logger.error('[retell] Summary generation failed:', err.message);
+    return analysisSummary || 'Summary unavailable';
+  }
+}
+
+async function scoreCall(transcriptText, callAnalysis) {
+  const hasTranscript = transcriptText && transcriptText.trim().length >= 10;
+  const analysisSummary = callAnalysis.call_summary || '';
+  const scoringText = hasTranscript ? transcriptText : analysisSummary;
+
+  if (scoringText.length < 10) return 5;
+
+  try {
+    const scoreResp = await anthropic.messages.create({
+      model: config.ai.model,
+      max_tokens: 10,
+      messages: [{ role: 'user', content: `Score this lead 1-10 based on their interest, urgency, and qualification from this call ${hasTranscript ? 'transcript' : 'summary'}. Reply with ONLY a single number:\n\n${scoringText}` }]
+    });
+    const parsed = parseInt(scoreResp.content[0]?.text?.trim(), 10);
+    if (parsed >= 1 && parsed <= 10) return parsed;
+    return 5;
+  } catch (err) {
+    logger.error('[retell] Lead scoring failed:', err.message);
+    return 5;
+  }
+}
+
+async function generateCallSummaryAndScore(transcriptText, callAnalysis, duration) {
+  const hasTranscript = transcriptText && transcriptText.trim().length >= 10;
+  const analysisSummary = callAnalysis.call_summary || '';
+  const scoringText = hasTranscript ? transcriptText : analysisSummary;
+
+  if (duration <= 15 && !hasTranscript && !analysisSummary) {
+    return { summary: 'Call too short for summary', score: 5 };
+  }
+
+  if (scoringText.length >= 10) {
+    const summary = await generateCallSummary(transcriptText, callAnalysis);
+    const score = await scoreCall(transcriptText, callAnalysis);
+    return { summary, score };
+  }
+
+  return { summary: analysisSummary || 'Summary unavailable', score: 5 };
+}
+
+function determineOutcome(callData, call, callAnalysis, customAnalysis, duration, bookingId) {
+  const disconnectionReason = callData.disconnection_reason || call.disconnection_reason || '';
+
+  if (bookingId) {
+    return 'booked';
+  } else if (
+    callAnalysis.agent_transfer ||
+    customAnalysis.transferred ||
+    disconnectionReason === 'agent_transfer' ||
+    disconnectionReason === 'transfer_to_human'
+  ) {
+    return 'transferred';
+  } else if (callAnalysis.voicemail_detected || disconnectionReason === 'voicemail_reached') {
+    return 'voicemail';
+  } else if (duration < 10) {
+    return 'missed';
+  }
+  return 'info_provided';
+}
+
+async function handleMissedCall(db, clientId, callerPhone, client) {
+  try {
+    const missedLead = db.prepare('SELECT id FROM leads WHERE phone = ? AND client_id = ?').get(callerPhone, clientId);
+    const missedLeadId = missedLead?.id || randomUUID();
+    if (!missedLead) {
+      db.prepare(`
+        INSERT INTO leads (id, client_id, phone, source, score, stage, last_contact, created_at, updated_at)
+        VALUES (?, ?, ?, 'missed_call', 5, 'new', datetime('now'), datetime('now'), datetime('now'))
+      `).run(missedLeadId, clientId, callerPhone);
+    }
+
+    // Instant text-back (with opt-out check)
+    const textBackMsg = `Hi! Sorry we missed your call. How can we help you today? — ${client.business_name || 'Our team'}`;
+    const missedCallPhone = client.telnyx_phone || client.twilio_phone;
+    await sendSMS(callerPhone, textBackMsg, missedCallPhone, db, clientId)
+      .catch(err => logger.error('[retell] Missed call text-back failed:', err.message));
+
+    // Log text-back in messages
+    db.prepare(`
+      INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at)
+      VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'missed_call_textback', datetime('now'))
+    `).run(randomUUID(), clientId, missedLeadId, callerPhone, textBackMsg);
+
+    // Telegram: missed call alert (always send — missed calls are critical)
+    if (client.telegram_chat_id) {
+      await telegram.sendMessage(client.telegram_chat_id,
+        `&#10060; <b>Missed call</b> from ${callerPhone}\n\nAuto text-back sent.`
+      ).catch(err => logger.error('[retell] Telegram missed-call alert failed:', err.message));
+    }
+
+    // Speed-to-lead sequence
+    const { triggerSpeedSequence } = require('../utils/speed-to-lead');
+    triggerSpeedSequence(db, {
+      leadId: missedLeadId, clientId, phone: callerPhone,
+      name: null, email: null, message: null, service: null,
+      source: 'missed_call', client
+    })
+      .catch(err => logger.error('[retell] Missed call speed sequence failed:', err.message));
+
+    // NOTE: Brain decision for missed calls is handled by the general post-call
+    // brain block in handleCallEnded. Removed duplicate brain call here to prevent
+    // double SMS sends and duplicate follow-ups.
+  } catch (missedErr) {
+    logger.error('[retell] Missed call handler error:', missedErr.message);
+  }
+}
+
+async function notifyOwnerOfCall(db, clientId, callId, outcome, summary) {
+  try {
+    const clientForNotify = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    const telegramChatId = (clientForNotify && clientForNotify.telegram_chat_id) || process.env.TELEGRAM_ADMIN_CHAT_ID;
+    if (telegramChatId && (!clientForNotify || clientForNotify.notification_mode !== 'digest')) {
+      const processedCall = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(callId);
+      if (processedCall) {
+        if (outcome === 'transferred') {
+          const { text } = telegram.formatTransferAlert(processedCall, summary, clientForNotify);
+          telegram.sendMessage(telegramChatId, text)
+            .catch(err => logger.error('[retell] Telegram transfer notify failed:', err.message));
+        } else {
+          const { text, buttons } = telegram.formatCallNotification(processedCall, clientForNotify);
+          telegram.sendMessage(telegramChatId, text, { reply_markup: { inline_keyboard: buttons } })
+            .catch(err => logger.error('[retell] Telegram call notify failed:', err.message));
+        }
+      }
+    }
+  } catch (tgErr) {
+    logger.error('[retell] Telegram notification failed:', tgErr.message);
   }
 }
 

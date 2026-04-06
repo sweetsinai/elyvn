@@ -790,7 +790,7 @@ router.post('/chat', async (req, res) => {
           if (!resolvedPath.startsWith(kbDir)) {
             logger.error('[api] KB path traversal attempted');
           } else {
-            const kbData = fs.readFileSync(kbPath, 'utf8');
+            const kbData = await fs.promises.readFile(kbPath, 'utf8');
             systemPrompt += `\n\nBusiness Knowledge Base:\n${kbData}`;
           }
         } catch (err) {

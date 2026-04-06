@@ -187,7 +187,7 @@ router.post('/', async (req, res) => {
           if (!resolvedPath.startsWith(kbBaseDir)) {
             logger.warn(`[twilio] KB path traversal blocked: ${client.kb_path}`);
           } else {
-            kbContent = fs.readFileSync(resolvedPath, 'utf-8');
+            kbContent = await fs.promises.readFile(resolvedPath, 'utf-8');
           }
         } catch (err) {
           logger.warn(`[twilio] KB not found: ${client.kb_path}`);

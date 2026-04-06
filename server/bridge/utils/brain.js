@@ -80,7 +80,7 @@ async function _think(eventType, eventData, leadMemory, db) {
         // Path traversal attempt detected, skip KB load
         logger.error('[brain] KB path traversal attempt detected');
       } else {
-        const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
+        const kbData = JSON.parse(await fs.promises.readFile(kbPath, 'utf8'));
         knowledgeBase = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
         if (knowledgeBase.length > MAX_KB_SIZE) {
           knowledgeBase = knowledgeBase.substring(0, MAX_KB_SIZE) + '\n[...truncated]';
