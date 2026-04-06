@@ -412,20 +412,32 @@ app.use('/webhooks/twilio', webhookRateLimiter, twilioRouter);
 app.use('/webhooks/retell', webhookRateLimiter, retellRouter);
 app.use('/retell-webhook', webhookRateLimiter, retellRouter);
 
+// Version header for /v1 routes
+app.use('/v1', (req, res, next) => {
+  res.setHeader('X-API-Version', '1');
+  next();
+});
+
 // Auth routes (no auth required — signup/login)
 const authRouter = require('./routes/auth');
-app.use('/auth', authRateLimiter, authRouter);
+app.use('/v1/auth', authRateLimiter, authRouter);
+app.use('/auth', authRateLimiter, authRouter); // backward compat
 
 // Billing routes (webhook is public, others need JWT)
 const billingRouter = require('./routes/billing');
 app.use('/billing/webhook', webhookRateLimiter, billingRouter);
-app.use('/billing', billingRouter);
+app.use('/v1/billing', billingRouter);
+app.use('/billing', billingRouter); // backward compat
 
-app.use('/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
+app.use('/v1/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
+app.use('/api/outreach', apiAuth, enforceClientIsolation, outreachRouter); // backward compat
 // Mount onboard routes (before general /api to allow public access)
-app.use('/api', onboardRouter);
-app.use('/api/provision', authRateLimiter, apiAuth, provisionRouter);
-app.use('/api', authRateLimiter, apiAuth, enforceClientIsolation, apiRouter);
+app.use('/v1/api', onboardRouter);
+app.use('/api', onboardRouter); // backward compat
+app.use('/v1/api/provision', authRateLimiter, apiAuth, provisionRouter);
+app.use('/api/provision', authRateLimiter, apiAuth, provisionRouter); // backward compat
+app.use('/v1/api', authRateLimiter, apiAuth, enforceClientIsolation, apiRouter);
+app.use('/api', authRateLimiter, apiAuth, enforceClientIsolation, apiRouter); // backward compat
 
 // Email tracking routes (no auth required)
 app.use('/t', trackingRouter);
@@ -469,7 +481,7 @@ app.get('/metrics', apiAuth, (req, res) => {
 
 // Catch-all for SPA routing — exclude API/webhook/health paths
 app.get('*', (req, res) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/webhooks') || req.path.startsWith('/health') || req.path.startsWith('/test')) {
+  if (req.path.startsWith('/api') || req.path.startsWith('/v1') || req.path.startsWith('/webhooks') || req.path.startsWith('/health') || req.path.startsWith('/test')) {
     return res.status(404).json({ error: 'Not found' });
   }
   const indexPath = path.join(__dirname, 'public', 'index.html');

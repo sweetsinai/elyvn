@@ -35,6 +35,8 @@ describe('scheduler branch coverage', () => {
     jest.clearAllMocks();
     db = new Database(':memory:');
     runMigrations(db);
+    // Ensure test client exists for FK constraints
+    db.prepare("INSERT OR IGNORE INTO clients (id, name) VALUES ('client1', 'Test Client')").run();
     process.env.TELEGRAM_BOT_TOKEN = 'test-token';
     jest.useFakeTimers();
   });

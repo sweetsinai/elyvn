@@ -11,11 +11,15 @@ function getLeadMemory(db, phone, clientId) {
 
   // 1. Get or create lead (INSERT ON CONFLICT to prevent TOCTOU race)
   const id = randomUUID();
-  db.prepare(
-    `INSERT INTO leads (id, client_id, phone, score, stage, created_at, updated_at)
-     VALUES (?, ?, ?, 0, 'new', datetime('now'), datetime('now'))
-     ON CONFLICT(client_id, phone) DO NOTHING`
-  ).run(id, clientId, normalizedPhone);
+  try {
+    db.prepare(
+      `INSERT INTO leads (id, client_id, phone, score, stage, created_at, updated_at)
+       VALUES (?, ?, ?, 0, 'new', datetime('now'), datetime('now'))
+       ON CONFLICT(client_id, phone) DO NOTHING`
+    ).run(id, clientId, normalizedPhone);
+  } catch (err) {
+    // FK constraint fails if client doesn't exist — continue to lookup
+  }
 
   let lead = db.prepare(
     'SELECT * FROM leads WHERE phone = ? AND client_id = ?'
@@ -70,7 +74,7 @@ function getLeadMemory(db, phone, clientId) {
 
   // 7. Derived insights
   const lastInteraction = timeline.length > 0 ? timeline[timeline.length - 1] : null;
-  const hasBooked = lead.stage === 'booked' || !!lead.calcom_booking_id;
+  const hasBooked = lead ? (lead.stage === 'booked' || !!lead.calcom_booking_id) : false;
   const hasBeenTransferred = calls.some(c => c.outcome === 'transferred');
   const pendingFollowups = followups.filter(f => f.status === 'scheduled');
   const daysSinceLastContact = lastInteraction
@@ -93,7 +97,7 @@ function getLeadMemory(db, phone, clientId) {
       hasBeenTransferred,
       pendingFollowups: pendingFollowups.length,
       daysSinceLastContact,
-      highIntent: (lead.score || 0) >= 7,
+      highIntent: (lead?.score || 0) >= 7,
       slippingAway: daysSinceLastContact !== null && daysSinceLastContact >= 2 && !hasBooked,
       multiChannel: calls.length > 0 && messages.length > 0,
     },
