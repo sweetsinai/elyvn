@@ -22,9 +22,22 @@ async function checkReplies(db) {
       tlsOptions: { rejectUnauthorized: false },
     });
 
+    const IMAP_CONNECT_TIMEOUT_MS = 30000;
+
+    const connectPromise = new Promise((resolve, reject) => {
+      imap.once('ready', resolve);
+      imap.once('error', reject);
+      imap.connect();
+    });
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('IMAP connection timeout after 30s')), IMAP_CONNECT_TIMEOUT_MS)
+    );
+
+    await Promise.race([connectPromise, timeoutPromise]);
+
     await new Promise((resolve, reject) => {
-      imap.once('ready', () => {
-        imap.openBox('INBOX', false, (err) => {
+      imap.openBox('INBOX', false, (err) => {
           if (err) { imap.end(); reject(err); return; }
 
           // Search for unseen messages from the last 24h
@@ -130,13 +143,10 @@ async function checkReplies(db) {
             });
           });
         });
-      });
-
-      imap.once('error', (err) => { logger.error('[IMAP] Error:', err.message); reject(err); });
-      imap.connect();
     });
   } catch (err) {
     logger.error('[Replies] checkReplies error:', err.message);
+    try { imap.end(); } catch (_) {}
   }
 }
 

@@ -171,7 +171,7 @@ describe('jobQueue', () => {
       expect(handler).toHaveBeenCalledWith({ key: 'value' }, 'job-1', mockDb);
     });
 
-    it('should keep payload as string if JSON parse fails', async () => {
+    it('should mark job as failed if JSON parse fails', async () => {
       const handler = jest.fn().mockResolvedValue(undefined);
       const job = {
         id: 'job-1',
@@ -186,7 +186,11 @@ describe('jobQueue', () => {
 
       await processJobs(mockDb, { test_job: handler });
 
-      expect(handler).toHaveBeenCalledWith('not json', 'job-1', mockDb);
+      // Handler should NOT be called — job is marked failed instead
+      expect(handler).not.toHaveBeenCalled();
+      expect(mockDb.prepare).toHaveBeenCalledWith(
+        expect.stringContaining("status = 'failed'")
+      );
     });
 
     it('should handle payload already as object', async () => {

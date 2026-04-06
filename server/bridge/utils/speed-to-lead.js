@@ -30,7 +30,21 @@ async function triggerSpeedSequence(db, leadData) {
     return;
   }
 
-  const firstName = name ? name.split(' ')[0] : null;
+  // P1: Double trigger prevention — skip if active sequence already exists for this lead
+  const activeSpeed = db.prepare(`
+    SELECT 1 FROM followups
+    WHERE lead_id = ? AND status = 'scheduled'
+    AND scheduled_at > datetime('now', '-6 hours')
+    LIMIT 1
+  `).get(leadId);
+  if (activeSpeed) {
+    logger.info(`[SpeedToLead] Active sequence found for lead ${leadId} — skipping duplicate trigger`);
+    return;
+  }
+
+  // P1: Lead name sanitization for SMS
+  const safeName = (name || '').replace(/[\r\n\t<>{}]/g, '').substring(0, 50);
+  const firstName = safeName.split(' ')[0] || '';
   const bookingLink = client.calcom_booking_link || '';
   const fromNumber = client.telnyx_phone || client.twilio_phone; // Use telnyx_phone, fallback to twilio_phone for backwards compat
 
@@ -94,8 +108,9 @@ async function triggerSpeedSequence(db, leadData) {
     client
   });
 
-  // === TOUCH 3: Follow-up SMS (5 minutes, but respect business hours) ===
-  scheduleFollowUpSMS(db, { leadId, clientId, phone, name, delayMs: 300000, client });
+  // === TOUCH 3: Follow-up SMS (5 min AFTER the callback, not a hardcoded 5min from now) ===
+  const touch3DelayMs = callbackDelay + (5 * 60 * 1000); // always 5 min AFTER the callback
+  scheduleFollowUpSMS(db, { leadId, clientId, phone, name, delayMs: touch3DelayMs, client });
 
   // === TOUCH 4/5: Standard follow-ups (24h + 72h) — dedup by touch_number ===
   try {
@@ -195,7 +210,8 @@ function scheduleFollowUpSMS(db, options) {
     const { enqueueJob } = require('./jobQueue');
     const { shouldDelayUntilBusinessHours } = require('./businessHours');
 
-    const firstName = name ? name.split(' ')[0] : null;
+    const safeName = (name || '').replace(/[\r\n\t<>{}]/g, '').substring(0, 50);
+    const firstName = safeName.split(' ')[0] || '';
     const bookingLink = client.calcom_booking_link || '';
     const fromNumber = client.telnyx_phone || client.twilio_phone; // Use telnyx_phone, fallback to twilio_phone for backwards compat
 

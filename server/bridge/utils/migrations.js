@@ -615,6 +615,7 @@ const migrations = [
       // SQLite cannot add FK constraints via ALTER TABLE — must rebuild each table.
       // Wrap in a transaction so any failure rolls back completely.
       db.exec('PRAGMA foreign_keys = OFF');
+      try {
 
       const rebuild = db.transaction(() => {
         // --- calls ---
@@ -758,7 +759,9 @@ const migrations = [
 
       rebuild();
 
-      db.exec('PRAGMA foreign_keys = ON');
+      } finally {
+        db.exec('PRAGMA foreign_keys = ON');
+      }
     },
   },
   {
@@ -767,6 +770,25 @@ const migrations = [
     up(db) {
       db.exec('DROP INDEX IF EXISTS idx_leads_client_phone_unique');
     },
+  },
+  {
+    id: '028_reliability_fixes',
+    description: 'Add attempts tracking to followups, ensure job_queue index exists',
+    up(db) {
+      // Add attempts tracking to followups (used by appointmentReminders retry logic)
+      // NOTE: FK cascade inconsistency exists across legacy tables — to be fixed in a future full schema rebuild.
+      // Specifically: followups.lead_id and messages.lead_id use ON DELETE SET NULL in migration 026,
+      // but several other join paths lack cascade rules. Do not patch piecemeal — plan a full rebuild.
+      try {
+        db.exec("ALTER TABLE followups ADD COLUMN attempts INTEGER DEFAULT 0");
+      } catch (e) { /* column may already exist */ }
+
+      // Ensure job_queue has index on status+scheduled_at for efficient polling
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_job_queue_status_scheduled
+               ON job_queue(status, scheduled_at) WHERE status = 'pending'`);
+
+      console.log('[migrations] 028: reliability fixes applied');
+    }
   },
 ];
 

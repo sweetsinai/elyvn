@@ -33,6 +33,8 @@ describe('scheduler branch coverage', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset scheduler initialized flag so each test gets a clean slate
+    require('../utils/scheduler').stopScheduler();
     db = new Database(':memory:');
     runMigrations(db);
     // Ensure test client exists for FK constraints

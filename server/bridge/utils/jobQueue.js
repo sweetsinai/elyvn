@@ -90,12 +90,20 @@ async function processJobs(db, handlers) {
           continue;
         }
 
+        // Mark as processing IMMEDIATELY to prevent another tick from picking up the same job (TOCTOU fix)
+        db.prepare(
+          "UPDATE job_queue SET status = 'processing', updated_at = datetime('now') WHERE id = ?"
+        ).run(job.id);
+
         let payload = job.payload;
         if (typeof payload === 'string') {
           try {
             payload = JSON.parse(payload);
-          } catch (_) {
-            // Keep as string if parse fails
+          } catch (parseErr) {
+            logger.error(`[jobQueue] Failed to parse payload for job ${job.id}: ${parseErr.message}`);
+            db.prepare("UPDATE job_queue SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?")
+              .run('Payload parse error: ' + parseErr.message, job.id);
+            continue;
           }
         }
 
@@ -205,19 +213,6 @@ async function recoverStalledJobs(db) {
     if (processingResult.changes > 0) {
       logger.info(`[jobQueue] Recovered ${processingResult.changes} jobs stuck in 'processing' status (crash recovery)`);
       totalRecovered += processingResult.changes;
-    }
-
-    // Recover jobs stuck in 'pending' status for > STALE_JOB_THRESHOLD_MS
-    const staleResult = db.prepare(`
-      UPDATE job_queue
-      SET status = 'pending', scheduled_at = datetime('now'), updated_at = datetime('now')
-      WHERE status = 'pending'
-      AND created_at < datetime('now', '-1 hour')
-    `).run();
-
-    if (staleResult.changes > 0) {
-      logger.info(`[jobQueue] Recovered ${staleResult.changes} jobs stalled in 'pending' for > 1 hour (rescheduled to now)`);
-      totalRecovered += staleResult.changes;
     }
 
     if (totalRecovered > 0) {

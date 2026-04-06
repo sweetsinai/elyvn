@@ -140,15 +140,36 @@ async function processDueReminders(db, sendSMSFn) {
           logger.info(`[appointmentReminders] Sent reminder ${reminder.id} to ${reminder.phone}`);
         } else {
           logger.warn(`[appointmentReminders] Failed to send reminder ${reminder.id}`);
-          db.prepare(
-            "UPDATE followups SET status = 'failed' WHERE id = ?"
-          ).run(reminder.id);
+          // P2: Retry on failure — reschedule up to 3 attempts, then mark failed
+          const attempts = (reminder.attempts || 0) + 1;
+          if (attempts < 3) {
+            const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min later
+            db.prepare(
+              "UPDATE followups SET attempts = ?, scheduled_at = ? WHERE id = ?"
+            ).run(attempts, retryAt, reminder.id);
+            logger.info(`[appointmentReminders] Rescheduled reminder ${reminder.id} (attempt ${attempts}/3) for ${retryAt}`);
+          } else {
+            db.prepare(
+              "UPDATE followups SET status = 'failed', attempts = ? WHERE id = ?"
+            ).run(attempts, reminder.id);
+            logger.warn(`[appointmentReminders] Reminder ${reminder.id} permanently failed after ${attempts} attempts`);
+          }
         }
       } catch (err) {
         logger.error(`[appointmentReminders] Error sending reminder ${reminder.id}:`, err.message);
-        db.prepare(
-          "UPDATE followups SET status = 'failed' WHERE id = ?"
-        ).run(reminder.id);
+        // P2: Retry on exception as well
+        const attempts = (reminder.attempts || 0) + 1;
+        if (attempts < 3) {
+          const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+          db.prepare(
+            "UPDATE followups SET attempts = ?, scheduled_at = ? WHERE id = ?"
+          ).run(attempts, retryAt, reminder.id);
+          logger.info(`[appointmentReminders] Rescheduled reminder ${reminder.id} after error (attempt ${attempts}/3)`);
+        } else {
+          db.prepare(
+            "UPDATE followups SET status = 'failed', attempts = ? WHERE id = ?"
+          ).run(attempts, reminder.id);
+        }
       }
 
       // Small delay between sends

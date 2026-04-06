@@ -34,6 +34,17 @@ router.use((req, res, next) => {
     logger.warn('[calcom-webhook] Invalid webhook signature');
     return res.status(401).json({ error: 'Invalid signature' });
   }
+
+  // Timestamp validation — reject webhooks older than 5 minutes
+  const webhookTimestamp = req.headers['x-cal-timestamp'] || req.body?.createdAt;
+  if (webhookTimestamp) {
+    const ts = new Date(webhookTimestamp).getTime();
+    if (!isNaN(ts) && (Date.now() - ts) > 300000) {
+      logger.warn('[calcom-webhook] Webhook timestamp too old — possible replay attack');
+      return res.status(400).json({ error: 'Webhook expired' });
+    }
+  }
+
   next();
 });
 

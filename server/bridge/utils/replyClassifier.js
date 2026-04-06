@@ -4,7 +4,13 @@ const { logger } = require('./logger');
 
 const anthropic = new Anthropic();
 
+const VALID_CLASSIFICATIONS = ['INTERESTED', 'QUESTION', 'NOT_INTERESTED', 'UNSUBSCRIBE'];
+
 async function classifyReply(emailBody, originalSubject) {
+  // P1: Input sanitization — cap lengths before inserting into prompt
+  const safeSubject = (originalSubject || '').substring(0, 200);
+  const safeBody = (emailBody || '').substring(0, 3000);
+
   try {
     const resp = await anthropic.messages.create({
       model: config.ai.model,
@@ -18,13 +24,28 @@ NOT_INTERESTED: politely or directly declines
 UNSUBSCRIBE: asks to be removed, stop emailing, etc.`,
       messages: [{
         role: 'user',
-        content: `Original subject: ${originalSubject || 'N/A'}\n\nReply:\n${emailBody}`
+        content: `Original subject: ${safeSubject || 'N/A'}\n\nReply:\n${safeBody}`
       }]
     });
 
     const text = resp.content[0]?.text || '';
     const cleaned = text.replace(/```json|```/g, '').trim();
-    return JSON.parse(cleaned);
+    const result = JSON.parse(cleaned);
+
+    // P0: Output validation
+    if (!result || typeof result !== 'object') {
+      throw new Error('Invalid response: expected object');
+    }
+    if (!VALID_CLASSIFICATIONS.includes(result.classification)) {
+      logger.warn(`[replyClassifier] Unexpected classification "${result.classification}" — defaulting to QUESTION`);
+      result.classification = 'QUESTION';
+    }
+    if (typeof result.summary !== 'string') {
+      result.summary = '';
+    }
+    result.summary = result.summary.substring(0, 500);
+
+    return result;
   } catch (err) {
     logger.error('[ReplyClassifier] Error:', err.message);
     return { classification: 'QUESTION', summary: 'Classification failed — needs manual review' };

@@ -11,8 +11,14 @@ const { dailyOutreach } = require('./schedulerJobs/coldEmail');
 const { dailyLeadScoring } = require('./schedulerJobs/leadScoring');
 
 const timerHandles = [];
+let schedulerInitialized = false;
 
 function initScheduler(db) {
+  if (schedulerInitialized) {
+    logger.warn('[scheduler] initScheduler called again — ignoring duplicate initialization');
+    return;
+  }
+  schedulerInitialized = true;
   // Daily summary at 7 PM
   const now = new Date();
   const daily = new Date(now);
@@ -150,12 +156,10 @@ function initScheduler(db) {
 }
 
 function stopScheduler() {
-  for (const handle of timerHandles) {
-    clearTimeout(handle);
-    clearInterval(handle);
-  }
+  timerHandles.forEach(t => { clearInterval(t); clearTimeout(t); });
   timerHandles.length = 0;
-  logger.info('[Scheduler] All timers cleared');
+  schedulerInitialized = false;
+  logger.info('[scheduler] All timers stopped');
 }
 
 module.exports = {

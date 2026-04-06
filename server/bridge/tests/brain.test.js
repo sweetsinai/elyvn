@@ -509,7 +509,7 @@ describe('brain.think', () => {
 
     const result = await think('call_ended', {}, mockLeadMemory, mockDb);
 
-    expect(result.reasoning).toContain('fallback');
+    expect(result.reasoning).toMatch(/parse error|fallback/i);
     expect(result.actions[0].action).toBe('notify_owner');
   });
 

@@ -131,6 +131,7 @@ function handleCallStarted(db, call) {
     db.prepare(`
       INSERT INTO calls (id, call_id, client_id, caller_phone, direction, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(call_id) DO UPDATE SET updated_at = datetime('now')
     `).run(randomUUID(), callId, clientId, callerPhone, direction, new Date().toISOString());
 
     logger.info(`[retell] call_started: ${callId} client=${clientId} from=${callerPhone ? callerPhone.replace(/\d(?=\d{4})/g, '*') : '?'}`);
@@ -190,6 +191,7 @@ async function handleCallEnded(db, call) {
       db.prepare(`
         INSERT INTO calls (id, call_id, client_id, caller_phone, direction, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(call_id) DO UPDATE SET updated_at = datetime('now')
       `).run(randomUUID(), callId, insertedClientId, fromNumber || null, callData.direction || call.direction || 'inbound', new Date().toISOString());
 
       callRecord = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(callId);
@@ -199,11 +201,16 @@ async function handleCallEnded(db, call) {
       }
     }
 
-    const transcriptText = typeof transcript === 'string'
+    let transcriptText = typeof transcript === 'string'
       ? transcript
       : Array.isArray(transcript)
         ? transcript.map(t => `${t.role}: ${t.content}`).join('\n')
         : JSON.stringify(transcript);
+
+    // Cap transcript length to prevent oversized DB writes
+    if (transcriptText && transcriptText.length > 100000) {
+      transcriptText = transcriptText.substring(0, 100000) + '\n[...truncated]';
+    }
 
     // 3. Generate summary and score
     const { summary, score } = await generateCallSummaryAndScore(transcriptText, callAnalysis, duration);
@@ -255,30 +262,17 @@ async function handleCallEnded(db, call) {
     const clientId = callRecord.client_id;
 
     if (callerPhone && clientId) {
-      // Atomic lead upsert inside a transaction to prevent race conditions
-      const upsertLead = db.transaction(() => {
-        const existingLead = db.prepare(
-          'SELECT id FROM leads WHERE phone = ? AND client_id = ?'
-        ).get(callerPhone, clientId);
-
-        const now = new Date().toISOString();
-        if (existingLead) {
-          db.prepare(`
-            UPDATE leads SET
-              score = MAX(score, ?),
-              last_contact = ?,
-              stage = CASE WHEN stage = 'new' THEN 'contacted' ELSE stage END,
-              updated_at = ?
-            WHERE id = ?
-          `).run(score, now, now, existingLead.id);
-        } else {
-          db.prepare(`
-            INSERT INTO leads (id, client_id, phone, score, stage, last_contact, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'new', ?, ?, ?)
-          `).run(randomUUID(), clientId, callerPhone, score, now, now, now);
-        }
-      });
-      upsertLead();
+      // Atomic lead upsert — single statement to prevent race conditions on concurrent webhooks
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO leads (id, client_id, phone, score, stage, last_contact, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'new', datetime('now'), datetime('now'), datetime('now'))
+        ON CONFLICT(client_id, phone) DO UPDATE SET
+          score = MAX(score, excluded.score),
+          last_contact = excluded.last_contact,
+          stage = CASE WHEN stage = 'new' THEN 'contacted' ELSE stage END,
+          updated_at = datetime('now')
+      `).run(randomUUID(), clientId, callerPhone, score);
 
       // 7. Store booking reference
       if (bookingId) {
@@ -707,14 +701,21 @@ async function handleMissedCall(db, clientId, callerPhone, client) {
       ).catch(err => logger.error('[retell] Telegram missed-call alert failed:', err.message));
     }
 
-    // Speed-to-lead sequence
-    const { triggerSpeedSequence } = require('../utils/speed-to-lead');
-    triggerSpeedSequence(db, {
-      leadId: missedLeadId, clientId, phone: callerPhone,
-      name: null, email: null, message: null, service: null,
-      source: 'missed_call', client
-    })
-      .catch(err => logger.error('[retell] Missed call speed sequence failed:', err.message));
+    // Speed-to-lead sequence — skip if an active sequence already exists for this lead
+    const activeSequence = db.prepare(
+      "SELECT id FROM followups WHERE lead_id = ? AND status = 'scheduled' AND scheduled_at >= datetime('now', '-6 hours') LIMIT 1"
+    ).get(missedLeadId);
+    if (activeSequence) {
+      logger.info(`[retell] Skipping speed sequence for ${callerPhone} — active sequence already exists`);
+    } else {
+      const { triggerSpeedSequence } = require('../utils/speed-to-lead');
+      triggerSpeedSequence(db, {
+        leadId: missedLeadId, clientId, phone: callerPhone,
+        name: null, email: null, message: null, service: null,
+        source: 'missed_call', client
+      })
+        .catch(err => logger.error('[retell] Missed call speed sequence failed:', err.message));
+    }
 
     // NOTE: Brain decision for missed calls is handled by the general post-call
     // brain block in handleCallEnded. Removed duplicate brain call here to prevent

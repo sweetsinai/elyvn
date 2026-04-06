@@ -81,7 +81,11 @@ function getOptimalContactTime(db, leadId, clientId) {
 
     if (sortedHours.length > 0) {
       optimal_hour = parseInt(sortedHours[0][0]);
-      confidence = Math.min(0.95, (sortedHours[0][1] / successfulTimes.length) + 0.3);
+      const rawConfidence = Math.min(0.95, (sortedHours[0][1] / successfulTimes.length) + 0.3);
+      // P2: Sample size confidence penalty — full confidence only after 5+ samples
+      const sampleSize = successfulTimes.length || 0;
+      const samplePenalty = Math.min(1.0, sampleSize / 5.0);
+      confidence = Math.min(0.95, rawConfidence * samplePenalty);
     }
 
     // Calculate day distribution

@@ -203,4 +203,24 @@ function cleanupSMSTimers() {
   if (smsRateLimitCleanupInterval) clearInterval(smsRateLimitCleanupInterval);
 }
 
-module.exports = { sendSMS, sendSMSToOwner, cleanupSMSTimers, SMS_PROVIDER };
+function initRateLimiterFromDB(db) {
+  if (!db) return;
+  try {
+    const recentSent = db.prepare(`
+      SELECT phone, MAX(created_at) as last_sent
+      FROM messages
+      WHERE direction = 'outbound' AND created_at > datetime('now', '-1 hour')
+      GROUP BY phone
+    `).all();
+    for (const row of recentSent) {
+      lastSendTime.set(row.phone, new Date(row.last_sent).getTime());
+    }
+    if (recentSent.length > 0) {
+      logger.info(`[sms] Rate limiter pre-populated with ${recentSent.length} recent sends`);
+    }
+  } catch (err) {
+    logger.warn('[sms] Could not pre-populate rate limiter from DB:', err.message);
+  }
+}
+
+module.exports = { sendSMS, sendSMSToOwner, cleanupSMSTimers, initRateLimiterFromDB, SMS_PROVIDER };

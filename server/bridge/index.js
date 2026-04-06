@@ -94,7 +94,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Required for dashboard (React)
+      scriptSrc: ["'self'"], // unsafe-inline and unsafe-eval removed for CSP hardening
       styleSrc: ["'self'", "'unsafe-inline'"], // Required for dashboard styles
       imgSrc: ["'self'", 'data:', 'https:'],
       connectSrc: ["'self'", 'https://api.anthropic.com', 'https://api.retellai.com', 'https://api.stripe.com', 'wss:'],
@@ -129,29 +129,24 @@ function safeCompare(a, b) {
 }
 
 // Middleware — restrict CORS to known origins
-const corsOrigins = process.env.CORS_ORIGINS
-  ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
-  : (process.env.NODE_ENV === 'production'
-    ? [
-        'https://joyful-trust-production.up.railway.app',
-        'https://api.elyvn.net',
-        'https://elyvn.net',
-        'https://www.elyvn.net',
-        'https://elyvn.vercel.app',
-        process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null,
-      ].filter(Boolean)
-    : '*');
-
-if (!process.env.CORS_ORIGINS && process.env.NODE_ENV === 'production') {
-  logger.warn('[WARN] CORS_ORIGINS not set — using Railway production domain. Override with CORS_ORIGINS for custom origins.');
-}
-
-if (corsOrigins === '*') {
-  logger.warn('[WARN] CORS_ORIGINS not set in development — allowing all origins. Set CORS_ORIGINS for production!');
-}
-
 app.use(cors({
-  origin: corsOrigins,
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // same-origin / server-to-server
+    const allowedOrigins = (process.env.CORS_ORIGINS || '')
+      .split(',').map(s => s.trim()).filter(Boolean);
+
+    if (allowedOrigins.length === 0) {
+      if (process.env.NODE_ENV === 'production') {
+        logger.warn('[cors] Request from ' + origin + ' blocked — CORS_ORIGINS not configured');
+        return callback(new Error('CORS not configured'), false);
+      }
+      return callback(null, true); // dev: allow all
+    }
+
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    logger.warn('[cors] Blocked origin: ' + origin);
+    return callback(new Error('Not allowed by CORS'), false);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-api-key', 'Authorization'],

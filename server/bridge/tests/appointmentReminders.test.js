@@ -293,12 +293,13 @@ describe('appointmentReminders', () => {
       expect(reminder.status).toBe('sent');
     });
 
-    test('marks failed reminders as failed', async () => {
+    test('marks failed reminders as failed after max attempts', async () => {
       const sendSMSFn = jest.fn().mockResolvedValue({ success: false });
 
+      // Insert with attempts=3 to trigger immediate failure (retry exhausted)
       db.prepare(`
-        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, scheduled_at, status)
-        VALUES ('fu1', 'lead1', 'client1', 10, 'reminder', 'Text', datetime('now', '-1 minute'), 'scheduled')
+        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, scheduled_at, status, attempts)
+        VALUES ('fu1', 'lead1', 'client1', 10, 'reminder', 'Text', datetime('now', '-1 minute'), 'scheduled', 3)
       `).run();
 
       await processDueReminders(db, sendSMSFn);
@@ -307,12 +308,29 @@ describe('appointmentReminders', () => {
       expect(reminder.status).toBe('failed');
     });
 
+    test('retries failed reminders before marking permanently failed', async () => {
+      const sendSMSFn = jest.fn().mockResolvedValue({ success: false });
+
+      db.prepare(`
+        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, scheduled_at, status, attempts)
+        VALUES ('fu1', 'lead1', 'client1', 10, 'reminder', 'Text', datetime('now', '-1 minute'), 'scheduled', 0)
+      `).run();
+
+      await processDueReminders(db, sendSMSFn);
+
+      // Should be rescheduled for retry, not immediately failed
+      const reminder = db.prepare('SELECT status, attempts FROM followups WHERE id = ?').get('fu1');
+      expect(reminder.status).toBe('scheduled');
+      expect(reminder.attempts).toBe(1);
+    });
+
     test('handles SMS send exceptions', async () => {
       const sendSMSFn = jest.fn().mockRejectedValue(new Error('Send failed'));
 
+      // Insert with attempts=3 to trigger immediate failure
       db.prepare(`
-        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, scheduled_at, status)
-        VALUES ('fu1', 'lead1', 'client1', 10, 'reminder', 'Text', datetime('now', '-1 minute'), 'scheduled')
+        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, scheduled_at, status, attempts)
+        VALUES ('fu1', 'lead1', 'client1', 10, 'reminder', 'Text', datetime('now', '-1 minute'), 'scheduled', 3)
       `).run();
 
       const sent = await processDueReminders(db, sendSMSFn);

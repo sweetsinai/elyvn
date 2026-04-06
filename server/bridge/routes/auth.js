@@ -6,6 +6,10 @@ const router = express.Router();
 const crypto = require('crypto');
 const { logger } = require('../utils/logger');
 
+const loginAttempts = new Map(); // ip+email -> { count, lockedUntil }
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+
 // Simple password hashing using Node.js built-in scrypt (no bcrypt dependency needed)
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -20,12 +24,18 @@ function verifyPassword(password, stored) {
 }
 
 // Simple JWT using HMAC-SHA256 (no jsonwebtoken dependency needed)
-// SECURITY: JWT_SECRET must be set in production. Fallback to ELYVN_API_KEY is acceptable
-// but random generation means tokens won't survive restarts (forces re-login).
-const JWT_SECRET = process.env.JWT_SECRET || process.env.ELYVN_API_KEY || (() => {
-  const fallback = crypto.randomBytes(32).toString('hex');
-  logger.warn('[auth] WARNING: JWT_SECRET not set — using random secret. Tokens will NOT survive server restarts. Set JWT_SECRET in your environment!');
-  return fallback;
+// SECURITY: JWT_SECRET must be set in production.
+const JWT_SECRET = (() => {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (process.env.ELYVN_API_KEY && process.env.ELYVN_API_KEY.length >= 32) {
+    logger.warn('[auth] WARNING: JWT_SECRET not set — falling back to ELYVN_API_KEY. Set JWT_SECRET explicitly.');
+    return process.env.ELYVN_API_KEY;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('[auth] FATAL: JWT_SECRET must be set in production — server cannot start safely');
+  }
+  logger.warn('[auth] WARNING: JWT_SECRET not set — using fixed dev-only secret. NEVER use this in production!');
+  return 'elyvn-dev-secret-do-not-use-in-production';
 })();
 const JWT_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -135,17 +145,40 @@ router.post('/login', (req, res) => {
     return res.status(400).json({ error: 'email and password are required' });
   }
 
+  const attemptKey = `${req.ip}:${(email || '').toLowerCase()}`;
+  const attempts = loginAttempts.get(attemptKey) || { count: 0, lockedUntil: 0 };
+  if (Date.now() < attempts.lockedUntil) {
+    const remaining = Math.ceil((attempts.lockedUntil - Date.now()) / 60000);
+    return res.status(429).json({ error: `Too many failed attempts. Try again in ${remaining} minutes.` });
+  }
+
   try {
     const client = db.prepare('SELECT id, name, owner_email, password_hash, plan, subscription_status FROM clients WHERE owner_email = ?')
       .get(email.toLowerCase().trim());
 
     if (!client || !client.password_hash) {
+      attempts.count = (attempts.count || 0) + 1;
+      if (attempts.count >= LOGIN_MAX_ATTEMPTS) {
+        attempts.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+        attempts.count = 0;
+        logger.warn(`[auth] Account ${email} locked for 15 min after ${LOGIN_MAX_ATTEMPTS} failed attempts`);
+      }
+      loginAttempts.set(attemptKey, attempts);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
     if (!verifyPassword(password, client.password_hash)) {
+      attempts.count = (attempts.count || 0) + 1;
+      if (attempts.count >= LOGIN_MAX_ATTEMPTS) {
+        attempts.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+        attempts.count = 0;
+        logger.warn(`[auth] Account ${email} locked for 15 min after ${LOGIN_MAX_ATTEMPTS} failed attempts`);
+      }
+      loginAttempts.set(attemptKey, attempts);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
+
+    loginAttempts.delete(attemptKey);
 
     const token = createToken({ clientId: client.id, email: client.owner_email });
 

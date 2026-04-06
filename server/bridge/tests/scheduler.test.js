@@ -35,6 +35,8 @@ describe('scheduler', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset scheduler initialized flag so each test gets a clean slate
+    require('../utils/scheduler').stopScheduler();
 
     // Setup telegram mocks with return values
     telegram.formatDailySummary.mockImplementation((stats, schedule, client) => ({
@@ -248,9 +250,10 @@ describe('scheduler', () => {
       const { sendSMS } = require('../utils/sms');
       sendSMS.mockResolvedValue({ success: false });
 
+      // Insert with attempts=3 so retry logic immediately marks as failed
       db.prepare(`
-        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
-        VALUES ('fu1', 'lead1', 'client1', 10, 'reminder', 'Reminder text', 'appointment_reminder_template', datetime('now', '-1 minute'), 'scheduled')
+        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status, attempts)
+        VALUES ('fu1', 'lead1', 'client1', 10, 'reminder', 'Reminder text', 'appointment_reminder_template', datetime('now', '-1 minute'), 'scheduled', 3)
       `).run();
 
       await processAppointmentReminders(db, sendSMS);

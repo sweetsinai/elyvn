@@ -7,6 +7,7 @@
 
 const { BRAIN_LOCK_TIMEOUT_MS, CIRCUIT_BREAKER_FAILURE_WINDOW_MS, CIRCUIT_BREAKER_COOLDOWN_MS } = require('../config/timing');
 const Anthropic = require('@anthropic-ai/sdk');
+const crypto = require('crypto');
 const config = require('./config');
 const fs = require('fs');
 const path = require('path');
@@ -25,6 +26,22 @@ const claudeBreaker = new CircuitBreaker(
 const leadLocks = new Map();
 
 /**
+ * Strip characters that could be used for prompt injection before interpolating
+ * user-controlled data into a prompt string.
+ */
+function sanitizeForPrompt(str, maxLen = 200) {
+  if (!str) return '';
+  return String(str).replace(/[\r\n\t]/g, ' ').replace(/[<>{}]/g, '').substring(0, maxLen);
+}
+
+/**
+ * Rough token estimate: ~4 characters per token (GPT/Claude heuristic).
+ */
+function estimateTokens(text) {
+  return Math.ceil(text.length / 4);
+}
+
+/**
  * @param {string} eventType - call_ended | sms_received | form_submitted | followup_due | no_response_timeout | daily_review
  * @param {object} eventData - Raw event payload
  * @param {object} leadMemory - Output of getLeadMemory()
@@ -34,10 +51,12 @@ const leadLocks = new Map();
 async function think(eventType, eventData, leadMemory, db) {
   const { lead, client, timeline, insights } = leadMemory;
 
-  // Per-lead lock: serialize brain decisions for the same lead
+  // Per-lead token-based lock: serialize brain decisions for the same lead.
+  // Each acquisition gets a unique token; unlock only releases if the caller
+  // still holds the current token, preventing timeout-forced releases from
+  // unlocking a legitimate holder that acquired the lock afterward.
   const lockKey = lead?.id;
   if (lockKey) {
-    // Wait for existing lock with a 60-second timeout to prevent deadlocks
     const LOCK_TIMEOUT_MS = BRAIN_LOCK_TIMEOUT_MS;
     if (leadLocks.has(lockKey)) {
       const existingLock = leadLocks.get(lockKey);
@@ -45,20 +64,29 @@ async function think(eventType, eventData, leadMemory, db) {
         setTimeout(() => reject(new Error(`Brain lock timeout for lead ${lockKey} after ${LOCK_TIMEOUT_MS}ms`)), LOCK_TIMEOUT_MS)
       );
       try {
-        await Promise.race([existingLock, timeout]);
+        await Promise.race([existingLock.promise, timeout]);
       } catch (err) {
         logger.error(`[Brain] ${err.message} — forcing lock release`);
-        leadLocks.delete(lockKey);
+        // Only delete if the token hasn't changed (no new holder snuck in)
+        const current = leadLocks.get(lockKey);
+        if (current && current.token === existingLock.token) {
+          leadLocks.delete(lockKey);
+        }
       }
     }
+    const myToken = crypto.randomUUID();
     let unlock;
-    const lockPromise = new Promise(resolve => { unlock = resolve; });
-    leadLocks.set(lockKey, lockPromise);
+    const promise = new Promise(resolve => { unlock = resolve; });
+    leadLocks.set(lockKey, { token: myToken, promise });
     try {
       return await _think(eventType, eventData, leadMemory, db);
     } finally {
-      leadLocks.delete(lockKey);
-      unlock();
+      // Only release if we still own the lock
+      const current = leadLocks.get(lockKey);
+      if (current && current.token === myToken) {
+        leadLocks.delete(lockKey);
+        unlock();
+      }
     }
   }
   return _think(eventType, eventData, leadMemory, db);
@@ -87,14 +115,18 @@ async function _think(eventType, eventData, leadMemory, db) {
   // Guardrails
   const guardrails = checkGuardrails(db, lead, client);
 
-  const systemPrompt = `You are the ELYVN Brain — an autonomous AI operations engine for "${client?.business_name || 'the business'}".
+  const safeBusinessName = sanitizeForPrompt(client?.business_name) || 'the business';
+  const safeClientName   = sanitizeForPrompt(client?.business_name) || 'Unknown';
+  const safeOwnerName    = sanitizeForPrompt(client?.owner_name) || 'Unknown';
+
+  const systemPrompt = `You are the ELYVN Brain — an autonomous AI operations engine for "${safeBusinessName}".
 
 YOUR ROLE: After every event, analyze the full lead history and decide what actions to take next. Think across ALL channels.
 
 BUSINESS KNOWLEDGE BASE:
 ${knowledgeBase || 'No knowledge base loaded.'}
 
-CLIENT: ${client?.business_name || 'Unknown'} | Owner: ${client?.owner_name || 'Unknown'} | AI active: ${client?.is_active !== 0 ? 'YES' : 'NO — only notify owner'}
+CLIENT: ${safeClientName} | Owner: ${safeOwnerName} | AI active: ${client?.is_active !== 0 ? 'YES' : 'NO — only notify owner'}
 Calendar: ${client?.calcom_booking_link || 'Not configured'}
 
 RULES:
@@ -126,19 +158,24 @@ AVAILABLE ACTIONS (return as JSON array):
 RESPOND WITH ONLY a JSON object (no markdown):
 { "reasoning": "2-3 sentences", "actions": [ ... ] }`;
 
-  const timelineText = timeline.length > 0
-    ? timeline.slice(-15).map(t => {
-        if (t.type === 'call') return `[${t.timestamp}] CALL: ${t.summary} (score: ${t.score}, outcome: ${t.outcome})`;
-        if (t.type === 'message') return `[${t.timestamp}] ${t.direction === 'inbound' ? 'SMS IN' : 'SMS OUT'}: "${(t.body || t.reply || '').substring(0, 100)}"`;
-        if (t.type === 'followup_sent') return `[${t.timestamp}] FOLLOWUP #${t.touch}: "${(t.content || '').substring(0, 80)}"`;
-        return `[${t.timestamp}] ${t.type}`;
-      }).join('\n')
-    : 'No previous interactions.';
+  const safeLeadName  = sanitizeForPrompt(lead?.name) || 'Unknown';
+  const safeLeadPhone = sanitizeForPrompt(lead?.phone);
 
-  const userMessage = `EVENT: ${eventType}
+  function buildTimelineText(sliceCount) {
+    const entries = timeline.slice(-sliceCount).map(t => {
+      if (t.type === 'call') return `[${t.timestamp}] CALL: ${sanitizeForPrompt(t.summary, 300)} (score: ${t.score}, outcome: ${sanitizeForPrompt(t.outcome, 50)})`;
+      if (t.type === 'message') return `[${t.timestamp}] ${t.direction === 'inbound' ? 'SMS IN' : 'SMS OUT'}: "${sanitizeForPrompt(t.body || t.reply || '', 100)}"`;
+      if (t.type === 'followup_sent') return `[${t.timestamp}] FOLLOWUP #${t.touch}: "${sanitizeForPrompt(t.content || '', 80)}"`;
+      return `[${t.timestamp}] ${t.type}`;
+    });
+    return entries.length > 0 ? entries.join('\n') : 'No previous interactions.';
+  }
+
+  function buildUserMessage(timelineText) {
+    return `EVENT: ${eventType}
 EVENT DATA: ${JSON.stringify(eventData, null, 2)}
 
-LEAD: ${lead ? `${lead.name || 'Unknown'} (${lead.phone}) — Score: ${lead.score || 0}/10 — Stage: ${lead.stage}` : 'New lead'}
+LEAD: ${lead ? `${safeLeadName} (${safeLeadPhone}) — Score: ${lead.score || 0}/10 — Stage: ${lead.stage}` : 'New lead'}
 
 TIMELINE:
 ${timelineText}
@@ -154,6 +191,18 @@ INSIGHTS:
 - Multi-channel: ${insights.multiChannel ? 'YES' : 'NO'}
 
 What actions should ELYVN take?`;
+  }
+
+  let userMessage = buildUserMessage(buildTimelineText(15));
+
+  // Token guard: if estimated usage exceeds 6000 tokens, trim timeline and KB
+  if (estimateTokens(systemPrompt) + estimateTokens(userMessage) > 6000) {
+    logger.warn('[Brain] Prompt too large — trimming timeline to 8 entries and KB to 2500 chars');
+    if (knowledgeBase.length > 2500) {
+      knowledgeBase = knowledgeBase.substring(0, 2500) + '\n[...truncated]';
+    }
+    userMessage = buildUserMessage(buildTimelineText(8));
+  }
 
   try {
     const response = await claudeBreaker.call({
@@ -169,7 +218,16 @@ What actions should ELYVN take?`;
       .join('');
 
     const cleaned = text.replace(/```json|```/g, '').trim();
-    const decision = JSON.parse(cleaned);
+    let decision;
+    try {
+      decision = JSON.parse(cleaned);
+    } catch (parseErr) {
+      logger.error('[Brain] JSON parse failed:', parseErr.message);
+      return {
+        reasoning: 'Brain parse error — unreadable response',
+        actions: [{ action: 'notify_owner', message: 'Brain returned unparseable response for ' + eventType, urgency: 'high' }],
+      };
+    }
 
     // Validate actions
     if (decision.actions && Array.isArray(decision.actions)) {

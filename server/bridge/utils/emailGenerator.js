@@ -4,8 +4,30 @@ const { logger } = require('./logger');
 
 const anthropic = new Anthropic();
 
+// P1: Sanitize prospect fields before prompt interpolation
+function sanitizeField(str, maxLen = 100) {
+  if (!str) return '';
+  return String(str).replace(/[\r\n\t<>{}]/g, ' ').replace(/\s+/g, ' ').trim().substring(0, maxLen);
+}
+
 async function generateColdEmail(prospect) {
-  const { business_name, industry, city, state, rating, review_count, website } = prospect;
+  const {
+    business_name: rawBusinessName,
+    industry: rawIndustry,
+    city: rawCity,
+    state: rawState,
+    rating,
+    review_count,
+    website: rawWebsite,
+    owner_name: rawOwnerName,
+  } = prospect;
+
+  // P1: Sanitize all interpolated prospect fields
+  const business_name = sanitizeField(rawBusinessName);
+  const industry = sanitizeField(rawIndustry);
+  const city = sanitizeField(rawCity);
+  const state = sanitizeField(rawState);
+  const website = sanitizeField(rawWebsite);
 
   const BOOKING_LINK = config.outreach.bookingLink;
   const SENDER_NAME = config.outreach.senderName;
@@ -46,17 +68,27 @@ Generate two different subject lines (subject_a and subject_b) for A/B testing. 
 
     const text = resp.content[0]?.text || '';
     const cleaned = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const result = JSON.parse(cleaned);
+
+    // P1: body is required — missing body is caught and falls to error fallback
+    if (typeof result.body !== 'string') throw new Error('emailGenerator: body missing from Claude response');
 
     // Ensure booking link is in the body (safety net)
-    let body = parsed.body;
+    let body = result.body;
     if (!body.includes(BOOKING_LINK)) {
       body += `\n\nBook a 10-min demo here: ${BOOKING_LINK}`;
     }
 
+    // Subject fallback chain: result field → result.subject (legacy) → business_name fallback
+    const subjectA = (typeof result.subject_a === 'string' ? result.subject_a : null)
+      || (typeof result.subject === 'string' ? result.subject : null)
+      || `${business_name} — never miss a customer call again`;
+    const subjectB = (typeof result.subject_b === 'string' ? result.subject_b : null)
+      || `Quick question about ${business_name}`;
+
     return {
-      subject_a: parsed.subject_a || parsed.subject || `${business_name} — never miss a customer call again`,
-      subject_b: parsed.subject_b || `Quick question about ${business_name}`,
+      subject_a: subjectA.substring(0, 78),
+      subject_b: subjectB.substring(0, 78),
       body
     };
   } catch (err) {
