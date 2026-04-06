@@ -86,6 +86,9 @@ router.post('/signup', (req, res) => {
   if (password.length < 8 || password.length > 128) {
     return res.status(400).json({ error: 'Password must be 8-128 characters' });
   }
+  if (!/(?=.*[a-zA-Z])(?=.*\d)/.test(password)) {
+    return res.status(400).json({ error: 'Password must contain at least one letter and one number' });
+  }
   if (email.length > 254 || business_name.length > 200) {
     return res.status(400).json({ error: 'Input too long' });
   }

@@ -3,7 +3,7 @@ const { SCHEDULER_DAILY_INTERVAL_MS, SCHEDULER_WEEKLY_INTERVAL_MS, SCHEDULER_FOL
 const config = require('./config');
 const { logger } = require('./logger');
 
-function sendDailySummaries(db) {
+async function sendDailySummaries(db) {
   const clients = db.prepare(
     'SELECT * FROM clients WHERE telegram_chat_id IS NOT NULL AND is_active = 1'
   ).all();
@@ -46,12 +46,10 @@ function sendDailySummaries(db) {
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const topics = extractCommonTopics(db, client.id, weekAgo);
       if (topics && topics.length > 0) {
-        const fs = require('fs');
-        const path = require('path');
+        const { loadKnowledgeBase } = require('./kbCache');
         let kbText = '';
         try {
-          const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
-          kbText = fs.readFileSync(kbPath, 'utf8').toLowerCase();
+          kbText = (await loadKnowledgeBase(client.id)).toLowerCase();
         } catch (_) {}
         const missing = topics.filter(t => t.frequency >= 3 && !kbText.includes(t.topic.toLowerCase()));
         if (missing.length > 0) {
@@ -475,7 +473,7 @@ async function dailyOutreach(db) {
     for (const c of clients) {
       telegram.sendMessage(c.telegram_chat_id,
         `<b>Daily Outreach Complete</b>\n\nSent: ${sent}\nFailed: ${failed}\nRemaining prospects: ${db.prepare("SELECT COUNT(*) as c FROM prospects WHERE status = 'new' AND email IS NOT NULL").get().c}`
-      ).catch(() => {});
+      ).catch(err => logger.warn('[scheduler] Outreach Telegram notify failed', err.message));
     }
 
     logger.info(`[Outreach] Done: ${sent} sent, ${failed} failed`);
@@ -600,7 +598,7 @@ async function checkReplies(db) {
                     for (const c of clients) {
                       telegram.sendMessage(c.telegram_chat_id,
                         `<b>New reply from prospect</b>\n\n<b>${prospect.business_name || from}</b>\n"${result.summary}"\n\nAuto-classification pending.`
-                      ).catch(() => {});
+                      ).catch(err => logger.warn('[scheduler] Reply Telegram notify failed', err.message));
                     }
                   }
                 } catch (parseErr) {
@@ -669,7 +667,7 @@ async function dailyLeadScoring(db) {
             `Scored: ${scores.length} leads\n` +
             `Hot leads (75+): ${hotLeads.length}\n\n` +
             `<b>Top priorities:</b>\n${topLeads}`
-          ).catch(() => {});
+          ).catch(err => logger.warn('[scheduler] Lead scoring Telegram notify failed', err.message));
         }
 
         logger.info(`[Scheduler] Scored ${scores.length} leads for client ${client.id}, ${hotLeads.length} hot`);

@@ -32,4 +32,10 @@ RUN npm run build
 
 EXPOSE 3001 8000
 
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD node -e "fetch('http://localhost:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
+RUN addgroup --system app && adduser --system --ingroup app app
+USER app
+
 CMD ["npm", "run", "start"]

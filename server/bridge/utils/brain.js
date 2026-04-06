@@ -72,15 +72,10 @@ async function _think(eventType, eventData, leadMemory, db) {
   let knowledgeBase = '';
   if (client) {
     try {
-      const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
-      // Verify path doesn't escape knowledge_bases directory (path traversal protection)
-      const resolvedPath = path.resolve(kbPath);
-      const kbDir = path.resolve(path.join(__dirname, '../../mcp/knowledge_bases'));
-      if (!resolvedPath.startsWith(kbDir)) {
-        // Path traversal attempt detected, skip KB load
-        logger.error('[brain] KB path traversal attempt detected');
-      } else {
-        const kbData = JSON.parse(await fs.promises.readFile(kbPath, 'utf8'));
+      const { loadKnowledgeBase } = require('./kbCache');
+      const raw = await loadKnowledgeBase(client.id);
+      if (raw) {
+        const kbData = JSON.parse(raw);
         knowledgeBase = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
         if (knowledgeBase.length > MAX_KB_SIZE) {
           knowledgeBase = knowledgeBase.substring(0, MAX_KB_SIZE) + '\n[...truncated]';

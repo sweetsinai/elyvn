@@ -304,8 +304,11 @@ app.get('/health', async (req, res) => {
     ELYVN_API_KEY: !!process.env.ELYVN_API_KEY,
   };
 
-  // In production, only expose minimal health info to public
-  if (process.env.NODE_ENV === 'production' && !req.headers['x-api-key']) {
+  // In production, only expose minimal health info unless authenticated
+  const apiKey = req.headers['x-api-key'];
+  const isValidKey = apiKey && process.env.ELYVN_API_KEY && apiKey === process.env.ELYVN_API_KEY;
+  const isAuthenticated = req.isAdmin || req.isJwtAuth || isValidKey;
+  if (process.env.NODE_ENV === 'production' && !isAuthenticated) {
     return res.json({
       status: dbOk ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
@@ -480,6 +483,7 @@ app.get('*', (req, res) => {
 
 // Global error handler — catch-all for unhandled errors (must be last middleware)
 app.use((err, req, res, _next) => {
+  if (res.headersSent) return _next(err);
   try {
     // JSON parse errors from body-parser
     if (err.type === 'entity.parse.failed' || (err instanceof SyntaxError && err.status === 400)) {

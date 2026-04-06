@@ -80,14 +80,14 @@ router.post('/', (req, res) => {
           handleCallStarted(db, call);
           break;
         case 'call_ended':
-          handleCallEnded(db, call);
+          handleCallEnded(db, call).catch(err => logger.error('[retell] handleCallEnded error:', err));
           break;
         case 'call_analyzed':
           handleCallAnalyzed(db, call);
           break;
         case 'agent_transfer':
         case 'transfer_requested':
-          handleTransfer(db, call);
+          handleTransfer(db, call).catch(err => logger.error('[retell] handleTransfer error:', err));
           break;
         case 'dtmf':
           if (call && call.digit === '*') handleTransfer(db, call);

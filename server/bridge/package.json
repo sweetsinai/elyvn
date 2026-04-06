@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "jest tests/validate.test.js tests/auditLog.test.js tests/clientIsolation.test.js --forceExit --detectOpenHandles",
+    "test": "jest --forceExit --passWithNoTests",
     "test:unit": "jest tests/validate.test.js --forceExit",
     "test:integration": "jest tests/endpoints.test.js --forceExit --testTimeout=20000"
   },

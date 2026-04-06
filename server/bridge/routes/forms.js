@@ -170,7 +170,7 @@ async function processFormSubmission(db, body, clientId, req) {
           `<b>Email:</b> ${escapeHtml(email)}\n` +
           (message ? `<b>Message:</b> "${escapeHtml(message.substring(0, 200))}"\n` : '') +
           `\n⚠️ No phone — can't auto-call or text.`
-        ).catch(() => {});
+        ).catch(err => logger.warn('[forms] Telegram notification failed', err.message));
       }
     }
     return;

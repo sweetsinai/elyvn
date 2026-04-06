@@ -526,8 +526,22 @@ router.get('/reports/:clientId', (req, res) => {
 router.get('/clients', (req, res) => {
   try {
     const db = req.app.locals.db;
-    const clients = db.prepare('SELECT * FROM clients ORDER BY created_at DESC LIMIT 100').all();
-    res.json({ clients });
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+
+    let clients;
+    let total;
+    if (req.isAdmin) {
+      total = db.prepare('SELECT COUNT(*) as count FROM clients').get().count;
+      clients = db.prepare('SELECT * FROM clients ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset);
+    } else if (req.clientId) {
+      clients = db.prepare('SELECT * FROM clients WHERE id = ?').all(req.clientId);
+      total = clients.length;
+    } else {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    res.json({ clients, page, limit, total, total_pages: Math.ceil(total / limit) });
   } catch (err) {
     logger.error('[api] clients error:', err);
     res.status(500).json({ error: 'Failed to fetch clients' });

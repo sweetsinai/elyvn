@@ -188,10 +188,8 @@ router.post('/', async (req, res) => {
     if (knowledge_base) {
       try {
         const kbDir = path.join(__dirname, '../../mcp/knowledge_bases');
-        if (!fs.existsSync(kbDir)) {
-          fs.mkdirSync(kbDir, { recursive: true });
-        }
-        fs.writeFileSync(
+        await fs.promises.mkdir(kbDir, { recursive: true });
+        await fs.promises.writeFile(
           path.join(kbDir, `${clientId}.json`),
           JSON.stringify(knowledge_base, null, 2)
         );

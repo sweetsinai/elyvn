@@ -247,27 +247,35 @@ async function handleBookingCreated(db, payload) {
 }
 
 async function handleBookingCancelled(db, payload) {
-  const { bookingId, uid } = payload;
-  const calcomBookingId = String(bookingId || uid || '');
-  const now = new Date().toISOString();
+  try {
+    const { bookingId, uid } = payload;
+    const calcomBookingId = String(bookingId || uid || '');
+    const now = new Date().toISOString();
 
-  // Update appointment
-  db.prepare("UPDATE appointments SET status = 'cancelled', updated_at = ? WHERE calcom_booking_id = ?").run(now, calcomBookingId);
+    // Update appointment
+    db.prepare("UPDATE appointments SET status = 'cancelled', updated_at = ? WHERE calcom_booking_id = ?").run(now, calcomBookingId);
 
-  // Update lead stage back to contacted
-  db.prepare("UPDATE leads SET stage = 'contacted', updated_at = ? WHERE calcom_booking_id = ?").run(now, calcomBookingId);
+    // Update lead stage back to contacted
+    db.prepare("UPDATE leads SET stage = 'contacted', updated_at = ? WHERE calcom_booking_id = ?").run(now, calcomBookingId);
 
-  logger.info(`[calcom-webhook] Booking ${calcomBookingId} cancelled`);
+    logger.info(`[calcom-webhook] Booking ${calcomBookingId} cancelled`);
+  } catch (err) {
+    logger.error('[calcom-webhook] handleBookingCancelled error:', err);
+  }
 }
 
 async function handleBookingRescheduled(db, payload) {
-  const { bookingId, uid, startTime } = payload;
-  const calcomBookingId = String(bookingId || uid || '');
-  const now = new Date().toISOString();
+  try {
+    const { bookingId, uid, startTime } = payload;
+    const calcomBookingId = String(bookingId || uid || '');
+    const now = new Date().toISOString();
 
-  db.prepare("UPDATE appointments SET datetime = ?, updated_at = ? WHERE calcom_booking_id = ?").run(startTime, now, calcomBookingId);
+    db.prepare("UPDATE appointments SET datetime = ?, updated_at = ? WHERE calcom_booking_id = ?").run(startTime, now, calcomBookingId);
 
-  logger.info(`[calcom-webhook] Booking ${calcomBookingId} rescheduled to ${startTime}`);
+    logger.info(`[calcom-webhook] Booking ${calcomBookingId} rescheduled to ${startTime}`);
+  } catch (err) {
+    logger.error('[calcom-webhook] handleBookingRescheduled error:', err);
+  }
 }
 
 module.exports = router;

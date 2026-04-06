@@ -29,8 +29,12 @@ router.use((req, res, next) => {
     const timestamp = req.headers['telnyx-timestamp'];
 
     if (!signature || !timestamp) {
+      if (process.env.NODE_ENV === 'production') {
+        logger.warn('[telnyx] Missing signature headers in production — rejecting');
+        return res.status(401).json({ error: 'Missing webhook signature' });
+      }
       logger.warn('[telnyx] Missing telnyx-signature-ed25519 or telnyx-timestamp header');
-      return next(); // Allow through with warning — might be test webhook
+      return next(); // Allow through in dev — might be test webhook
     }
 
     // Reconstruct signed content: timestamp + raw body
@@ -304,20 +308,16 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
       return;
     }
 
-    // Load client knowledge base
+    // Load client knowledge base (cached)
     let kb = '';
     if (!isValidUUID(client.id)) {
       logger.warn('[telnyx] Invalid client UUID, skipping KB load');
     } else {
-      const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
       try {
-        // Verify path doesn't escape knowledge_bases directory (path traversal protection)
-        const resolvedPath = path.resolve(kbPath);
-        const kbDir = path.resolve(path.join(__dirname, '../../mcp/knowledge_bases'));
-        if (!resolvedPath.startsWith(kbDir)) {
-          logger.error('[telnyx] KB path traversal attempt detected');
-        } else {
-          const kbData = JSON.parse(await fs.promises.readFile(kbPath, 'utf8'));
+        const { loadKnowledgeBase } = require('../utils/kbCache');
+        const raw = await loadKnowledgeBase(client.id);
+        if (raw) {
+          const kbData = JSON.parse(raw);
           kb = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
           if (kb.length > 5000) kb = kb.substring(0, 5000) + '\n[...truncated]';
         }

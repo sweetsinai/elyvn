@@ -597,6 +597,17 @@ const migrations = [
       }
     },
   },
+  {
+    id: '025_missing_indexes',
+    description: 'Add indexes for frequently queried columns',
+    up(db) {
+      db.exec("CREATE INDEX IF NOT EXISTS idx_appointments_calcom_booking ON appointments(calcom_booking_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_leads_calcom_booking ON leads(calcom_booking_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_clients_twilio_phone ON clients(twilio_phone)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_clients_retell_phone ON clients(retell_phone)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_clients_retell_agent ON clients(retell_agent_id)");
+    },
+  },
 ];
 
 /**

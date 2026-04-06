@@ -157,6 +157,9 @@ describe('API Routes - Comprehensive Coverage', () => {
   function handleGet(sql, params) {
     // COUNT queries
     if (sql.includes('COUNT(*)')) {
+      if (sql.includes('FROM clients') && !sql.includes('WHERE')) {
+        return { count: clients.length };
+      }
       if (sql.includes('FROM calls')) {
         const clientId = params[0];
         const filtered = calls.filter(c => c.client_id === clientId);

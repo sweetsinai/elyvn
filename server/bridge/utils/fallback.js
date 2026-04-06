@@ -9,18 +9,22 @@ const TEMPLATES_DIR = path.join(__dirname, '../../mcp/templates');
  * @param {string} clientId - Client ID (subdirectory name)
  * @param {string} templateName - Template name (without .txt extension)
  * @param {object} variables - Key-value pairs for substitution
- * @returns {string|null} Rendered template or null if file doesn't exist
+ * @returns {Promise<string|null>} Rendered template or null if file doesn't exist
  */
-function loadTemplate(clientId, templateName, variables = {}) {
+async function loadTemplate(clientId, templateName, variables = {}) {
   const filePath = path.join(TEMPLATES_DIR, clientId, `${templateName}.txt`);
 
   try {
-    if (!fs.existsSync(filePath)) {
-      logger.info(`[fallback] Template not found: ${filePath}`);
-      return null;
+    let content;
+    try {
+      content = await fs.promises.readFile(filePath, 'utf8');
+    } catch (readErr) {
+      if (readErr.code === 'ENOENT') {
+        logger.info(`[fallback] Template not found: ${filePath}`);
+        return null;
+      }
+      throw readErr;
     }
-
-    let content = fs.readFileSync(filePath, 'utf8');
 
     // Replace all {variable_name} with values
     for (const [key, value] of Object.entries(variables)) {

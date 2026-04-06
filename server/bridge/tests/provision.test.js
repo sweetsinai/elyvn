@@ -13,6 +13,11 @@ jest.mock('fs', () => ({
   existsSync: jest.fn().mockReturnValue(true),
   mkdirSync: jest.fn(),
   writeFileSync: jest.fn(),
+  promises: {
+    mkdir: jest.fn().mockResolvedValue(undefined),
+    writeFile: jest.fn().mockResolvedValue(undefined),
+    readFile: jest.fn().mockResolvedValue('{}'),
+  },
 }));
 
 jest.mock('path', () => ({
@@ -388,8 +393,8 @@ describe('Provision Route', () => {
   describe('POST / - Knowledge base handling', () => {
     test('should save knowledge base as JSON file', async () => {
       const fs = require('fs');
-      const mockWriteFileSync = jest.fn();
-      fs.writeFileSync = mockWriteFileSync;
+      fs.promises.writeFile.mockResolvedValue(undefined);
+      fs.promises.mkdir.mockResolvedValue(undefined);
 
       mockDb.prepare.mockReturnValue({
         run: jest.fn(),
@@ -419,9 +424,8 @@ describe('Provision Route', () => {
 
     test('should handle KB file save errors gracefully', async () => {
       const fs = require('fs');
-      fs.writeFileSync = jest.fn(() => {
-        throw new Error('Permission denied');
-      });
+      fs.promises.writeFile.mockRejectedValue(new Error('Permission denied'));
+      fs.promises.mkdir.mockResolvedValue(undefined);
 
       mockDb.prepare.mockReturnValue({
         run: jest.fn(),

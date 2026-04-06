@@ -69,7 +69,7 @@ async function executeOne(db, action, lead, client) {
       if (client?.telegram_chat_id && result.success && client.notification_mode !== 'digest') {
         telegram.sendMessage(client.telegram_chat_id,
           `&#129504; <b>Brain auto-sent SMS</b>\n\nTo: ${to}\n"${(action.message || '').substring(0, 200)}"${result.scheduled ? '\n\n⏱️ Scheduled for next business hours' : ''}`
-        ).catch(() => {});
+        ).catch(err => logger.warn('[actionExecutor] Telegram SMS notify failed', err.message));
       }
 
       return { sent: result.success, sid: result.messageId, scheduled: result.scheduled };
@@ -186,7 +186,7 @@ async function executeOne(db, action, lead, client) {
             if (client?.telegram_chat_id) {
               telegram.sendMessage(client.telegram_chat_id,
                 `📅 <b>Brain auto-booked appointment</b>\n\n${leadName} (${phone || email})\n🕐 ${action.start_time}\n📋 ${action.service || 'Demo'}`
-              ).catch(() => {});
+              ).catch(err => logger.warn('[actionExecutor] Telegram booking notify failed', err.message));
             }
 
             return { booked: true, appointment_id: appointmentId, via: 'calcom_api' };
@@ -208,7 +208,7 @@ async function executeOne(db, action, lead, client) {
       if (client?.telegram_chat_id) {
         telegram.sendMessage(client.telegram_chat_id,
           `⚠️ <b>Brain wants to book but can't</b>\n\n${leadName} (${phone || email || 'no contact'})\nReason: ${!eventTypeId ? 'No event type configured' : !email ? 'No email' : 'No time slot specified'}\n\nPlease book manually.`
-        ).catch(() => {});
+        ).catch(err => logger.warn('[actionExecutor] Telegram manual-book notify failed', err.message));
       }
       return { booked: false, reason: 'manual_booking_needed' };
     }

@@ -177,21 +177,13 @@ router.post('/', async (req, res) => {
         'SELECT direction, body, created_at FROM messages WHERE lead_id = ? ORDER BY created_at DESC LIMIT 10'
       ).all(lead.id).reverse();
 
-      // Load knowledge base
+      // Load knowledge base (cached)
       let kbContent = '';
-      if (client.kb_path) {
-        try {
-          // Resolve KB path relative to project root and ensure it stays within allowed directory
-          const kbBaseDir = path.resolve(__dirname, '../../mcp/knowledge_bases');
-          const resolvedPath = path.resolve(__dirname, '../..', client.kb_path);
-          if (!resolvedPath.startsWith(kbBaseDir)) {
-            logger.warn(`[twilio] KB path traversal blocked: ${client.kb_path}`);
-          } else {
-            kbContent = await fs.promises.readFile(resolvedPath, 'utf-8');
-          }
-        } catch (err) {
-          logger.warn(`[twilio] KB not found: ${client.kb_path}`);
-        }
+      try {
+        const { loadKnowledgeBase } = require('../utils/kbCache');
+        kbContent = await loadKnowledgeBase(client.id);
+      } catch (err) {
+        logger.warn(`[twilio] KB load failed for client ${client.id}:`, err.message);
       }
 
       // Build AI prompt — use niche-specific template if available
