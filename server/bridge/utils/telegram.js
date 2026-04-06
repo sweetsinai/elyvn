@@ -193,6 +193,8 @@ const PLAN_COMMANDS = {
     { command: 'reviewlink', description: 'Set Google review link' },
     { command: 'pause', description: 'Pause AI answering' },
     { command: 'resume', description: 'Resume AI answering' },
+    { command: 'digest', description: 'Daily summary only (silence alerts)' },
+    { command: 'alerts', description: 'Get every call/SMS alert' },
     { command: 'help', description: 'Show commands' },
   ],
   growth: [
@@ -205,6 +207,8 @@ const PLAN_COMMANDS = {
     { command: 'reviewlink', description: 'Set Google review link' },
     { command: 'pause', description: 'Pause AI answering' },
     { command: 'resume', description: 'Resume AI answering' },
+    { command: 'digest', description: 'Daily summary only (silence alerts)' },
+    { command: 'alerts', description: 'Get every call/SMS alert' },
     { command: 'help', description: 'Show commands' },
   ],
   scale: [
@@ -220,6 +224,8 @@ const PLAN_COMMANDS = {
     { command: 'reviewlink', description: 'Set Google review link' },
     { command: 'pause', description: 'Pause AI answering' },
     { command: 'resume', description: 'Resume AI answering' },
+    { command: 'digest', description: 'Daily summary only (silence alerts)' },
+    { command: 'alerts', description: 'Get every call/SMS alert' },
     { command: 'help', description: 'Show commands' },
   ],
 };

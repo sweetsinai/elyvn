@@ -435,7 +435,7 @@ async function handleCallEnded(db, call) {
               VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'missed_call_textback', datetime('now'))
             `).run(randomUUID(), clientId, missedLeadId, callerPhone, textBackMsg);
 
-            // Telegram: missed call alert
+            // Telegram: missed call alert (always send — missed calls are critical)
             if (missedClient.telegram_chat_id) {
               await telegram.sendMessage(missedClient.telegram_chat_id,
                 `&#10060; <b>Missed call</b> from ${callerPhone}\n\nAuto text-back sent.`
@@ -478,7 +478,7 @@ async function handleCallEnded(db, call) {
     try {
       const clientForNotify = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
       const telegramChatId = (clientForNotify && clientForNotify.telegram_chat_id) || process.env.TELEGRAM_ADMIN_CHAT_ID;
-      if (telegramChatId) {
+      if (telegramChatId && (!clientForNotify || clientForNotify.notification_mode !== 'digest')) {
         const processedCall = db.prepare('SELECT * FROM calls WHERE call_id = ?').get(callId);
         if (processedCall) {
           if (outcome === 'transferred') {

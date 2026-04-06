@@ -39,8 +39,32 @@ function sendDailySummaries(db) {
       revenue: rev.revenue || 0,
     };
 
+    // KB learning suggestions — surface common unanswered topics
+    let kbSuggestion = '';
+    try {
+      const { extractCommonTopics } = require('./conversationIntelligence');
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const topics = extractCommonTopics(db, client.id, weekAgo);
+      if (topics && topics.length > 0) {
+        const fs = require('fs');
+        const path = require('path');
+        let kbText = '';
+        try {
+          const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${client.id}.json`);
+          kbText = fs.readFileSync(kbPath, 'utf8').toLowerCase();
+        } catch (_) {}
+        const missing = topics.filter(t => t.frequency >= 3 && !kbText.includes(t.topic.toLowerCase()));
+        if (missing.length > 0) {
+          kbSuggestion = '\n\n<b>FAQ suggestions:</b>\n' +
+            missing.slice(0, 3).map(t => `${t.frequency} customers asked about <b>${t.topic}</b> this week`).join('\n');
+        }
+      }
+    } catch (err) {
+      logger.error(`[Scheduler] KB suggestion error for ${client.id}:`, err.message);
+    }
+
     const formatted = telegram.formatDailySummary(stats, tomorrowSchedule, client);
-    telegram.sendMessage(client.telegram_chat_id, formatted.text).catch(err =>
+    telegram.sendMessage(client.telegram_chat_id, formatted.text + kbSuggestion).catch(err =>
       logger.error(`Daily summary failed for client ${client.id}:`, err)
     );
   }

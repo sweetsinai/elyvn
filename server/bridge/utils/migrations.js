@@ -577,6 +577,16 @@ const migrations = [
       db.exec('CREATE INDEX IF NOT EXISTS idx_clients_stripe_customer ON clients(stripe_customer_id)');
     },
   },
+  {
+    id: '023_notification_mode',
+    description: 'Add notification_mode to clients (all or digest)',
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+      if (!cols.includes('notification_mode')) {
+        db.exec("ALTER TABLE clients ADD COLUMN notification_mode TEXT DEFAULT 'all'");
+      }
+    },
+  },
 ];
 
 /**

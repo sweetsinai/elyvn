@@ -68,10 +68,28 @@ async function triggerSpeedSequence(db, leadData) {
     logger.error('[SpeedToLead] Touch 1 SMS failed:', err.message);
   }
 
-  // === TOUCH 2: AI Callback (60 seconds, but respect business hours) ===
+  // === TOUCH 2: AI Callback (smart timing or 60s fallback) ===
+  let callbackDelay = 60000;
+  try {
+    const { getOptimalContactTime } = require('./smartScheduler');
+    const timing = getOptimalContactTime(db, leadId, clientId);
+    if (timing && timing.confidence > 0.5) {
+      const now = new Date();
+      const optimal = new Date();
+      optimal.setHours(timing.optimal_hour, 0, 0, 0);
+      if (optimal <= now) optimal.setDate(optimal.getDate() + 1);
+      const delay = optimal.getTime() - now.getTime();
+      if (delay > 60000 && delay < 24 * 60 * 60 * 1000) {
+        callbackDelay = delay;
+        logger.info(`[SpeedToLead] Smart timing: callback in ${Math.round(delay / 60000)}min (optimal hour: ${timing.optimal_hour})`);
+      }
+    }
+  } catch (err) {
+    logger.warn('[SpeedToLead] Smart scheduler unavailable, using 60s default:', err.message);
+  }
   scheduleCallback(db, {
     leadId, clientId, phone, name, message, service,
-    delayMs: 60000,
+    delayMs: callbackDelay,
     reason: source === 'missed_call' ? 'missed_call_callback' : 'speed_callback',
     client
   });
@@ -104,8 +122,8 @@ async function triggerSpeedSequence(db, leadData) {
     console.error('[SpeedToLead] Follow-up insert failed:', err.message);
   }
 
-  // === Telegram notification ===
-  if (client.telegram_chat_id) {
+  // === Telegram notification (skip in digest mode) ===
+  if (client.telegram_chat_id && client.notification_mode !== 'digest') {
     const sourceLabel = {
       'form': '📋 Website form',
       'missed_call': '📵 Missed call',

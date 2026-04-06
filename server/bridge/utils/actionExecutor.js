@@ -65,8 +65,8 @@ async function executeOne(db, action, lead, client) {
         `).run(randomUUID(), client?.id, lead.id, to, action.message);
       }
 
-      // Notify owner about brain-initiated SMS
-      if (client?.telegram_chat_id && result.success) {
+      // Notify owner about brain-initiated SMS (skip in digest mode)
+      if (client?.telegram_chat_id && result.success && client.notification_mode !== 'digest') {
         telegram.sendMessage(client.telegram_chat_id,
           `&#129504; <b>Brain auto-sent SMS</b>\n\nTo: ${to}\n"${(action.message || '').substring(0, 200)}"${result.scheduled ? '\n\n⏱️ Scheduled for next business hours' : ''}`
         ).catch(() => {});
@@ -120,6 +120,11 @@ async function executeOne(db, action, lead, client) {
 
     case 'notify_owner': {
       if (!client?.telegram_chat_id) return { notified: false, reason: 'no chat_id' };
+
+      // In digest mode, only send high/critical urgency alerts
+      if (client.notification_mode === 'digest' && action.urgency !== 'high' && action.urgency !== 'critical') {
+        return { notified: false, reason: 'digest_mode' };
+      }
 
       const urgencyEmoji = { low: '&#8505;&#65039;', medium: '&#9888;&#65039;', high: '&#128308;', critical: '&#128680;' };
       const emoji = urgencyEmoji[action.urgency] || '&#8505;&#65039;';

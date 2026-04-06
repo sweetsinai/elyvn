@@ -393,6 +393,18 @@ async function handleCommand(db, message) {
       break;
     }
 
+    case '/digest': {
+      db.prepare("UPDATE clients SET notification_mode = 'digest', updated_at = datetime('now') WHERE id = ?").run(client.id);
+      await telegram.sendMessage(chatId, 'Digest mode on. Individual call/SMS alerts silenced — you\'ll only get the daily summary.\n\nUse /alerts to switch back.');
+      break;
+    }
+
+    case '/alerts': {
+      db.prepare("UPDATE clients SET notification_mode = 'all', updated_at = datetime('now') WHERE id = ?").run(client.id);
+      await telegram.sendMessage(chatId, 'Alert mode on. You\'ll get a notification for every call, SMS, and brain action.\n\nUse /digest for daily summaries only.');
+      break;
+    }
+
     // ═══════════════════════════════════════════════════════
     // /complete +phone — Mark job done → review request
     // ═══════════════════════════════════════════════════════
@@ -425,17 +437,36 @@ async function handleCommand(db, message) {
 
             db.prepare("UPDATE leads SET stage = 'completed', updated_at = datetime('now') WHERE id = ?").run(lead.id);
 
+            // Review request in 2 hours
             const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
             db.prepare(`
               INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
               VALUES (?, ?, ?, 20, 'review_request', ?, 'template', ?, 'scheduled')
             `).run(randomUUID(), lead.id, client.id, reviewMsg, scheduledAt);
+
+            // Referral ask in 48 hours
+            const referralAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+            const firstName = lead.name ? ' ' + lead.name.split(' ')[0] : '';
+            const referralMsg = `Hi${firstName}! If you know anyone who could use our services, we'd love the referral. Thanks again for choosing ${client.business_name || 'us'}!`;
+            db.prepare(`
+              INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+              VALUES (?, ?, ?, 21, 'referral_ask', ?, 'template', ?, 'scheduled')
+            `).run(randomUUID(), lead.id, client.id, referralMsg, referralAt);
+
+            // Rebooking nudge in 30 days
+            const rebookAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+            const rebookMsg = `Hi${firstName}! It's been about a month since your last visit to ${client.business_name || 'us'}. Ready to book again?` +
+              (client.calcom_booking_link ? ` ${client.calcom_booking_link}` : '');
+            db.prepare(`
+              INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+              VALUES (?, ?, ?, 22, 'rebook_nudge', ?, 'template', ?, 'scheduled')
+            `).run(randomUUID(), lead.id, client.id, rebookMsg, rebookAt);
           }
         });
         transaction();
 
         await telegram.sendMessage(chatId,
-          `✅ Done for ${phone}.\nReminders cancelled. Review request in 2h.${reviewLink ? '' : '\n\n⚠️ Set a Google review link: /set review YOUR_LINK'}`
+          `Done for ${phone}.\nReminders cancelled.\nReview request: 2h\nReferral ask: 48h\nRebook nudge: 30d${reviewLink ? '' : '\n\nSet a Google review link: /set review YOUR_LINK'}`
         );
       } catch (completeErr) {
         console.error('[telegram] /complete error:', completeErr.message);

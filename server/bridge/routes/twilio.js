@@ -235,8 +235,8 @@ ${kbContent ? `\nAdditional knowledge base:\n${kbContent}` : ''}`;
           ).run(randomUUID(), lead.id, client.id, 'outbound', 'sms', replyText, result.messageId, new Date().toISOString());
         }
 
-        // Notify owner via Telegram
-        if (client.telegram_chat_id) {
+        // Notify owner via Telegram (skip in digest mode)
+        if (client.telegram_chat_id && client.notification_mode !== 'digest') {
           const leadName = lead.name || from;
           telegram.sendMessage(
             client.telegram_chat_id,
