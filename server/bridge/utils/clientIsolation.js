@@ -1,3 +1,5 @@
+const { logger } = require('./logger');
+
 /**
  * Client Data Isolation Middleware
  * Ensures client API keys can only access their own data.
@@ -17,7 +19,7 @@ function enforceClientIsolation(req, res, next) {
   if (req.clientId) {
     const urlClientId = req.params.clientId || req.query.clientId || req.query.client_id;
     if (urlClientId && urlClientId !== req.clientId) {
-      console.error(`[SECURITY] Client isolation bypass attempt - Client ${req.clientId} tried to access ${urlClientId} data via URL/query params. IP: ${req.ip}`);
+      logger.error(`[SECURITY] Client isolation bypass attempt - Client ${req.clientId} tried to access ${urlClientId} data via URL/query params. IP: ${req.ip}`);
       return res.status(403).json({
         error: 'Access denied — you can only access your own client data',
       });

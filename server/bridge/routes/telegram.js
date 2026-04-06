@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const telegram = require('../utils/telegram');
 const { isValidURL } = require('../utils/validate');
+const { logger } = require('../utils/logger');
 
 // HTML-escape user/stored data before sending via Telegram HTML parse mode
 function esc(str) {
@@ -22,7 +23,7 @@ function callbackRateLimit(chatId) {
     // Clean old entries
     record.timestamps = record.timestamps.filter(t => now - t < CALLBACK_RATE_WINDOW);
     if (record.timestamps.length >= CALLBACK_RATE_LIMIT) {
-      console.warn(`[telegram] Callback rate limit exceeded for chatId ${chatId}`);
+      logger.warn(`[telegram] Callback rate limit exceeded for chatId ${chatId}`);
       return false; // Rate limited
     }
     record.timestamps.push(now);
@@ -45,7 +46,7 @@ router.use((req, res, next) => {
   const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!expectedSecret) {
     if (process.env.NODE_ENV === 'production') {
-      console.error('[telegram] TELEGRAM_WEBHOOK_SECRET not configured in production');
+      logger.error('[telegram] TELEGRAM_WEBHOOK_SECRET not configured in production');
       return res.status(500).json({ error: 'Webhook not configured' });
     }
     return next();
@@ -79,15 +80,15 @@ router.post('/', (req, res) => {
 
   const db = req.app.locals.db;
   if (!db) {
-    console.error('[telegram] No database connection');
+    logger.error('[telegram] No database connection');
     return;
   }
   const update = req.body || {};
 
   if (update.message) {
-    handleCommand(db, update.message).catch(err => console.error('Telegram command error:', err));
+    handleCommand(db, update.message).catch(err => logger.error('Telegram command error:', err));
   } else if (update.callback_query) {
-    handleCallback(db, update.callback_query).catch(err => console.error('Telegram callback error:', err));
+    handleCallback(db, update.callback_query).catch(err => logger.error('Telegram callback error:', err));
   }
 });
 
@@ -154,7 +155,7 @@ async function handleCommand(db, message) {
     db.prepare('UPDATE clients SET telegram_chat_id = ? WHERE id = ?').run(chatId, clientId);
     // Set plan-specific command menu for this client
     await telegram.setClientCommands(chatId, target.plan || 'starter').catch(err =>
-      console.error('[telegram] setClientCommands error:', err.message)
+      logger.error('[telegram] setClientCommands error:', err.message)
     );
 
     // ── Friendly welcome — no jargon, no learning curve ──
@@ -476,7 +477,7 @@ async function handleCommand(db, message) {
           `Done for ${phone}.\nReminders cancelled.\nReview request: 2h\nReferral ask: 48h\nRebook nudge: 30d${reviewLink ? '' : '\n\nSet a Google review link: /set review YOUR_LINK'}`
         );
       } catch (completeErr) {
-        console.error('[telegram] /complete error:', completeErr.message);
+        logger.error('[telegram] /complete error:', completeErr.message);
         await telegram.sendMessage(chatId, 'Error marking job complete. Try again.');
       }
       break;
@@ -818,7 +819,7 @@ async function handleCommand(db, message) {
         req.write(postData);
         req.end();
       } catch (err) {
-        console.error('[telegram] /scrape error:', err.message);
+        logger.error('[telegram] /scrape error:', err.message);
         await telegram.sendMessage(chatId, 'Error starting scrape. Try again later.');
       }
       break;
@@ -954,7 +955,7 @@ async function handleCallback(db, callbackQuery) {
 
   // Rate limit callback queries
   if (!callbackRateLimit(chatId)) {
-    console.warn(`[telegram] Callback rate limited for chatId ${chatId}`);
+    logger.warn(`[telegram] Callback rate limited for chatId ${chatId}`);
     return;
   }
 
@@ -969,7 +970,7 @@ async function handleCallback(db, callbackQuery) {
       text: `/${action}`,
     };
     await handleCommand(db, fakeMessage).catch(err =>
-      console.error('[telegram] quick-action error:', err)
+      logger.error('[telegram] quick-action error:', err)
     );
     return;
   }

@@ -4,6 +4,7 @@
  */
 
 const { runRetention, RETENTION_POLICIES } = require('../utils/dataRetention');
+const { logger } = require('../utils/logger');
 
 describe('dataRetention', () => {
   let mockDb;
@@ -25,8 +26,8 @@ describe('dataRetention', () => {
       exec: jest.fn(),
     };
 
-    console.log = jest.fn();
-    console.error = jest.fn();
+    jest.spyOn(logger, 'info').mockImplementation();
+    jest.spyOn(logger, 'error').mockImplementation();
   });
 
   describe('RETENTION_POLICIES', () => {
@@ -158,7 +159,7 @@ describe('dataRetention', () => {
       expect(result.deleted.job_queue).toEqual({ error: 'Query failed' });
       expect(result.deleted.audit_log).toEqual({ error: 'Query failed' });
       expect(result.deleted.messages).toEqual({ error: 'Query failed' });
-      expect(console.error).toHaveBeenCalledWith(
+      expect(logger.error).toHaveBeenCalledWith(
         expect.stringMatching(/\[retention\] Error on/),
         expect.anything()
       );
@@ -231,7 +232,7 @@ describe('dataRetention', () => {
       const result = runRetention(mockDb);
 
       expect(result.deleted.job_queue).toBe(2000);
-      expect(console.error).toHaveBeenCalledWith(
+      expect(logger.error).toHaveBeenCalledWith(
         '[retention] VACUUM error:',
         'VACUUM failed'
       );
@@ -246,7 +247,7 @@ describe('dataRetention', () => {
 
       runRetention(mockDb);
 
-      expect(console.log).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         '[retention] Deleted 5 rows from job_queue'
       );
     });
@@ -260,7 +261,7 @@ describe('dataRetention', () => {
 
       runRetention(mockDb);
 
-      expect(console.log).toHaveBeenCalledWith('[retention] VACUUM completed');
+      expect(logger.info).toHaveBeenCalledWith('[retention] VACUUM completed');
     });
 
     it('should process all policy tables', () => {

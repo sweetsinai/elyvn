@@ -7,6 +7,7 @@
  */
 
 const path = require('path');
+const { logger } = require('./logger');
 
 /**
  * Create and configure a database connection.
@@ -17,7 +18,7 @@ function createDatabase(options = {}) {
 
   // Future: if DATABASE_URL starts with postgres://, use pg adapter
   if (dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) {
-    console.log('[db] PostgreSQL mode detected — adapter ready for migration');
+    logger.info('[db] PostgreSQL mode detected — adapter ready for migration');
     // For now, throw a helpful error. When migrating, replace with pg pool.
     throw new Error(
       'PostgreSQL adapter not yet implemented. Set DATABASE_PATH for SQLite, or implement the pg adapter in dbAdapter.js'
@@ -48,7 +49,7 @@ function createDatabase(options = {}) {
   db._path = dbPath;
   db._createdAt = new Date().toISOString();
 
-  console.log(`[db] SQLite connected: ${dbPath} (WAL mode, 64MB cache, FK enforced)`);
+  logger.info(`[db] SQLite connected: ${dbPath} (WAL mode, 64MB cache, FK enforced)`);
   return db;
 }
 
@@ -63,9 +64,9 @@ function closeDatabase(db) {
       db.pragma('wal_checkpoint(TRUNCATE)');
     }
     db.close();
-    console.log('[db] Connection closed gracefully');
+    logger.info('[db] Connection closed gracefully');
   } catch (err) {
-    console.error('[db] Error closing connection:', err.message);
+    logger.error('[db] Error closing connection:', err.message);
   }
 }
 

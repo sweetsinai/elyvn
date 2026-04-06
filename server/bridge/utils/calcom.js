@@ -1,3 +1,5 @@
+const { logger } = require('./logger');
+
 const CALCOM_API_KEY = process.env.CALCOM_API_KEY;
 const BASE_URL = 'https://api.cal.com/v2';
 const API_VERSION = '2024-08-13';
@@ -30,14 +32,14 @@ async function getBookings(eventTypeId, startDate, endDate) {
 
     if (!resp.ok) {
       const errText = await resp.text();
-      console.error(`[calcom] getBookings failed (${resp.status}):`, errText);
+      logger.error(`[calcom] getBookings failed (${resp.status}):`, errText);
       return [];
     }
 
     const data = await resp.json();
     return data.data || data.bookings || [];
   } catch (err) {
-    console.error('[calcom] getBookings error:', err);
+    logger.error('[calcom] getBookings error:', err);
     return [];
   }
 }
@@ -56,14 +58,14 @@ async function cancelBooking(bookingId) {
 
     if (!resp.ok) {
       const errText = await resp.text();
-      console.error(`[calcom] cancelBooking failed (${resp.status}):`, errText);
+      logger.error(`[calcom] cancelBooking failed (${resp.status}):`, errText);
       return { success: false };
     }
 
-    console.log(`[calcom] Booking ${bookingId} cancelled`);
+    logger.info(`[calcom] Booking ${bookingId} cancelled`);
     return { success: true };
   } catch (err) {
-    console.error('[calcom] cancelBooking error:', err);
+    logger.error('[calcom] cancelBooking error:', err);
     return { success: false };
   }
 }
@@ -88,14 +90,14 @@ async function getAvailability(eventTypeId, date) {
 
     if (!resp.ok) {
       const errText = await resp.text();
-      console.error(`[calcom] getAvailability failed (${resp.status}):`, errText);
+      logger.error(`[calcom] getAvailability failed (${resp.status}):`, errText);
       return [];
     }
 
     const data = await resp.json();
     return data.data?.slots || data.slots || [];
   } catch (err) {
-    console.error('[calcom] getAvailability error:', err);
+    logger.error('[calcom] getAvailability error:', err);
     return [];
   }
 }
@@ -115,7 +117,7 @@ async function createBooking(opts) {
   const { eventTypeId, startTime, name, email, phone, metadata } = opts;
 
   if (!CALCOM_API_KEY) {
-    console.error('[calcom] No CALCOM_API_KEY configured');
+    logger.error('[calcom] No CALCOM_API_KEY configured');
     return { success: false, error: 'Cal.com API key not configured' };
   }
 
@@ -146,16 +148,16 @@ async function createBooking(opts) {
 
     if (!resp.ok) {
       const errText = await resp.text();
-      console.error(`[calcom] createBooking failed (${resp.status}):`, errText.substring(0, 300));
+      logger.error(`[calcom] createBooking failed (${resp.status}):`, errText.substring(0, 300));
       return { success: false, error: `Cal.com API error: ${resp.status}` };
     }
 
     const data = await resp.json();
     const booking = data.data || data;
-    console.log(`[calcom] Booking created: ${booking.uid || booking.id} for ${email} at ${startTime}`);
+    logger.info(`[calcom] Booking created: ${booking.uid || booking.id} for ${email} at ${startTime}`);
     return { success: true, booking };
   } catch (err) {
-    console.error('[calcom] createBooking error:', err.message);
+    logger.error('[calcom] createBooking error:', err.message);
     return { success: false, error: err.message };
   }
 }

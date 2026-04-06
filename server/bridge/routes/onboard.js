@@ -4,6 +4,7 @@ const { randomUUID } = require('crypto');
 const path = require('path');
 const fsPromises = require('fs').promises;
 const { isValidUUID, isValidPhone, isValidEmail, isValidURL, sanitizeString } = require('../utils/validate');
+const { logger } = require('../utils/logger');
 
 // Rate limiting for onboarding
 const onboardRateLimits = new Map();
@@ -326,7 +327,7 @@ router.post('/onboard', onboardRateLimit, async (req, res) => {
     res.status(201).json(response);
 
   } catch (err) {
-    console.error('[onboard] Error:', err);
+    logger.error('[onboard] Error:', err);
     res.status(500).json({
       success: false,
       error: 'Onboarding failed',

@@ -119,7 +119,7 @@ async function triggerSpeedSequence(db, leadData) {
       `).run(randomUUID(), leadId, clientId, threeDays);
     }
   } catch (err) {
-    console.error('[SpeedToLead] Follow-up insert failed:', err.message);
+    logger.error('[SpeedToLead] Follow-up insert failed:', err.message);
   }
 
   // === Telegram notification (skip in digest mode) ===

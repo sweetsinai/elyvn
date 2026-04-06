@@ -162,7 +162,8 @@ describe('Client Isolation Middleware', () => {
     });
 
     test('logs security violation on isolation bypass attempt', () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger } = require('../utils/logger');
+      const loggerSpy = jest.spyOn(logger, 'error').mockImplementation();
 
       mockReq.isAdmin = false;
       mockReq.clientId = 'client-123';
@@ -170,14 +171,14 @@ describe('Client Isolation Middleware', () => {
 
       enforceClientIsolation(mockReq, mockRes, mockNext);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(loggerSpy).toHaveBeenCalledWith(
         expect.stringContaining('[SECURITY] Client isolation bypass attempt')
       );
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(loggerSpy).toHaveBeenCalledWith(
         expect.stringContaining('Client client-123 tried to access client-999')
       );
 
-      consoleSpy.mockRestore();
+      loggerSpy.mockRestore();
     });
 
     test('precedence: params > query in isolation check', () => {
@@ -186,16 +187,17 @@ describe('Client Isolation Middleware', () => {
       mockReq.params.clientId = 'client-999'; // Params take precedence
       mockReq.query.clientId = 'client-123'; // Would match if checked
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const { logger } = require('../utils/logger');
+      const loggerSpy = jest.spyOn(logger, 'error').mockImplementation();
 
       enforceClientIsolation(mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(403);
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(loggerSpy).toHaveBeenCalledWith(
         expect.stringContaining('client-999')
       );
 
-      consoleSpy.mockRestore();
+      loggerSpy.mockRestore();
     });
   });
 

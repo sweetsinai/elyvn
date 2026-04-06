@@ -4,6 +4,7 @@
  */
 
 const { randomUUID } = require('crypto');
+const { logger } = require('./logger');
 
 /**
  * Schedule reminders for an appointment (24h, 1h, 15min before)
@@ -13,14 +14,14 @@ const { randomUUID } = require('crypto');
  */
 function scheduleReminders(db, appointment) {
   if (!db || !appointment || !appointment.id || !appointment.datetime) {
-    console.warn('[appointmentReminders] Missing required fields');
+    logger.warn('[appointmentReminders] Missing required fields');
     return false;
   }
 
   try {
     const apptTime = new Date(appointment.datetime);
     if (isNaN(apptTime.getTime())) {
-      console.warn('[appointmentReminders] Invalid datetime:', appointment.datetime);
+      logger.warn('[appointmentReminders] Invalid datetime:', appointment.datetime);
       return false;
     }
 
@@ -66,7 +67,7 @@ function scheduleReminders(db, appointment) {
 
       // Only schedule if in the future
       if (scheduledAt.getTime() <= Date.now()) {
-        console.log(`[appointmentReminders] Skipping past reminder touch ${reminder.touchNumber}`);
+        logger.info(`[appointmentReminders] Skipping past reminder touch ${reminder.touchNumber}`);
         continue;
       }
 
@@ -76,7 +77,7 @@ function scheduleReminders(db, appointment) {
       ).get(leadId, reminder.touchNumber);
 
       if (existing) {
-        console.log(`[appointmentReminders] Already scheduled touch ${reminder.touchNumber}`);
+        logger.info(`[appointmentReminders] Already scheduled touch ${reminder.touchNumber}`);
         continue;
       }
 
@@ -95,10 +96,10 @@ function scheduleReminders(db, appointment) {
       scheduled++;
     }
 
-    console.log(`[appointmentReminders] Scheduled ${scheduled} reminders for appointment ${appointment.id}`);
+    logger.info(`[appointmentReminders] Scheduled ${scheduled} reminders for appointment ${appointment.id}`);
     return true;
   } catch (err) {
-    console.error('[appointmentReminders] scheduleReminders error:', err.message);
+    logger.error('[appointmentReminders] scheduleReminders error:', err.message);
     return false;
   }
 }
@@ -136,15 +137,15 @@ async function processDueReminders(db, sendSMSFn) {
             "UPDATE followups SET status = 'sent', sent_at = datetime('now') WHERE id = ?"
           ).run(reminder.id);
           sent++;
-          console.log(`[appointmentReminders] Sent reminder ${reminder.id} to ${reminder.phone}`);
+          logger.info(`[appointmentReminders] Sent reminder ${reminder.id} to ${reminder.phone}`);
         } else {
-          console.warn(`[appointmentReminders] Failed to send reminder ${reminder.id}`);
+          logger.warn(`[appointmentReminders] Failed to send reminder ${reminder.id}`);
           db.prepare(
             "UPDATE followups SET status = 'failed' WHERE id = ?"
           ).run(reminder.id);
         }
       } catch (err) {
-        console.error(`[appointmentReminders] Error sending reminder ${reminder.id}:`, err.message);
+        logger.error(`[appointmentReminders] Error sending reminder ${reminder.id}:`, err.message);
         db.prepare(
           "UPDATE followups SET status = 'failed' WHERE id = ?"
         ).run(reminder.id);
@@ -156,7 +157,7 @@ async function processDueReminders(db, sendSMSFn) {
 
     return sent;
   } catch (err) {
-    console.error('[appointmentReminders] processDueReminders error:', err.message);
+    logger.error('[appointmentReminders] processDueReminders error:', err.message);
     return 0;
   }
 }

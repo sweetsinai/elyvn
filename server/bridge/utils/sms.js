@@ -109,7 +109,7 @@ async function sendSMS(to, body, from, db, clientId) {
   const fromNumber = from || DEFAULT_FROM;
 
   if (!fromNumber) {
-    console.error('[sms] No from number configured');
+    logger.error('[sms] No from number configured');
     return { success: false, error: 'No from number configured' };
   }
 
@@ -127,7 +127,7 @@ async function sendSMS(to, body, from, db, clientId) {
   }
 
   if (!SMS_PROVIDER) {
-    console.error('[sms] No SMS provider configured');
+    logger.error('[sms] No SMS provider configured');
     return { success: false, error: 'SMS not configured' };
   }
 

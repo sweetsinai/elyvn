@@ -3,6 +3,8 @@
  * Run daily via scheduler.
  */
 
+const { logger } = require('./logger');
+
 const RETENTION_POLICIES = {
   // Keep completed jobs for 30 days
   job_queue: { condition: "status IN ('completed', 'failed', 'cancelled') AND updated_at < datetime('now', '-30 days')" },
@@ -31,10 +33,10 @@ function runRetention(db) {
       if (count.c > 0) {
         const result = db.prepare(`DELETE FROM ${table} WHERE ${policy.condition}`).run();
         results[table] = result.changes;
-        console.log(`[retention] Deleted ${result.changes} rows from ${table}`);
+        logger.info(`[retention] Deleted ${result.changes} rows from ${table}`);
       }
     } catch (err) {
-      console.error(`[retention] Error on ${table}:`, err.message);
+      logger.error(`[retention] Error on ${table}:`, err.message);
       results[table] = { error: err.message };
     }
   }
@@ -44,9 +46,9 @@ function runRetention(db) {
   if (totalDeleted > 1000) {
     try {
       db.exec('VACUUM');
-      console.log('[retention] VACUUM completed');
+      logger.info('[retention] VACUUM completed');
     } catch (err) {
-      console.error('[retention] VACUUM error:', err.message);
+      logger.error('[retention] VACUUM error:', err.message);
     }
   }
 

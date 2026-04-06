@@ -1,5 +1,6 @@
 const express = require('express');
 const { isValidUUID } = require('../utils/validate');
+const { logger } = require('../utils/logger');
 
 const router = express.Router();
 
@@ -41,7 +42,7 @@ router.get('/open/:emailId', (req, res) => {
         .run(new Date().toISOString(), new Date().toISOString(), emailId);
     }
   } catch (err) {
-    console.error('[server] Email open tracking failed:', err.message);
+    logger.error('[server] Email open tracking failed:', err.message);
   }
   // Return 1x1 transparent GIF
   const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
@@ -71,7 +72,7 @@ router.get('/click/:emailId', (req, res) => {
         .run(new Date().toISOString(), new Date().toISOString(), emailId);
     }
   } catch (err) {
-    console.error('[server] Email click tracking failed:', err.message);
+    logger.error('[server] Email click tracking failed:', err.message);
   }
 
   if (url) {
