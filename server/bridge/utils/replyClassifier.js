@@ -1,5 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const config = require('./config');
+const { logger } = require('./logger');
 
 const anthropic = new Anthropic();
 
@@ -25,7 +26,7 @@ UNSUBSCRIBE: asks to be removed, stop emailing, etc.`,
     const cleaned = text.replace(/```json|```/g, '').trim();
     return JSON.parse(cleaned);
   } catch (err) {
-    console.error('[ReplyClassifier] Error:', err.message);
+    logger.error('[ReplyClassifier] Error:', err.message);
     return { classification: 'QUESTION', summary: 'Classification failed — needs manual review' };
   }
 }

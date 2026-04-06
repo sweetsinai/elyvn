@@ -4,6 +4,7 @@
  */
 
 const nodemailer = require('nodemailer');
+const { logger } = require('./logger');
 
 // Lazy-initialized singleton transporter
 let transporter = null;
@@ -20,7 +21,7 @@ function getTransporter() {
     const secure = process.env.SMTP_SECURE === 'true';
 
     if (!host || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      console.warn('[mailer] SMTP not configured — transporter will be null');
+      logger.warn('[mailer] SMTP not configured — transporter will be null');
       return null;
     }
 
@@ -34,7 +35,7 @@ function getTransporter() {
       },
     });
 
-    console.log(`[mailer] Initialized transporter (${host}:${port}, secure=${secure})`);
+    logger.info(`[mailer] Initialized transporter (${host}:${port}, secure=${secure})`);
   }
 
   return transporter;

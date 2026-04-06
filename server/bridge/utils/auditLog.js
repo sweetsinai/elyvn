@@ -7,6 +7,14 @@
 const { randomUUID } = require('crypto');
 const fs = require('fs');
 
+// auditLog.js is the fallback logger itself — use console directly
+// (setupLogger() overrides console methods to also write to log files)
+const logger = {
+  info: (...args) => console.log(...args),
+  error: (...args) => console.error(...args),
+  warn: (...args) => console.warn(...args),
+};
+
 const FALLBACK_LOG = process.env.AUDIT_FALLBACK_LOG || '/tmp/elyvn-audit-fallback.log';
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -66,12 +74,12 @@ function fallbackLog(entry) {
           fs.unlinkSync(oldPath);
         }
         fs.renameSync(FALLBACK_LOG, oldPath);
-        console.log(`[audit] Rotated fallback log at ${FALLBACK_LOG} (was ${Math.round(stats.size / 1048576)}MB)`);
+        logger.info(`[audit] Rotated fallback log at ${FALLBACK_LOG} (was ${Math.round(stats.size / 1048576)}MB)`);
       }
     }
     fs.appendFileSync(FALLBACK_LOG, JSON.stringify(entry) + '\n');
   } catch (e) {
-    console.error('[audit] Fallback log write failed:', e.message);
+    logger.error('[audit] Fallback log write failed:', e.message);
   }
 }
 
@@ -85,10 +93,10 @@ function cleanupAuditLog(db, retentionDays = 90) {
   if (!db) return 0;
   try {
     const result = db.prepare("DELETE FROM audit_log WHERE created_at < datetime('now', '-' || ? || ' days')").run(retentionDays);
-    console.log(`[audit] Cleaned up ${result.changes} entries older than ${retentionDays} days`);
+    logger.info(`[audit] Cleaned up ${result.changes} entries older than ${retentionDays} days`);
     return result.changes;
   } catch (e) {
-    console.error('[audit] Cleanup failed:', e.message);
+    logger.error('[audit] Cleanup failed:', e.message);
     return 0;
   }
 }
@@ -129,7 +137,7 @@ function logAudit(db, { clientId, userId, action, resourceType, resourceId, ip, 
 
   // Log warning if unknown action detected
   if (isUnknown) {
-    console.warn(`[audit] Unknown action detected: ${action}`);
+    logger.warn(`[audit] Unknown action detected: ${action}`);
   }
 
   try {
@@ -149,7 +157,7 @@ function logAudit(db, { clientId, userId, action, resourceType, resourceId, ip, 
       entry.created_at
     );
   } catch (err) {
-    console.error('[audit] Log error:', err.message);
+    logger.error('[audit] Log error:', err.message);
     // Fallback to file logging on DB failure
     fallbackLog(entry);
   }

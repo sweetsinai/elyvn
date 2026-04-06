@@ -12,6 +12,8 @@
  * Score = (responsiveness * 0.25) + (engagement * 0.25) + (intent_signals * 0.20) + (recency * 0.15) + (channel_diversity * 0.15)
  */
 
+const { logger } = require('./logger');
+
 /**
  * Calculate predictive lead score using historical patterns
  * @param {object} db - better-sqlite3 instance
@@ -309,7 +311,7 @@ function predictLeadScore(db, leadId, clientId) {
       },
     };
   } catch (error) {
-    console.error(`[Scoring] Error scoring lead ${leadId}:`, error.message);
+    logger.error(`[Scoring] Error scoring lead ${leadId}:`, error.message);
     return {
       score: 0,
       factors: {},
@@ -405,7 +407,7 @@ function getConversionAnalytics(db, clientId) {
       top_sources: topSources,
     };
   } catch (error) {
-    console.error(`[Scoring] Error getting conversion analytics for ${clientId}:`, error.message);
+    logger.error(`[Scoring] Error getting conversion analytics for ${clientId}:`, error.message);
     return {
       conversion_rate: 0,
       avg_touches_to_convert: 0,
@@ -449,7 +451,7 @@ function batchScoreLeads(db, clientId) {
     // Sort by predictive score descending
     return scoredLeads.sort((a, b) => b.predictive_score - a.predictive_score);
   } catch (error) {
-    console.error(`[Scoring] Error batch scoring leads for ${clientId}:`, error.message);
+    logger.error(`[Scoring] Error batch scoring leads for ${clientId}:`, error.message);
     return [];
   }
 }

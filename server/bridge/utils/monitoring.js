@@ -4,13 +4,21 @@
  * Falls back gracefully if SENTRY_DSN is not set.
  */
 
+// monitoring.js may initialize before logger — use console directly
+// (setupLogger() overrides console methods to also write to log files)
+const logger = {
+  info: (...args) => console.log(...args),
+  error: (...args) => console.error(...args),
+  warn: (...args) => console.warn(...args),
+};
+
 let Sentry = null;
 let isInitialized = false;
 
 function initMonitoring() {
   const dsn = process.env.SENTRY_DSN;
   if (!dsn) {
-    console.log('[monitoring] SENTRY_DSN not set — error tracking disabled');
+    logger.info('[monitoring] SENTRY_DSN not set — error tracking disabled');
     return;
   }
 
@@ -31,9 +39,9 @@ function initMonitoring() {
       },
     });
     isInitialized = true;
-    console.log('[monitoring] Sentry initialized');
+    logger.info('[monitoring] Sentry initialized');
   } catch (err) {
-    console.warn('[monitoring] Sentry init failed (package not installed?):', err.message);
+    logger.warn('[monitoring] Sentry init failed (package not installed?):', err.message);
   }
 }
 
@@ -42,7 +50,7 @@ function captureException(err, context = {}) {
     Sentry.captureException(err, { extra: context });
   }
   // Always log locally too
-  console.error(`[error] ${err.message}`, context);
+  logger.error(`[error] ${err.message}`, context);
 }
 
 function captureMessage(msg, level = 'info', context = {}) {

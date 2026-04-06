@@ -317,7 +317,7 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
         if (!resolvedPath.startsWith(kbDir)) {
           logger.error('[telnyx] KB path traversal attempt detected');
         } else {
-          const kbData = JSON.parse(fs.readFileSync(kbPath, 'utf8'));
+          const kbData = JSON.parse(await fs.promises.readFile(kbPath, 'utf8'));
           kb = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
           if (kb.length > 5000) kb = kb.substring(0, 5000) + '\n[...truncated]';
         }

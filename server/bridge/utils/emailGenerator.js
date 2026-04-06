@@ -1,5 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const config = require('./config');
+const { logger } = require('./logger');
 
 const anthropic = new Anthropic();
 
@@ -59,7 +60,7 @@ Generate two different subject lines (subject_a and subject_b) for A/B testing. 
       body
     };
   } catch (err) {
-    console.error('[EmailGen] Error:', err.message);
+    logger.error('[EmailGen] Error:', err.message);
     // Fallback template — always includes booking link
     return {
       subject_a: `${business_name} — never miss a customer call again`,

@@ -6,6 +6,7 @@
 const { WEBSOCKET_HEARTBEAT_INTERVAL_MS } = require('../config/timing');
 const WebSocket = require('ws');
 const crypto = require('crypto');
+const { logger } = require('./logger');
 
 let wss = null;
 const authenticatedClients = new Set();
@@ -98,9 +99,9 @@ function initWebSocket(server, db) {
       }
     }, WEBSOCKET_HEARTBEAT_INTERVAL_MS);
 
-    console.log('[ws] WebSocket server initialized on /ws (message-based auth)');
+    logger.info('[ws] WebSocket server initialized on /ws (message-based auth)');
   } catch (err) {
-    console.warn('[ws] WebSocket init failed:', err.message);
+    logger.warn('[ws] WebSocket init failed:', err.message);
   }
 }
 
@@ -108,7 +109,7 @@ function cleanupWebSocket() {
   if (heartbeatInterval) clearInterval(heartbeatInterval);
   if (wss) {
     wss.close(() => {
-      console.log('[ws] WebSocket server closed');
+      logger.info('[ws] WebSocket server closed');
     });
   }
 }

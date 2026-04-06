@@ -1,4 +1,5 @@
 const { classifyReply } = require('./replyClassifier');
+const { logger } = require('./logger');
 
 /**
  * Automatically classify unclassified replies using AI
@@ -47,7 +48,7 @@ async function autoClassifyReplies(db) {
 
         successCount++;
       } catch (err) {
-        console.error(`[autoClassify] Error classifying email ${email.id}:`, err.message);
+        logger.error(`[autoClassify] Error classifying email ${email.id}:`, err.message);
         results.push({
           id: email.id,
           error: err.message
@@ -61,7 +62,7 @@ async function autoClassifyReplies(db) {
       message: `Classified ${successCount}/${unclassified.length} replies`
     };
   } catch (err) {
-    console.error('[autoClassify] Fatal error:', err.message);
+    logger.error('[autoClassify] Fatal error:', err.message);
     throw err;
   }
 }

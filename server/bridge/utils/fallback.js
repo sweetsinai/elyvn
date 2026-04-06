@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { logger } = require('./logger');
 
 const TEMPLATES_DIR = path.join(__dirname, '../../mcp/templates');
 
@@ -15,7 +16,7 @@ function loadTemplate(clientId, templateName, variables = {}) {
 
   try {
     if (!fs.existsSync(filePath)) {
-      console.log(`[fallback] Template not found: ${filePath}`);
+      logger.info(`[fallback] Template not found: ${filePath}`);
       return null;
     }
 
@@ -28,7 +29,7 @@ function loadTemplate(clientId, templateName, variables = {}) {
 
     return content;
   } catch (err) {
-    console.error('[fallback] loadTemplate error:', err);
+    logger.error('[fallback] loadTemplate error:', err);
     return null;
   }
 }

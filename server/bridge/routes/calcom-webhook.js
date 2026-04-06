@@ -211,7 +211,7 @@ async function handleBookingCreated(db, payload) {
       const startDate = new Date(startTime);
       const timeStr = startDate.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
       const smsText = `Confirmed! Your appointment with ${client.business_name} is on ${timeStr}. We'll send you a reminder beforehand. Reply CANCEL to reschedule.`;
-      await sendSMS(db, phone, smsText, client.id);
+      await sendSMS(phone, smsText, client.twilio_phone, db, client.id);
       logger.info(`[calcom-webhook] Confirmation SMS sent to ${phone}`);
     } catch (err) {
       logger.error('[calcom-webhook] Confirmation SMS failed:', err.message);

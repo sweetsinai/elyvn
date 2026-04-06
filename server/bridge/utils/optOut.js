@@ -3,6 +3,8 @@
  * Tracks opt-outs by phone number and prevents SMS to opted-out numbers
  */
 
+const { logger } = require('./logger');
+
 /**
  * Check if a phone number has opted out from SMS
  * @param {object} db - better-sqlite3 instance
@@ -20,7 +22,7 @@ function isOptedOut(db, phone, clientId) {
 
     return !!result;
   } catch (err) {
-    console.error('[optOut] isOptedOut error:', err.message);
+    logger.error('[optOut] isOptedOut error:', err.message);
     return false;
   }
 }
@@ -43,10 +45,10 @@ function recordOptOut(db, phone, clientId, reason = 'user_request') {
       VALUES (?, ?, ?, datetime('now'), ?)
     `).run(randomUUID(), phone, clientId, reason);
 
-    console.log(`[optOut] Recorded opt-out for ${phone} (${reason})`);
+    logger.info(`[optOut] Recorded opt-out for ${phone} (${reason})`);
     return true;
   } catch (err) {
-    console.error('[optOut] recordOptOut error:', err.message);
+    logger.error('[optOut] recordOptOut error:', err.message);
     return false;
   }
 }
@@ -66,10 +68,10 @@ function recordOptIn(db, phone, clientId) {
       'DELETE FROM sms_opt_outs WHERE phone = ? AND client_id = ?'
     ).run(phone, clientId);
 
-    console.log(`[optOut] Recorded opt-in for ${phone}`);
+    logger.info(`[optOut] Recorded opt-in for ${phone}`);
     return true;
   } catch (err) {
-    console.error('[optOut] recordOptIn error:', err.message);
+    logger.error('[optOut] recordOptIn error:', err.message);
     return false;
   }
 }

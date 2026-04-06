@@ -242,10 +242,10 @@ async function setClientCommands(chatId, plan) {
       }),
     });
     const data = await res.json();
-    if (!res.ok) console.error('[telegram] setMyCommands failed:', JSON.stringify(data));
+    if (!res.ok) { const { logger } = require('./logger'); logger.error('[telegram] setMyCommands failed:', JSON.stringify(data)); }
     return data;
   } catch (err) {
-    console.error('[telegram] setMyCommands error:', err.message);
+    const { logger } = require('./logger'); logger.error('[telegram] setMyCommands error:', err.message);
   }
 }
 

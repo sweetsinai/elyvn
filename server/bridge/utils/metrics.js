@@ -3,6 +3,8 @@
  * Lightweight in-memory metrics collector
  */
 
+const { logger } = require('./logger');
+
 const metrics = {
   total_calls: 0,
   total_sms_sent: 0,
@@ -77,7 +79,7 @@ function resetMetrics() {
   metrics.avg_response_time_ms = 0;
   metrics._response_times = [];
   metrics._last_reset = new Date();
-  console.log('[metrics] Metrics reset');
+  logger.info('[metrics] Metrics reset');
 }
 
 module.exports = { recordMetric, getMetrics, resetMetrics };
