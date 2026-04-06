@@ -5,22 +5,10 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const { getOnboardingLink } = require('../utils/telegram');
+const { logger } = require('../utils/logger');
 
-// Ensure the 'plan' column exists on clients table
-try {
-  const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '../mcp/elyvn.db');
-  const Database = require('better-sqlite3');
-  const initDb = new Database(dbPath);
-  try {
-    initDb.exec('ALTER TABLE clients ADD COLUMN plan TEXT DEFAULT "growth"');
-    console.log('[provision] Ensured plan column exists on clients table');
-  } catch (_) {
-    // Column already exists
-  }
-  initDb.close();
-} catch (err) {
-  console.error('[provision] Failed to ensure plan column:', err.message);
-}
+// NOTE: The 'plan' column is handled by migration 022_auth_and_billing.
+// Removed rogue DB connection that opened a second database handle at module load.
 
 /**
  * Make an HTTPS request and return {status, body, headers}
@@ -141,7 +129,7 @@ router.post('/', async (req, res) => {
       kb_error: null,
     };
 
-    console.log(`[provision] Starting provisioning for ${business_name} (${clientId})`);
+    logger.info(`[provision] Starting provisioning for ${business_name} (${clientId})`);
 
     // Step 1: Create Retell agent (optional, don't fail overall provisioning if this fails)
     let retellAgentId = null;
@@ -150,13 +138,13 @@ router.post('/', async (req, res) => {
         ? `You serve ${knowledge_base.business_name || business_name}. Services: ${(knowledge_base.services || []).join(', ') || 'various services'}. Business hours: ${knowledge_base.hours || 'standard hours'}. Location: ${knowledge_base.location || 'contact for details'}.`
         : null;
 
-      console.log(`[provision] Creating Retell agent for ${business_name}...`);
+      logger.info(`[provision] Creating Retell agent for ${business_name}...`);
       retellAgentId = await createRetellAgent(business_name, kbSummary);
       provisioning_status.retell_agent_id = retellAgentId;
-      console.log(`[provision] Successfully created Retell agent: ${retellAgentId}`);
+      logger.info(`[provision] Successfully created Retell agent: ${retellAgentId}`);
     } catch (err) {
       provisioning_status.retell_error = err.message;
-      console.error(`[provision] Retell provisioning failed: ${err.message}`);
+      logger.error(`[provision] Retell provisioning failed: ${err.message}`);
       // Don't return — allow client creation without Retell
     }
 
@@ -185,10 +173,10 @@ router.post('/', async (req, res) => {
       );
 
       provisioning_status.db_save = true;
-      console.log(`[provision] Successfully saved client to database: ${clientId}`);
+      logger.info(`[provision] Successfully saved client to database: ${clientId}`);
     } catch (err) {
       provisioning_status.db_error = err.message;
-      console.error(`[provision] Database save failed: ${err.message}`);
+      logger.error(`[provision] Database save failed: ${err.message}`);
       return res.status(500).json({
         error: 'Failed to save client to database',
         message: err.message,
@@ -208,10 +196,10 @@ router.post('/', async (req, res) => {
           JSON.stringify(knowledge_base, null, 2)
         );
         provisioning_status.kb_save = true;
-        console.log(`[provision] Successfully saved knowledge base: ${clientId}.json`);
+        logger.info(`[provision] Successfully saved knowledge base: ${clientId}.json`);
       } catch (err) {
         provisioning_status.kb_error = err.message;
-        console.error(`[provision] Knowledge base save failed: ${err.message}`);
+        logger.error(`[provision] Knowledge base save failed: ${err.message}`);
         // Don't fail the entire provisioning for KB save failures
       }
     }
@@ -223,8 +211,8 @@ router.post('/', async (req, res) => {
     const telegram_link = getOnboardingLink(clientId);
     provisioning_status.telegram_link = telegram_link;
 
-    console.log(`[provision] Provisioning complete for ${business_name} (${clientId})`);
-    console.log(`[provision] Telegram link: ${telegram_link}`);
+    logger.info(`[provision] Provisioning complete for ${business_name} (${clientId})`);
+    logger.info(`[provision] Telegram link: ${telegram_link}`);
 
     return res.status(201).json({
       client,
@@ -233,7 +221,7 @@ router.post('/', async (req, res) => {
       success: provisioning_status.db_save === true,
     });
   } catch (err) {
-    console.error('[provision] Unexpected error:', err);
+    logger.error('[provision] Unexpected error:', err);
     return res.status(500).json({
       error: 'Unexpected error during provisioning',
       message: err.message,

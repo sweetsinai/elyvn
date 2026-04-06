@@ -171,6 +171,18 @@ router.post('/onboard', onboardRateLimit, async (req, res) => {
       }
     }
 
+    // Check if email already exists (prevent duplicate accounts)
+    const existingClient = db.prepare(
+      'SELECT id FROM clients WHERE owner_email = ?'
+    ).get(owner_email.toLowerCase().trim());
+
+    if (existingClient) {
+      return res.status(409).json({
+        success: false,
+        error: 'An account with this email already exists'
+      });
+    }
+
     // Sanitize inputs
     const sanitized = {
       business_name: sanitizeString(business_name),

@@ -43,6 +43,13 @@ function callbackRateLimit(chatId) {
 // Verify webhook secret (skip if not configured)
 router.use((req, res, next) => {
   const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!expectedSecret) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[telegram] TELEGRAM_WEBHOOK_SECRET not configured in production');
+      return res.status(500).json({ error: 'Webhook not configured' });
+    }
+    return next();
+  }
   if (expectedSecret) {
     const secret = req.headers['x-telegram-bot-api-secret-token'];
     if (!secret) {

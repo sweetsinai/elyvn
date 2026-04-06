@@ -587,6 +587,16 @@ const migrations = [
       }
     },
   },
+  {
+    id: '024_calls_analysis_data',
+    description: 'Add analysis_data column to calls table for storing call analysis JSON',
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info('calls')").all().map(c => c.name);
+      if (!cols.includes('analysis_data')) {
+        db.exec('ALTER TABLE calls ADD COLUMN analysis_data TEXT');
+      }
+    },
+  },
 ];
 
 /**

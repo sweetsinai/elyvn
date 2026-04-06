@@ -28,6 +28,10 @@ const retellBreaker = new CircuitBreaker(
 router.use((req, res, next) => {
   const secret = process.env.RETELL_WEBHOOK_SECRET;
   if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[retell] RETELL_WEBHOOK_SECRET not configured in production');
+      return res.status(500).json({ error: 'Webhook not configured' });
+    }
     logger.warn('[retell] Webhook signature validation disabled - set RETELL_WEBHOOK_SECRET');
     return next();
   }

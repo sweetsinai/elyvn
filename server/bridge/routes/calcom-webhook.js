@@ -12,6 +12,10 @@ const { logger } = require('../utils/logger');
 router.use((req, res, next) => {
   const secret = process.env.CALCOM_WEBHOOK_SECRET;
   if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[calcom-webhook] CALCOM_WEBHOOK_SECRET not configured in production');
+      return res.status(500).json({ error: 'Webhook not configured' });
+    }
     logger.warn('[calcom-webhook] Webhook signature validation disabled - set CALCOM_WEBHOOK_SECRET');
     return next();
   }
