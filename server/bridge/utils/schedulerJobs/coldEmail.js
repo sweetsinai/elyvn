@@ -8,12 +8,12 @@ async function dailyOutreach(db) {
     const { sendColdEmail, DAILY_LIMIT } = require('../emailSender');
 
     // Get unsent prospects with email addresses
-    const prospects = db.prepare(`
+    const prospects = await db.query(`
       SELECT * FROM prospects
       WHERE status = 'new' AND email IS NOT NULL AND email != ''
       ORDER BY rating DESC, review_count DESC
       LIMIT ?
-    `).all(DAILY_LIMIT);
+    `, [DAILY_LIMIT]);
 
     if (prospects.length === 0) {
       logger.info('[Outreach] No new prospects to email');
@@ -31,8 +31,8 @@ async function dailyOutreach(db) {
         const verification = await verifyEmail(prospect.email);
         if (!verification.valid) {
           logger.info(`[Outreach] Skipping invalid email ${prospect.email}: ${verification.reason}`);
-          db.prepare("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?")
-            .run(new Date().toISOString(), prospect.id);
+          await db.query("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?",
+            [new Date().toISOString(), prospect.id], 'run');
           continue;
         }
 
@@ -55,10 +55,11 @@ async function dailyOutreach(db) {
     }
 
     // Notify owner via Telegram
-    const clients = db.prepare('SELECT telegram_chat_id FROM clients WHERE telegram_chat_id IS NOT NULL LIMIT 1').all();
+    const clients = await db.query('SELECT telegram_chat_id FROM clients WHERE telegram_chat_id IS NOT NULL LIMIT 1');
+    const remainingRow = await db.query("SELECT COUNT(*) as c FROM prospects WHERE status = 'new' AND email IS NOT NULL", [], 'get');
     for (const c of clients) {
       telegram.sendMessage(c.telegram_chat_id,
-        `<b>Daily Outreach Complete</b>\n\nSent: ${sent}\nFailed: ${failed}\nRemaining prospects: ${db.prepare("SELECT COUNT(*) as c FROM prospects WHERE status = 'new' AND email IS NOT NULL").get().c}`
+        `<b>Daily Outreach Complete</b>\n\nSent: ${sent}\nFailed: ${failed}\nRemaining prospects: ${remainingRow.c}`
       ).catch(err => logger.warn('[scheduler] Outreach Telegram notify failed', err.message));
     }
 

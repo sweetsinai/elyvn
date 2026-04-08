@@ -6,6 +6,7 @@ const { randomUUID } = require('crypto');
 const { sendSMS } = require('./sms');
 const telegram = require('./telegram');
 const { logger } = require('./logger');
+const { appendEvent, Events } = require('./eventStore');
 
 async function executeActions(db, actions, leadMemory) {
   const results = [];
@@ -15,6 +16,13 @@ async function executeActions(db, actions, leadMemory) {
     try {
       const result = await executeOne(db, action, lead, client);
       results.push({ action: action.action, success: true, result });
+
+      // Fire-and-forget: emit BrainActionExecuted event
+      if (lead?.id) {
+        try {
+          await appendEvent(db, lead.id, 'lead', Events.BrainActionExecuted, { action: action.action, details: action }, client?.id);
+        } catch (_) {}
+      }
     } catch (error) {
       logger.error(`[Executor] Failed ${action.action}:`, error.message);
       results.push({ action: action.action, success: false, error: error.message });
@@ -41,7 +49,7 @@ async function executeOne(db, action, lead, client) {
         try {
           const { enqueueJob } = require('./jobQueue');
           const scheduledAt = new Date(Date.now() + delay).toISOString();
-          enqueueJob(db, 'followup_sms', {
+          await enqueueJob(db, 'followup_sms', {
             phone: to,
             message: action.message,
             from: client?.telnyx_phone || client?.twilio_phone,
@@ -59,10 +67,10 @@ async function executeOne(db, action, lead, client) {
 
       // Log in messages table
       if (lead?.id && result.success && !result.scheduled) {
-        db.prepare(`
+        await db.query(`
           INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, reply_source, status, created_at)
           VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'brain', 'sent', datetime('now'))
-        `).run(randomUUID(), client?.id, lead.id, to, action.message);
+        `, [randomUUID(), client?.id, lead.id, to, action.message], 'run');
       }
 
       // Notify owner about brain-initiated SMS (skip in digest mode)
@@ -80,19 +88,20 @@ async function executeOne(db, action, lead, client) {
       const id = randomUUID();
       const scheduledAt = new Date(Date.now() + (action.delay_hours || 2) * 3600000).toISOString();
 
-      db.prepare(`
+      await db.query(`
         INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
         VALUES (?, ?, ?, ?, 'brain', ?, 'brain', ?, 'scheduled')
-      `).run(id, lead.id, client?.id, action.touch_number || 1, action.message, scheduledAt);
+      `, [id, lead.id, client?.id, action.touch_number || 1, action.message, scheduledAt], 'run');
 
       return { followup_id: id, scheduled_at: scheduledAt };
     }
 
     case 'cancel_pending_followups': {
       if (!lead?.id) return { cancelled: 0 };
-      const result = db.prepare(
-        `UPDATE followups SET status = 'cancelled', updated_at = datetime('now') WHERE lead_id = ? AND status = 'scheduled'`
-      ).run(lead.id);
+      const result = await db.query(
+        `UPDATE followups SET status = 'cancelled', updated_at = datetime('now') WHERE lead_id = ? AND status = 'scheduled'`,
+        [lead.id], 'run'
+      );
       return { cancelled: result.changes || 0, reason: action.reason };
     }
 
@@ -103,18 +112,20 @@ async function executeOne(db, action, lead, client) {
         logger.warn(`[Executor] Invalid stage: ${action.stage}`);
         return { updated: false, error: 'invalid_stage' };
       }
-      db.prepare(
-        `UPDATE leads SET stage = ?, updated_at = datetime('now') WHERE id = ?`
-      ).run(action.stage, lead.id);
+      await db.query(
+        `UPDATE leads SET stage = ?, updated_at = datetime('now') WHERE id = ?`,
+        [action.stage, lead.id], 'run'
+      );
       return { new_stage: action.stage };
     }
 
     case 'update_lead_score': {
       if (!lead?.id) return { updated: false };
       const score = Math.max(0, Math.min(10, Number(action.score) || 0));
-      db.prepare(
-        `UPDATE leads SET score = ?, updated_at = datetime('now') WHERE id = ?`
-      ).run(score, lead.id);
+      await db.query(
+        `UPDATE leads SET score = ?, updated_at = datetime('now') WHERE id = ?`,
+        [score, lead.id], 'run'
+      );
       return { new_score: score, reason: action.reason };
     }
 
@@ -167,19 +178,19 @@ async function executeOne(db, action, lead, client) {
             // Record appointment in DB
             const appointmentId = randomUUID();
             const now = new Date().toISOString();
-            db.prepare(`
+            await db.query(`
               INSERT INTO appointments (id, client_id, lead_id, phone, name, service, datetime, status, calcom_booking_id, created_at, updated_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)
-            `).run(appointmentId, client?.id, lead?.id, phone, leadName, action.service || 'Demo', action.start_time, result.booking?.uid || '', now, now);
+            `, [appointmentId, client?.id, lead?.id, phone, leadName, action.service || 'Demo', action.start_time, result.booking?.uid || '', now, now], 'run');
 
             // Update lead stage
             if (lead?.id) {
-              db.prepare("UPDATE leads SET stage = 'booked', score = MAX(score, 9), updated_at = datetime('now') WHERE id = ?").run(lead.id);
+              await db.query("UPDATE leads SET stage = 'booked', score = MAX(score, 9), updated_at = datetime('now') WHERE id = ?", [lead.id], 'run');
             }
 
             // Cancel pending follow-ups
             if (lead?.id) {
-              db.prepare("UPDATE followups SET status = 'cancelled', updated_at = datetime('now') WHERE lead_id = ? AND status = 'scheduled'").run(lead.id);
+              await db.query("UPDATE followups SET status = 'cancelled', updated_at = datetime('now') WHERE lead_id = ? AND status = 'scheduled'", [lead.id], 'run');
             }
 
             // Notify owner

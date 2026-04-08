@@ -6,6 +6,42 @@
 const { randomUUID } = require('crypto');
 const { JOB_HANDLER_TIMEOUT, JOB_CLEANUP_DELAY_MS, STALLED_JOB_THRESHOLD_MS, STALE_JOB_THRESHOLD_MS, JOB_RETRY_BACKOFF_BASE_MS } = require('../config/timing');
 const { logger } = require('./logger');
+const { AppError } = require('./AppError');
+
+/**
+ * Ensure the dead_letter_queue table and idempotency_key column exist.
+ * Called lazily on first use so no separate migration file is needed.
+ * @param {object} db - better-sqlite3 instance
+ */
+async function ensureSchema(db) {
+  // Add idempotency_key column to job_queue if it doesn't exist
+  try {
+    await db.query('ALTER TABLE job_queue ADD COLUMN idempotency_key TEXT', [], 'run');
+  } catch (_) { /* column already exists */ }
+
+  // Add unique index on idempotency_key (partial — only for non-null values)
+  try {
+    await db.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_job_queue_idempotency ON job_queue (idempotency_key) WHERE idempotency_key IS NOT NULL', [], 'run');
+  } catch (_) { /* index already exists */ }
+
+  // Create dead_letter_queue table
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS dead_letter_queue (
+      id TEXT PRIMARY KEY,
+      original_job_id TEXT NOT NULL,
+      job_type TEXT NOT NULL,
+      payload TEXT,
+      error TEXT,
+      failed_at TEXT NOT NULL
+    )
+  `, [], 'run');
+}
+
+let _schemaPromise = null;
+async function ensureSchemaOnce(db) {
+  if (!_schemaPromise) _schemaPromise = ensureSchema(db);
+  return _schemaPromise;
+}
 
 /**
  * Enqueue a job
@@ -13,20 +49,41 @@ const { logger } = require('./logger');
  * @param {string} type - Job type (speed_to_lead_sms, speed_to_lead_callback, etc)
  * @param {object} payload - Job payload (JSON stringified)
  * @param {string} [scheduledAt] - ISO timestamp (defaults to now)
- * @returns {string} Job ID
+ * @param {string} [idempotencyKey] - Optional dedup key; if a pending/running job with this key
+ *   already exists, return its ID without inserting a duplicate
+ * @returns {string} Job ID (existing or new)
  */
-function enqueueJob(db, type, payload, scheduledAt = null) {
-  if (!db || !type) throw new Error('db and type required');
+async function enqueueJob(db, type, payload, scheduledAt = null, idempotencyKey = null, priority = 5) {
+  if (!db || !type) throw new AppError('VALIDATION_ERROR', 'db and type required', 400);
 
-  const jobId = randomUUID();
+  await ensureSchemaOnce(db);
+
   const scheduled = scheduledAt || new Date().toISOString();
   const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
 
+  // Idempotency check: return existing job if key is already active
+  if (idempotencyKey) {
+    try {
+      const existing = await db.query(
+        "SELECT id FROM job_queue WHERE idempotency_key = ? AND status IN ('pending', 'processing') LIMIT 1",
+        [idempotencyKey], 'get'
+      );
+      if (existing) {
+        logger.info(`[jobQueue] Idempotent enqueue — returning existing job: ${existing.id}`);
+        return existing.id;
+      }
+    } catch (err) {
+      logger.warn('[jobQueue] Idempotency check error:', err.message);
+    }
+  }
+
+  const jobId = randomUUID();
+
   try {
-    db.prepare(`
-      INSERT INTO job_queue (id, type, payload, scheduled_at, status, attempts, max_attempts)
-      VALUES (?, ?, ?, ?, 'pending', 0, 3)
-    `).run(jobId, type, payloadStr, scheduled);
+    await db.query(`
+      INSERT INTO job_queue (id, type, payload, scheduled_at, status, attempts, max_attempts, idempotency_key, priority)
+      VALUES (?, ?, ?, ?, 'pending', 0, 3, ?, ?)
+    `, [jobId, type, payloadStr, scheduled, idempotencyKey || null, priority], 'run');
 
     logger.info(`[jobQueue] Enqueued ${type} job: ${jobId}`);
     return jobId;
@@ -58,11 +115,11 @@ async function processJobs(db, handlers) {
   try {
     // Clean up old completed/failed/cancelled jobs (older than 7 days) to prevent table bloat
     try {
-      const result = db.prepare(`
+      const result = await db.query(`
         DELETE FROM job_queue
         WHERE status IN ('completed', 'failed', 'cancelled')
         AND updated_at < datetime('now', '-7 days')
-      `).run();
+      `, [], 'run');
       if (result.changes > 0) {
         logger.info(`[jobQueue] Cleaned up ${result.changes} old jobs`);
       }
@@ -70,30 +127,32 @@ async function processJobs(db, handlers) {
       logger.warn('[jobQueue] Cleanup error:', err.message);
     }
 
-    const due = db.prepare(`
+    const due = await db.query(`
       SELECT * FROM job_queue
       WHERE status = 'pending'
       AND datetime(scheduled_at) <= datetime('now')
-      ORDER BY scheduled_at ASC
+      ORDER BY priority DESC, scheduled_at ASC
       LIMIT 20
-    `).all();
+    `);
 
     for (const job of due) {
       try {
         const handler = handlers[job.type];
         if (!handler) {
           logger.warn(`[jobQueue] No handler for job type: ${job.type}`);
-          db.prepare(
-            "UPDATE job_queue SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?"
-          ).run('Unknown job type', job.id);
+          await db.query(
+            "UPDATE job_queue SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?",
+            ['Unknown job type', job.id], 'run'
+          );
           failed++;
           continue;
         }
 
         // Atomically claim the job — if another worker already claimed it, changes === 0 → skip
-        const claimed = db.prepare(
-          "UPDATE job_queue SET status = 'processing', updated_at = datetime('now') WHERE id = ? AND status = 'pending'"
-        ).run(job.id);
+        const claimed = await db.query(
+          "UPDATE job_queue SET status = 'processing', updated_at = datetime('now') WHERE id = ? AND status = 'pending'",
+          [job.id], 'run'
+        );
         if (claimed.changes === 0) continue;
 
         let payload = job.payload;
@@ -102,8 +161,8 @@ async function processJobs(db, handlers) {
             payload = JSON.parse(payload);
           } catch (parseErr) {
             logger.error(`[jobQueue] Failed to parse payload for job ${job.id}: ${parseErr.message}`);
-            db.prepare("UPDATE job_queue SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?")
-              .run('Payload parse error: ' + parseErr.message, job.id);
+            await db.query("UPDATE job_queue SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?",
+              ['Payload parse error: ' + parseErr.message, job.id], 'run');
             continue;
           }
         }
@@ -112,9 +171,10 @@ async function processJobs(db, handlers) {
         await executeWithTimeout(() => handler(payload, job.id, db), JOB_HANDLER_TIMEOUT);
 
         // Mark as completed
-        db.prepare(
-          "UPDATE job_queue SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
-        ).run(job.id);
+        await db.query(
+          "UPDATE job_queue SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+          [job.id], 'run'
+        );
 
         processed++;
         logger.info(`[jobQueue] Completed job ${job.id} (${job.type})`);
@@ -124,26 +184,50 @@ async function processJobs(db, handlers) {
 
         if (attempts < job.max_attempts) {
           // Reschedule with exponential backoff
-          const backoffMs = Math.pow(2, attempts) * JOB_RETRY_BACKOFF_BASE_MS / 60000 * 60 * 1000; // 2^n * base delay
+          const backoffMs = Math.pow(2, attempts) * JOB_RETRY_BACKOFF_BASE_MS; // 2min, 4min, 8min
           const nextScheduled = new Date(Date.now() + backoffMs).toISOString();
-          db.prepare(
-            "UPDATE job_queue SET attempts = ?, scheduled_at = ?, error = ?, updated_at = datetime('now') WHERE id = ?"
-          ).run(attempts, nextScheduled, err.message.substring(0, 255), job.id);
+          await db.query(
+            "UPDATE job_queue SET status = 'pending', attempts = ?, scheduled_at = ?, error = ?, updated_at = datetime('now') WHERE id = ?",
+            [attempts, nextScheduled, err.message.substring(0, 255), job.id], 'run'
+          );
 
           logger.warn(`[jobQueue] Job ${job.id} failed (attempt ${attempts}/${job.max_attempts}), rescheduled`);
         } else {
-          // Mark as permanently failed
-          db.prepare(
-            "UPDATE job_queue SET status = 'failed', error = ?, failed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
-          ).run(err.message.substring(0, 255), job.id);
+          // Move to dead letter queue before marking as failed
+          try {
+            await ensureSchemaOnce(db);
+            await db.query(`
+              INSERT INTO dead_letter_queue (id, original_job_id, job_type, payload, error, failed_at)
+              VALUES (?, ?, ?, ?, ?, datetime('now'))
+            `, [randomUUID(), job.id, job.type, job.payload, err.message.substring(0, 1000)], 'run');
+          } catch (dlqErr) {
+            logger.error('[jobQueue] DLQ insert failed:', dlqErr.message);
+          }
 
-          logger.error(`[jobQueue] Job ${job.id} permanently failed:`, err.message);
+          // Mark as permanently failed
+          await db.query(
+            "UPDATE job_queue SET status = 'failed', error = ?, failed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+            [err.message.substring(0, 255), job.id], 'run'
+          );
+
+          logger.error(`[jobQueue] Job ${job.id} permanently failed (moved to DLQ):`, err.message);
         }
       }
 
       // Small delay between jobs
       await new Promise(r => setTimeout(r, JOB_CLEANUP_DELAY_MS));
     }
+
+    // Record queue health metrics after each cycle
+    try {
+      const { recordMetric } = require('./metrics');
+      const [pendingRow, processingRow] = await Promise.all([
+        db.query("SELECT COUNT(*) as c FROM job_queue WHERE status = 'pending'", [], 'get'),
+        db.query("SELECT COUNT(*) as c FROM job_queue WHERE status = 'processing'", [], 'get'),
+      ]);
+      recordMetric('job_queue_pending', pendingRow?.c || 0, 'gauge');
+      recordMetric('job_queue_processing', processingRow?.c || 0, 'gauge');
+    } catch (_) { /* metrics recording must not break job processing */ }
 
     return { processed, failed };
   } catch (err) {
@@ -158,7 +242,7 @@ async function processJobs(db, handlers) {
  * @param {object} filter - Query filter {type?, leadId?, clientId?, etc}
  * @returns {number} Count of cancelled jobs
  */
-function cancelJobs(db, filter) {
+async function cancelJobs(db, filter) {
   if (!db || !filter) return 0;
 
   try {
@@ -177,9 +261,10 @@ function cancelJobs(db, filter) {
       params.push(`%${escaped}%`);
     }
 
-    const result = db.prepare(
-      `UPDATE job_queue SET status = 'cancelled' WHERE ${where}`
-    ).run(...params);
+    const result = await db.query(
+      `UPDATE job_queue SET status = 'cancelled' WHERE ${where}`,
+      params, 'run'
+    );
 
     logger.info(`[jobQueue] Cancelled ${result.changes} pending jobs`);
     return result.changes || 0;
@@ -195,36 +280,128 @@ function cancelJobs(db, filter) {
  * 1. Jobs stuck in 'processing' status from a crash (>30 minutes)
  * 2. Jobs stuck in 'pending' status for > 1 hour (likely missed the processing window)
  * @param {object} db - better-sqlite3 instance
- * @returns {Promise<{recovered: number}>}
+ * @returns {Promise<{recovered: number, stalePendingFailed: number}>}
  */
 async function recoverStalledJobs(db) {
-  if (!db) return { recovered: 0 };
+  if (!db) return { recovered: 0, stalePendingFailed: 0 };
+
+  // Ensure DLQ table and idempotency_key column exist at startup
+  await ensureSchemaOnce(db);
 
   try {
     let totalRecovered = 0;
+    let stalePendingFailed = 0;
 
     // Recover jobs stuck in 'processing' status (crash scenario)
     // Only recover if they've been stuck for > STALLED_JOB_THRESHOLD_MS
-    const processingResult = db.prepare(`
+    const processingResult = await db.query(`
       UPDATE job_queue
       SET status = 'pending', attempts = attempts + 1, updated_at = datetime('now')
       WHERE status = 'processing' AND updated_at < datetime('now', '-30 minutes')
-    `).run();
+    `, [], 'run');
 
     if (processingResult.changes > 0) {
       logger.info(`[jobQueue] Recovered ${processingResult.changes} jobs stuck in 'processing' status (crash recovery)`);
       totalRecovered += processingResult.changes;
     }
 
-    if (totalRecovered > 0) {
-      logger.info(`[jobQueue] Total jobs recovered on startup: ${totalRecovered}`);
+    // Recover stale pending jobs older than 1 hour — these missed their window
+    // Jobs with remaining retries get reset; exhausted jobs get failed
+    const stalePending = await db.query(`
+      SELECT id, type, payload, attempts, max_attempts FROM job_queue
+      WHERE status = 'pending' AND updated_at < datetime('now', '-1 hour')
+    `);
+
+    for (const job of stalePending) {
+      if ((job.attempts || 0) < (job.max_attempts || 3)) {
+        // Reset with warning — give it another chance
+        await db.query(
+          "UPDATE job_queue SET attempts = attempts + 1, scheduled_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+          [job.id], 'run'
+        );
+        totalRecovered++;
+        logger.warn(`[jobQueue] Reset stale pending job ${job.id} (${job.type}) — was pending > 1 hour`);
+      } else {
+        // Exhausted retries — move to DLQ and mark failed
+        try {
+          await db.query(`
+            INSERT INTO dead_letter_queue (id, original_job_id, job_type, payload, error, failed_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+          `, [randomUUID(), job.id, job.type, job.payload, 'Stale pending job exceeded max attempts'], 'run');
+        } catch (dlqErr) {
+          logger.error('[jobQueue] DLQ insert failed for stale job:', dlqErr.message);
+        }
+        await db.query(
+          "UPDATE job_queue SET status = 'failed', error = 'Stale pending > 1 hour, max attempts exhausted', failed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+          [job.id], 'run'
+        );
+        stalePendingFailed++;
+        logger.warn(`[jobQueue] Failed stale pending job ${job.id} (${job.type}) — max attempts exhausted`);
+      }
     }
 
-    return { recovered: totalRecovered };
+    if (totalRecovered > 0 || stalePendingFailed > 0) {
+      logger.info(`[jobQueue] Startup recovery: ${totalRecovered} recovered, ${stalePendingFailed} stale pending failed`);
+    }
+
+    return { recovered: totalRecovered, stalePendingFailed };
   } catch (err) {
     logger.error('[jobQueue] recoverStalledJobs error:', err.message);
-    return { recovered: 0 };
+    return { recovered: 0, stalePendingFailed: 0 };
   }
 }
 
-module.exports = { enqueueJob, processJobs, cancelJobs, recoverStalledJobs };
+/**
+ * Get queue health metrics
+ * @param {object} db - better-sqlite3 instance
+ * @returns {Promise<{pending: number, processing: number, failed: number, dlq: number, oldest_pending_age_minutes: number}>}
+ */
+async function getQueueHealth(db) {
+  if (!db) return { pending: 0, processing: 0, failed: 0, dlq: 0, oldest_pending_age_minutes: 0 };
+
+  try {
+    await ensureSchemaOnce(db);
+
+    const [pendingRow, processingRow, failedRow, dlqRow, oldestRow] = await Promise.all([
+      db.query("SELECT COUNT(*) as c FROM job_queue WHERE status = 'pending'", [], 'get'),
+      db.query("SELECT COUNT(*) as c FROM job_queue WHERE status = 'processing'", [], 'get'),
+      db.query("SELECT COUNT(*) as c FROM job_queue WHERE status = 'failed'", [], 'get'),
+      db.query("SELECT COUNT(*) as c FROM dead_letter_queue", [], 'get'),
+      db.query("SELECT MIN(created_at) as oldest FROM job_queue WHERE status = 'pending'", [], 'get'),
+    ]);
+
+    let oldestAgeMinutes = 0;
+    if (oldestRow?.oldest) {
+      oldestAgeMinutes = Math.round((Date.now() - new Date(oldestRow.oldest).getTime()) / 60000);
+    }
+
+    return {
+      pending: pendingRow?.c || 0,
+      processing: processingRow?.c || 0,
+      failed: failedRow?.c || 0,
+      dlq: dlqRow?.c || 0,
+      oldest_pending_age_minutes: oldestAgeMinutes,
+    };
+  } catch (err) {
+    logger.error('[jobQueue] getQueueHealth error:', err.message);
+    return { pending: 0, processing: 0, failed: 0, dlq: 0, oldest_pending_age_minutes: 0 };
+  }
+}
+
+/**
+ * Return all dead letter queue entries for inspection.
+ * @param {object} db - better-sqlite3 instance
+ * @returns {Array} DLQ entries ordered by failed_at desc
+ */
+async function getDLQ(db) {
+  if (!db) return [];
+  try {
+    await ensureSchemaOnce(db);
+    return await db.query('SELECT * FROM dead_letter_queue ORDER BY failed_at DESC');
+  } catch (err) {
+    logger.error('[jobQueue] getDLQ error:', err.message);
+    return [];
+  }
+}
+
+module.exports = { enqueueJob, processJobs, cancelJobs, recoverStalledJobs, getDLQ, getQueueHealth };

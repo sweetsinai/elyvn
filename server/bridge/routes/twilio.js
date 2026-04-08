@@ -22,16 +22,27 @@ const { isValidUUID } = require('../utils/validate');
 const { withTimeout } = require('../utils/resilience');
 const { logger } = require('../utils/logger');
 const { generateSystemPrompt } = require('../utils/nicheTemplates');
+const { appendEvent, Events } = require('../utils/eventStore');
+const { encrypt } = require('../utils/encryption');
+const { AppError } = require('../utils/AppError');
+const { isAsync } = require('../utils/dbAdapter');
 
+const { ANTHROPIC_TIMEOUT } = require('../config/timing');
 const anthropic = new Anthropic();
-const ANTHROPIC_TIMEOUT = 30000;
 
 /**
  * Validate Twilio request signature (X-Twilio-Signature)
  */
 function validateTwilioSignature(req) {
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  if (!authToken) return true; // Skip if not configured
+  if (!authToken) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[twilio] TWILIO_AUTH_TOKEN not set in production — rejecting webhook');
+      return false;
+    }
+    logger.warn('[twilio] TWILIO_AUTH_TOKEN not set — skipping signature validation (dev only)');
+    return true;
+  }
 
   const signature = req.headers['x-twilio-signature'];
   if (!signature) {
@@ -58,10 +69,10 @@ function validateTwilioSignature(req) {
     .update(data)
     .digest('base64');
 
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expected)
-  );
+  const sigBuf = Buffer.from(signature, 'base64');
+  const expectedBuf = Buffer.from(expected, 'base64');
+  if (sigBuf.length !== expectedBuf.length) return false;
+  return crypto.timingSafeEqual(sigBuf, expectedBuf);
 }
 
 // Parse form-encoded body (Twilio sends application/x-www-form-urlencoded)
@@ -86,12 +97,14 @@ router.post('/', async (req, res) => {
   const text = req.body?.Body || '';
   const messageSid = req.body?.MessageSid;
 
+  const correlationId = req.headers['x-request-id'] || messageSid || randomUUID();
+
   if (!from || !text) {
-    logger.warn('[twilio] Missing From or Body in webhook');
+    logger.warn('[twilio] Missing From or Body in webhook', { correlationId });
     return res.status(400).send('<Response></Response>');
   }
 
-  logger.info(`[twilio] Inbound SMS from ${from}: "${text.substring(0, 80)}"`);
+  logger.info(`[twilio] Inbound SMS from ${from}: "${text.substring(0, 80)}"`, { correlationId });
 
   // Respond immediately with empty TwiML (Twilio expects XML response)
   res.set('Content-Type', 'text/xml');
@@ -102,20 +115,22 @@ router.post('/', async (req, res) => {
     try {
       // Idempotency: skip if this MessageSid was already processed (webhook retry)
       if (messageSid) {
-        const dup = db.prepare('SELECT id FROM messages WHERE message_sid = ?').get(messageSid);
+        const dup = await db.query('SELECT id FROM messages WHERE message_sid = ?', [messageSid], 'get');
         if (dup) {
-          logger.info(`[twilio] Duplicate MessageSid ${messageSid}, skipping (idempotent)`);
+          logger.info(`[twilio] Duplicate MessageSid ${messageSid}, skipping (idempotent)`, { correlationId });
           return;
         }
       }
 
       // Find which client owns this phone number
-      const client = db.prepare(
-        'SELECT * FROM clients WHERE twilio_phone = ? AND is_active = 1'
-      ).get(to);
+      const client = await db.query(
+        'SELECT * FROM clients WHERE twilio_phone = ? AND is_active = 1',
+        [to],
+        'get'
+      );
 
       if (!client) {
-        logger.warn(`[twilio] No active client for number ${to}`);
+        logger.warn(`[twilio] No active client for number ${to}`, { correlationId });
         return;
       }
 
@@ -123,12 +138,14 @@ router.post('/', async (req, res) => {
       const optOutKeywords = ['STOP', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'];
       if (optOutKeywords.includes(text.trim().toUpperCase())) {
         try {
-          db.prepare(
-            'INSERT OR IGNORE INTO sms_opt_outs (id, phone, client_id, created_at) VALUES (?, ?, ?, ?)'
-          ).run(randomUUID(), from, client.id, new Date().toISOString());
-          logger.info(`[twilio] Opt-out recorded: ${from} for client ${client.id}`);
+          await db.query(
+            'INSERT OR IGNORE INTO sms_opt_outs (id, phone, client_id, created_at) VALUES (?, ?, ?, ?)',
+            [randomUUID(), from, client.id, new Date().toISOString()],
+            'run'
+          );
+          logger.info(`[twilio] Opt-out recorded: ${from} for client ${client.id}`, { correlationId });
         } catch (err) {
-          logger.error('[twilio] Opt-out insert error:', err.message);
+          logger.error('[twilio] Opt-out insert error:', { correlationId, error: err.message });
         }
         return;
       }
@@ -137,45 +154,89 @@ router.post('/', async (req, res) => {
       const optInKeywords = ['START', 'YES', 'UNSTOP'];
       if (optInKeywords.includes(text.trim().toUpperCase())) {
         try {
-          db.prepare('DELETE FROM sms_opt_outs WHERE phone = ? AND client_id = ?').run(from, client.id);
-          logger.info(`[twilio] Opt-in recorded: ${from} for client ${client.id}`);
+          await db.query('DELETE FROM sms_opt_outs WHERE phone = ? AND client_id = ?', [from, client.id], 'run');
+          logger.info(`[twilio] Opt-in recorded: ${from} for client ${client.id}`, { correlationId });
           await sendSMS(from, `You've been re-subscribed to messages from ${client.business_name}. Reply STOP to opt out.`, to);
         } catch (err) {
-          logger.error('[twilio] Opt-in error:', err.message);
+          logger.error('[twilio] Opt-in error:', { correlationId, error: err.message });
         }
         return;
       }
 
-      // Find or create lead
-      let lead = db.prepare(
-        'SELECT * FROM leads WHERE phone = ? AND client_id = ?'
-      ).get(from, client.id);
-
-      if (!lead) {
-        const leadId = randomUUID();
-        const now = new Date().toISOString();
-        db.prepare(
-          'INSERT INTO leads (id, client_id, phone, stage, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        ).run(leadId, client.id, from, 'new', 'sms_inbound', now, now);
-        lead = { id: leadId, client_id: client.id, phone: from, name: null };
-        logger.info(`[twilio] New lead created: ${leadId} for ${from}`);
+      let lead;
+      if (isAsync(db)) {
+        // Postgres: async transaction via manual BEGIN/COMMIT
+        await db.query('BEGIN', [], 'run');
+        try {
+          let existing = await db.query(
+            'SELECT * FROM leads WHERE phone = ? AND client_id = ?',
+            [from, client.id], 'get'
+          );
+          if (!existing) {
+            const leadId = randomUUID();
+            const now = new Date().toISOString();
+            await db.query(
+              'INSERT INTO leads (id, client_id, phone, stage, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [leadId, client.id, from, 'new', 'sms_inbound', now, now], 'run'
+            );
+            try { await db.query('UPDATE leads SET phone_encrypted = ? WHERE id = ?', [encrypt(from), leadId], 'run'); } catch (encErr) { logger.warn('[twilio] phone encryption failed:', { correlationId, error: encErr.message }); }
+            existing = { id: leadId, client_id: client.id, phone: from, name: null };
+            logger.info(`[twilio] New lead created: ${leadId} for ${from}`, { correlationId });
+          }
+          lead = existing;
+          await db.query('COMMIT', [], 'run');
+        } catch (txErr) {
+          await db.query('ROLLBACK', [], 'run');
+          throw txErr;
+        }
+      } else {
+        // SQLite: sync transaction
+        const upsertLead = db.transaction((phone, clientId) => {
+          let existing = db.prepare(
+            'SELECT * FROM leads WHERE phone = ? AND client_id = ?'
+          ).get(phone, clientId);
+          if (!existing) {
+            const leadId = randomUUID();
+            const now = new Date().toISOString();
+            db.prepare(
+              'INSERT INTO leads (id, client_id, phone, stage, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            ).run(leadId, clientId, phone, 'new', 'sms_inbound', now, now);
+            try { db.prepare('UPDATE leads SET phone_encrypted = ? WHERE id = ?').run(encrypt(phone), leadId); } catch (encErr) { logger.warn('[twilio] phone encryption failed:', { correlationId, error: encErr.message }); }
+            existing = { id: leadId, client_id: clientId, phone, name: null };
+            logger.info(`[twilio] New lead created: ${leadId} for ${phone}`, { correlationId });
+          }
+          return existing;
+        });
+        lead = upsertLead(from, client.id);
       }
+
+      // Fire-and-forget: emit LeadCreated if new
+      try {
+        if (!lead.name && lead.id) {
+          // New lead (no name yet — freshly inserted)
+          appendEvent(db, lead.id, 'lead', Events.LeadCreated, { phone: from, source: 'sms_inbound' }, client.id);
+        }
+      } catch (_) {}
 
       // Store inbound message
       const msgId = randomUUID();
       const now = new Date().toISOString();
       try {
-        db.prepare(
-          'INSERT INTO messages (id, lead_id, client_id, direction, channel, body, message_sid, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(msgId, lead.id, client.id, 'inbound', 'sms', text, messageSid, now);
+        await db.query(
+          'INSERT INTO messages (id, lead_id, client_id, direction, channel, body, message_sid, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [msgId, lead.id, client.id, 'inbound', 'sms', text, messageSid, now],
+          'run'
+        );
       } catch (err) {
-        logger.error('[twilio] Message insert error:', err.message);
+        logger.error('[twilio] Message insert error:', { correlationId, error: err.message });
       }
 
       // Get conversation history for context
-      const history = db.prepare(
-        'SELECT direction, body, created_at FROM messages WHERE lead_id = ? ORDER BY created_at DESC LIMIT 10'
-      ).all(lead.id).reverse();
+      const history = (await db.query(
+        'SELECT direction, body, created_at FROM messages WHERE lead_id = ? ORDER BY created_at DESC LIMIT 10',
+        [lead.id],
+        'all'
+      )).reverse();
 
       // Load knowledge base (cached)
       let kbContent = '';
@@ -183,7 +244,7 @@ router.post('/', async (req, res) => {
         const { loadKnowledgeBase } = require('../utils/kbCache');
         kbContent = await loadKnowledgeBase(client.id);
       } catch (err) {
-        logger.warn(`[twilio] KB load failed for client ${client.id}:`, err.message);
+        logger.warn(`[twilio] KB load failed for client ${client.id}:`, { correlationId, error: err.message });
       }
 
       // Build AI prompt — use niche-specific template if available
@@ -222,9 +283,13 @@ ${kbContent ? `\nAdditional knowledge base:\n${kbContent}` : ''}`;
 
         // Store outbound message
         if (result.success) {
-          db.prepare(
-            'INSERT INTO messages (id, lead_id, client_id, direction, channel, body, message_sid, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-          ).run(randomUUID(), lead.id, client.id, 'outbound', 'sms', replyText, result.messageId, new Date().toISOString());
+          const outMsgId = randomUUID();
+          await db.query(
+            'INSERT INTO messages (id, lead_id, client_id, direction, channel, body, message_sid, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [outMsgId, lead.id, client.id, 'outbound', 'sms', replyText, result.messageId, new Date().toISOString()],
+            'run'
+          );
+          try { appendEvent(db, lead.id, 'message', Events.SMSSent, { phone: from, channel: 'sms', messageId: outMsgId }, client.id); } catch (_) {}
         }
 
         // Notify owner via Telegram (skip in digest mode)
@@ -233,15 +298,15 @@ ${kbContent ? `\nAdditional knowledge base:\n${kbContent}` : ''}`;
           telegram.sendMessage(
             client.telegram_chat_id,
             `📱 SMS from ${leadName}:\n"${text.substring(0, 200)}"\n\n🤖 AI replied:\n"${replyText.substring(0, 200)}"`
-          ).catch(err => logger.error('[twilio] Telegram notify error:', err.message));
+          ).catch(err => logger.error('[twilio] Telegram notify error:', { correlationId, error: err.message }));
         }
       }
 
       // Update lead timestamp
-      db.prepare('UPDATE leads SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), lead.id);
+      await db.query('UPDATE leads SET updated_at = ? WHERE id = ?', [new Date().toISOString(), lead.id], 'run');
 
     } catch (err) {
-      logger.error('[twilio] Inbound processing error:', err.message);
+      logger.error('[twilio] Processing error', { correlationId, code: 'PROCESSING_ERROR', from, messageSid, error: err.message, stack: err.stack });
     }
   });
 });

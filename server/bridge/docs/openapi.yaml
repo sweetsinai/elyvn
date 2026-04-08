@@ -1,0 +1,1138 @@
+openapi: 3.0.0
+info:
+  title: ELYVN Bridge API
+  description: AI-powered lead qualification, call management, and revenue analytics API.
+  version: 1.0.0
+  contact:
+    name: ELYVN Support
+
+servers:
+  - url: https://api.elyvn.ai
+    description: Production
+  - url: http://localhost:3001
+    description: Development (default port)
+  - url: http://localhost:3000
+    description: Development (alternate port)
+
+security:
+  - apiKey: []
+  - bearerAuth: []
+
+paths:
+  # --- Top-level Health ---
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns service health, uptime, memory, and database counts. In production, unauthenticated callers receive a minimal response.
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  uptime_seconds:
+                    type: integer
+                  version:
+                    type: string
+                  memory:
+                    type: object
+                    properties:
+                      rss_mb:
+                        type: integer
+                      heap_used_mb:
+                        type: integer
+                      heap_total_mb:
+                        type: integer
+                  services:
+                    type: object
+                    properties:
+                      db:
+                        type: boolean
+                  db_counts:
+                    type: object
+                    properties:
+                      clients:
+                        type: integer
+                      calls:
+                        type: integer
+                      leads:
+                        type: integer
+                      messages:
+                        type: integer
+                      followups:
+                        type: integer
+                      pending_jobs:
+                        type: integer
+        '503':
+          description: Service degraded (database unreachable)
+
+  # --- Auth ---
+  /auth/signup:
+    post:
+      tags: [Auth]
+      summary: Create a new account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, business_name]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+                business_name:
+                  type: string
+                owner_name:
+                  type: string
+                owner_phone:
+                  type: string
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  clientId:
+                    type: string
+                    format: uuid
+                  email:
+                    type: string
+                  business_name:
+                    type: string
+                  email_verified:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Duplicate email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  clientId:
+                    type: string
+                    format: uuid
+                  email:
+                    type: string
+                  business_name:
+                    type: string
+                  plan:
+                    type: string
+                  subscription_status:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user from JWT
+      responses:
+        '200':
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clientId:
+                    type: string
+                    format: uuid
+                  email:
+                    type: string
+                  business_name:
+                    type: string
+                  owner_name:
+                    type: string
+                  plan:
+                    type: string
+                  subscription_status:
+                    type: string
+                  industry:
+                    type: string
+                  email_verified:
+                    type: boolean
+                  created_at:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Reset email sent (always returns 200 to prevent enumeration)
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password with token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Password reset successful
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # --- Health ---
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Kubernetes liveness probe
+      security: []
+      responses:
+        '200':
+          description: Process alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Kubernetes readiness probe
+      security: []
+      responses:
+        '200':
+          description: Ready to serve traffic
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ready, not_ready]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  checks:
+                    type: object
+                    properties:
+                      db:
+                        type: boolean
+                      job_queue:
+                        type: boolean
+        '503':
+          description: Not ready
+
+  /health/startup:
+    get:
+      tags: [Health]
+      summary: Kubernetes startup probe
+      security: []
+      responses:
+        '200':
+          description: Startup complete
+        '503':
+          description: Still starting
+
+  # --- Leads ---
+  /leads/{clientId}:
+    get:
+      tags: [Leads]
+      summary: List leads for a client
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - name: stage
+          in: query
+          schema:
+            $ref: '#/components/schemas/LeadStage'
+        - name: minScore
+          in: query
+          schema:
+            type: integer
+        - name: search
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Paginated lead list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Lead'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /leads/{clientId}/{leadId}:
+    put:
+      tags: [Leads]
+      summary: Update lead stage
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - $ref: '#/components/parameters/leadId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stage]
+              properties:
+                stage:
+                  $ref: '#/components/schemas/LeadStage'
+      responses:
+        '200':
+          description: Lead updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      success:
+                        type: boolean
+                      stage:
+                        type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # --- Clients ---
+  /clients:
+    get:
+      tags: [Clients]
+      summary: List clients (admin) or get own client
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Client list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Client'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+    post:
+      tags: [Clients]
+      summary: Create a new client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [business_name]
+              properties:
+                business_name:
+                  type: string
+                owner_name:
+                  type: string
+                owner_phone:
+                  type: string
+                owner_email:
+                  type: string
+                  format: email
+                retell_agent_id:
+                  type: string
+                retell_phone:
+                  type: string
+                twilio_phone:
+                  type: string
+                transfer_phone:
+                  type: string
+                industry:
+                  type: string
+                timezone:
+                  type: string
+                  default: UTC
+                calcom_event_type_id:
+                  type: string
+                calcom_booking_link:
+                  type: string
+                avg_ticket:
+                  type: number
+                knowledge_base:
+                  type: object
+      responses:
+        '201':
+          description: Client created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Client'
+
+  /clients/{clientId}:
+    put:
+      tags: [Clients]
+      summary: Update client fields
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                business_name:
+                  type: string
+                owner_name:
+                  type: string
+                owner_phone:
+                  type: string
+                owner_email:
+                  type: string
+                  format: email
+                industry:
+                  type: string
+                timezone:
+                  type: string
+                is_active:
+                  type: boolean
+                plan:
+                  type: string
+                knowledge_base:
+                  type: object
+      responses:
+        '200':
+          description: Client updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Client'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # --- Messages ---
+  /messages/{clientId}:
+    get:
+      tags: [Messages]
+      summary: List SMS messages for a client
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - name: status
+          in: query
+          description: Filter by direction (inbound/outbound)
+          schema:
+            type: string
+            enum: [inbound, outbound]
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Paginated message list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+  # --- Calls ---
+  /calls/{clientId}:
+    get:
+      tags: [Calls]
+      summary: List calls for a client
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - name: outcome
+          in: query
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: minScore
+          in: query
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Paginated call list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Call'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+  # --- Bookings ---
+  /bookings/{clientId}:
+    get:
+      tags: [Bookings]
+      summary: List Cal.com bookings for a client
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Booking list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+
+  # --- Stats ---
+  /stats/{clientId}:
+    get:
+      tags: [Stats]
+      summary: Weekly dashboard stats
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+      responses:
+        '200':
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      calls_this_week:
+                        type: integer
+                      calls_last_week:
+                        type: integer
+                      calls_trend:
+                        type: integer
+                      messages_this_week:
+                        type: integer
+                      messages_last_week:
+                        type: integer
+                      messages_trend:
+                        type: integer
+                      bookings_this_week:
+                        type: integer
+                      estimated_revenue:
+                        type: number
+                      leads_by_stage:
+                        type: object
+                        additionalProperties:
+                          type: integer
+
+  /stats/{clientId}/timeseries:
+    get:
+      tags: [Stats]
+      summary: Daily time-series data
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 365
+      responses:
+        '200':
+          description: Time-series data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      period_days:
+                        type: integer
+                      series:
+                        type: object
+
+  /stats/{clientId}/activity:
+    get:
+      tags: [Stats]
+      summary: Aggregated event activity
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+      responses:
+        '200':
+          description: Activity data
+
+  /stats/{clientId}/transitions:
+    get:
+      tags: [Stats]
+      summary: Lead stage transition matrix
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+      responses:
+        '200':
+          description: Transition matrix
+
+  /stats/{clientId}/experiments:
+    get:
+      tags: [Stats]
+      summary: List A/B experiments
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Experiment list
+
+  # --- Analytics ---
+  /api/analytics/stats:
+    get:
+      tags: [Analytics]
+      summary: Aggregate analytics stats for the authenticated client
+      description: Returns key revenue intelligence metrics (calls, leads, bookings, messages) across a configurable time window.
+      parameters:
+        - name: days
+          in: query
+          description: Lookback window in days
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 365
+        - name: clientId
+          in: query
+          description: Client UUID (admin only — omit to use the token's own client)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Analytics stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      calls_this_week:
+                        type: integer
+                      calls_last_week:
+                        type: integer
+                      calls_trend:
+                        type: integer
+                      messages_this_week:
+                        type: integer
+                      messages_last_week:
+                        type: integer
+                      messages_trend:
+                        type: integer
+                      bookings_this_week:
+                        type: integer
+                      estimated_revenue:
+                        type: number
+                      leads_by_stage:
+                        type: object
+                        additionalProperties:
+                          type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # --- Revenue ---
+  /revenue/{clientId}:
+    get:
+      tags: [Revenue]
+      summary: Revenue attribution and ROI metrics
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 90
+      responses:
+        '200':
+          description: Revenue metrics
+
+  /revenue/{clientId}/funnel:
+    get:
+      tags: [Revenue]
+      summary: Conversion funnel (sent to booked)
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+      responses:
+        '200':
+          description: Funnel data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      period_days:
+                        type: integer
+                      stages:
+                        type: object
+                        properties:
+                          sent:
+                            type: integer
+                          opened:
+                            type: integer
+                          clicked:
+                            type: integer
+                          replied:
+                            type: integer
+                          booked:
+                            type: integer
+                      conversion_rates:
+                        type: object
+
+  /revenue/{clientId}/cohorts:
+    get:
+      tags: [Revenue]
+      summary: Cohort analysis
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - name: granularity
+          in: query
+          schema:
+            type: string
+            enum: [week, month]
+            default: week
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 12
+            maximum: 24
+      responses:
+        '200':
+          description: Cohort data
+
+  # --- Scoring ---
+  /scoring/{clientId}:
+    get:
+      tags: [Scoring]
+      summary: Batch predictive scores for all leads
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+      responses:
+        '200':
+          description: Lead scores
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  meta:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+
+  /scoring/{clientId}/{leadId}/insights:
+    get:
+      tags: [Scoring]
+      summary: Feature-derived intelligence for a lead
+      parameters:
+        - $ref: '#/components/parameters/clientId'
+        - $ref: '#/components/parameters/leadId'
+      responses:
+        '200':
+          description: Lead insights
+
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  parameters:
+    clientId:
+      name: clientId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    leadId:
+      name: leadId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+
+  schemas:
+    LeadStage:
+      type: string
+      enum: [new, contacted, qualified, booked, completed, lost]
+
+    Lead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        phone:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        stage:
+          $ref: '#/components/schemas/LeadStage'
+        score:
+          type: integer
+        last_contact:
+          type: string
+          format: date-time
+        calcom_booking_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        recent_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/Call'
+        recent_messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+
+    Client:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        business_name:
+          type: string
+        owner_name:
+          type: string
+        owner_email:
+          type: string
+        owner_phone:
+          type: string
+        industry:
+          type: string
+        timezone:
+          type: string
+        plan:
+          type: string
+        is_active:
+          type: boolean
+        avg_ticket:
+          type: number
+        retell_agent_id:
+          type: string
+        retell_phone:
+          type: string
+        twilio_phone:
+          type: string
+        transfer_phone:
+          type: string
+        calcom_event_type_id:
+          type: string
+        calcom_booking_link:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        lead_id:
+          type: string
+          format: uuid
+        phone:
+          type: string
+        channel:
+          type: string
+          enum: [sms]
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        body:
+          type: string
+        status:
+          type: string
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        message_sid:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Call:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        call_id:
+          type: string
+        caller_phone:
+          type: string
+        direction:
+          type: string
+        duration:
+          type: integer
+        outcome:
+          type: string
+        summary:
+          type: string
+        score:
+          type: integer
+        sentiment:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+        message:
+          type: string
+          description: Human-readable description
+        requestId:
+          type: string
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

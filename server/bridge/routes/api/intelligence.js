@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { logger } = require('../../utils/logger');
 const { isValidUUID } = require('../../utils/validate');
+const { clientIsolationParam } = require('../../utils/clientIsolation');
+router.param('clientId', clientIsolationParam);
 
 // GET /intelligence/:clientId — Full conversation intelligence report
-router.get('/intelligence/:clientId', (req, res) => {
+router.get('/intelligence/:clientId', (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
@@ -20,12 +22,12 @@ router.get('/intelligence/:clientId', (req, res) => {
     res.json({ data: report });
   } catch (err) {
     logger.error('[api] intelligence error:', err);
-    res.status(500).json({ error: 'Failed to generate intelligence report' });
+    next(err);
   }
 });
 
 // GET /intelligence/:clientId/peak-hours — Peak activity hours
-router.get('/intelligence/:clientId/peak-hours', (req, res) => {
+router.get('/intelligence/:clientId/peak-hours', (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
@@ -39,12 +41,12 @@ router.get('/intelligence/:clientId/peak-hours', (req, res) => {
     res.json({ data: { peak_hours: peakHours } });
   } catch (err) {
     logger.error('[api] peak-hours error:', err);
-    res.status(500).json({ error: 'Failed to get peak hours' });
+    next(err);
   }
 });
 
 // GET /intelligence/:clientId/response-impact — Response time impact analysis
-router.get('/intelligence/:clientId/response-impact', (req, res) => {
+router.get('/intelligence/:clientId/response-impact', (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
@@ -58,7 +60,7 @@ router.get('/intelligence/:clientId/response-impact', (req, res) => {
     res.json({ data: analysis });
   } catch (err) {
     logger.error('[api] response-impact error:', err);
-    res.status(500).json({ error: 'Failed to analyze response time impact' });
+    next(err);
   }
 });
 

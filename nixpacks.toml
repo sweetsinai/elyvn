@@ -3,7 +3,7 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["cd server/bridge && npm install"]
+cmds = ["cd server/bridge && npm ci"]
 
 [start]
 cmd = "cd server/bridge && node index.js"

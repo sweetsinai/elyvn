@@ -10,37 +10,41 @@
  * @param {string} clientId
  * @returns {{ first_touch, last_touch, touches: Array, channel_attribution: object, time_to_convert_hours, estimated_value }}
  */
-function getAttribution(db, leadId, clientId) {
+async function getAttribution(db, leadId, clientId) {
   if (!leadId || !clientId) {
     return null;
   }
 
   // Get lead info
-  const lead = db.prepare(
-    'SELECT * FROM leads WHERE id = ? AND client_id = ?'
-  ).get(leadId, clientId);
+  const lead = await db.query(
+    'SELECT * FROM leads WHERE id = ? AND client_id = ?',
+    [leadId, clientId], 'get'
+  );
 
   if (!lead) {
     return null;
   }
 
   // Get all calls for this lead
-  const calls = db.prepare(
+  const calls = await db.query(
     `SELECT id, caller_phone, direction, outcome, created_at, score, duration
-     FROM calls WHERE caller_phone = ? AND client_id = ? ORDER BY created_at ASC`
-  ).all(lead.phone, clientId);
+     FROM calls WHERE caller_phone = ? AND client_id = ? ORDER BY created_at ASC`,
+    [lead.phone, clientId]
+  );
 
   // Get all messages for this lead
-  const messages = db.prepare(
+  const messages = await db.query(
     `SELECT id, channel, direction, created_at, status
-     FROM messages WHERE phone = ? AND client_id = ? ORDER BY created_at ASC`
-  ).all(lead.phone, clientId);
+     FROM messages WHERE phone = ? AND client_id = ? ORDER BY created_at ASC`,
+    [lead.phone, clientId]
+  );
 
   // Get all follow-ups for this lead
-  const followups = db.prepare(
+  const followups = await db.query(
     `SELECT id, type, created_at, sent_at
-     FROM followups WHERE lead_id = ? ORDER BY created_at ASC`
-  ).all(leadId);
+     FROM followups WHERE lead_id = ? ORDER BY created_at ASC`,
+    [leadId]
+  );
 
   // Build timeline of touches
   const touches = [
@@ -114,7 +118,7 @@ function getAttribution(db, leadId, clientId) {
   }
 
   // Get estimated value
-  const client = db.prepare('SELECT avg_ticket FROM clients WHERE id = ?').get(clientId);
+  const client = await db.query('SELECT avg_ticket FROM clients WHERE id = ?', [clientId], 'get');
   const estimated_value = lead.stage === 'booked' ? (client?.avg_ticket || 0) : 0;
 
   return {
@@ -134,7 +138,7 @@ function getAttribution(db, leadId, clientId) {
  * @param {number} [days=30]
  * @returns {{ total_revenue, cost_per_lead, cost_per_booking, roi_multiplier, channel_roi: { sms: {spent, revenue, roi}, voice: {...}, email: {...} }, avg_time_to_close }}
  */
-function getROIMetrics(db, clientId, days = 30) {
+async function getROIMetrics(db, clientId, days = 30) {
   if (!clientId) {
     return null;
   }
@@ -142,7 +146,7 @@ function getROIMetrics(db, clientId, days = 30) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   // Get client info
-  const client = db.prepare('SELECT avg_ticket, retell_phone, telnyx_phone, twilio_phone FROM clients WHERE id = ?').get(clientId);
+  const client = await db.query('SELECT avg_ticket, retell_phone, telnyx_phone, twilio_phone FROM clients WHERE id = ?', [clientId], 'get');
   if (!client) {
     return null;
   }
@@ -150,13 +154,15 @@ function getROIMetrics(db, clientId, days = 30) {
   const avgTicket = client.avg_ticket || 0;
 
   // Count total leads and bookings in period
-  const leadStats = db.prepare(
-    `SELECT COUNT(*) as total_leads FROM leads WHERE client_id = ? AND created_at >= ?`
-  ).get(clientId, since);
+  const leadStats = await db.query(
+    `SELECT COUNT(*) as total_leads FROM leads WHERE client_id = ? AND created_at >= ?`,
+    [clientId, since], 'get'
+  );
 
-  const bookingStats = db.prepare(
-    `SELECT COUNT(*) as total_bookings FROM calls WHERE client_id = ? AND outcome = 'booked' AND created_at >= ?`
-  ).get(clientId, since);
+  const bookingStats = await db.query(
+    `SELECT COUNT(*) as total_bookings FROM calls WHERE client_id = ? AND outcome = 'booked' AND created_at >= ?`,
+    [clientId, since], 'get'
+  );
 
   const totalLeads = leadStats?.total_leads || 0;
   const totalBookings = bookingStats?.total_bookings || 0;
@@ -167,19 +173,22 @@ function getROIMetrics(db, clientId, days = 30) {
   // Estimate costs (this is a simplified model)
   // Twilio SMS: ~$0.0075 per message
   // Voice: ~$0.09 per minute
-  const smsCount = db.prepare(
-    `SELECT COUNT(*) as count FROM messages WHERE client_id = ? AND channel = 'sms' AND created_at >= ?`
-  ).get(clientId, since);
+  const smsCount = await db.query(
+    `SELECT COUNT(*) as count FROM messages WHERE client_id = ? AND channel = 'sms' AND created_at >= ?`,
+    [clientId, since], 'get'
+  );
   const smsCost = (smsCount?.count || 0) * 0.0075;
 
-  const callMinutes = db.prepare(
-    `SELECT SUM(duration) as total_duration FROM calls WHERE client_id = ? AND created_at >= ?`
-  ).get(clientId, since);
+  const callMinutes = await db.query(
+    `SELECT SUM(duration) as total_duration FROM calls WHERE client_id = ? AND created_at >= ?`,
+    [clientId, since], 'get'
+  );
   const voiceCost = ((callMinutes?.total_duration || 0) / 60) * 0.09;
 
-  const emailCount = db.prepare(
-    `SELECT COUNT(*) as count FROM messages WHERE client_id = ? AND channel = 'email' AND created_at >= ?`
-  ).get(clientId, since);
+  const emailCount = await db.query(
+    `SELECT COUNT(*) as count FROM messages WHERE client_id = ? AND channel = 'email' AND created_at >= ?`,
+    [clientId, since], 'get'
+  );
   const emailCost = (emailCount?.count || 0) * 0.001; // ~$0.001 per email
 
   const totalCost = smsCost + voiceCost + emailCost;
@@ -209,10 +218,11 @@ function getROIMetrics(db, clientId, days = 30) {
   };
 
   // Calculate average time to close
-  const closedLeads = db.prepare(
+  const closedLeads = await db.query(
     `SELECT id, created_at, updated_at FROM leads
-     WHERE client_id = ? AND stage IN ('booked', 'completed') AND created_at >= ?`
-  ).all(clientId, since);
+     WHERE client_id = ? AND stage IN ('booked', 'completed') AND created_at >= ?`,
+    [clientId, since]
+  );
 
   let avg_time_to_close = 0;
   if (closedLeads.length > 0) {
@@ -259,15 +269,43 @@ function getROIMetrics(db, clientId, days = 30) {
  * @param {string} clientId
  * @returns {{ channels: Array<{name, leads, bookings, conversion_rate, avg_touches}> }}
  */
-function getChannelPerformance(db, clientId) {
+async function getChannelPerformance(db, clientId) {
   if (!clientId) {
     return null;
   }
 
-  // Get all leads for this client
-  const leads = db.prepare(
-    'SELECT id, phone, stage FROM leads WHERE client_id = ?'
-  ).all(clientId);
+  // Batch query: SMS touch counts per phone for this client
+  const smsRows = await db.query(
+    `SELECT phone, COUNT(*) AS count FROM messages
+     WHERE client_id = ? AND channel = 'sms'
+     GROUP BY phone`,
+    [clientId]
+  );
+  const smsByPhone = Object.fromEntries(smsRows.map(r => [r.phone, r.count]));
+
+  // Batch query: voice (call) touch counts per caller_phone for this client
+  const voiceRows = await db.query(
+    `SELECT caller_phone AS phone, COUNT(*) AS count FROM calls
+     WHERE client_id = ?
+     GROUP BY caller_phone`,
+    [clientId]
+  );
+  const voiceByPhone = Object.fromEntries(voiceRows.map(r => [r.phone, r.count]));
+
+  // Batch query: email touch counts per phone for this client
+  const emailRows = await db.query(
+    `SELECT phone, COUNT(*) AS count FROM messages
+     WHERE client_id = ? AND channel = 'email'
+     GROUP BY phone`,
+    [clientId]
+  );
+  const emailByPhone = Object.fromEntries(emailRows.map(r => [r.phone, r.count]));
+
+  // Get all leads in a single query
+  const leads = await db.query(
+    'SELECT id, phone, stage FROM leads WHERE client_id = ?',
+    [clientId]
+  );
 
   const channelMetrics = {
     sms: { leads: 0, bookings: 0, touches: 0 },
@@ -275,33 +313,16 @@ function getChannelPerformance(db, clientId) {
     email: { leads: 0, bookings: 0, touches: 0 },
   };
 
-  // For each lead, determine primary channel and count touches
+  // Determine primary channel per lead using the pre-fetched maps (no DB calls in loop)
   for (const lead of leads) {
-    // Get messages for SMS channel
-    const smsTouches = db.prepare(
-      `SELECT COUNT(*) as count FROM messages WHERE phone = ? AND client_id = ? AND channel = 'sms'`
-    ).get(lead.phone, clientId);
-
-    // Get calls for voice channel
-    const voiceTouches = db.prepare(
-      `SELECT COUNT(*) as count FROM calls WHERE caller_phone = ? AND client_id = ?`
-    ).get(lead.phone, clientId);
-
-    // Get emails for email channel
-    const emailTouches = db.prepare(
-      `SELECT COUNT(*) as count FROM messages WHERE phone = ? AND client_id = ? AND channel = 'email'`
-    ).get(lead.phone, clientId);
-
-    // Determine primary channel (most touches)
     const touches = {
-      sms: smsTouches?.count || 0,
-      voice: voiceTouches?.count || 0,
-      email: emailTouches?.count || 0,
+      sms: smsByPhone[lead.phone] || 0,
+      voice: voiceByPhone[lead.phone] || 0,
+      email: emailByPhone[lead.phone] || 0,
     };
 
     const primaryChannel = Object.entries(touches).reduce((a, b) => b[1] > a[1] ? b : a)[0];
 
-    // Update metrics
     if (primaryChannel) {
       channelMetrics[primaryChannel].leads++;
       channelMetrics[primaryChannel].touches += touches[primaryChannel];

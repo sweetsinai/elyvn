@@ -29,8 +29,8 @@ async function generateColdEmail(prospect) {
   const state = sanitizeField(rawState);
   const website = sanitizeField(rawWebsite);
 
-  const BOOKING_LINK = config.outreach.bookingLink;
-  const SENDER_NAME = config.outreach.senderName;
+  const BOOKING_LINK = prospect._booking_link || config.outreach.bookingLink;
+  const SENDER_NAME = prospect._sender_name || config.outreach.senderName;
   const MODEL = config.ai.model;
 
   try {

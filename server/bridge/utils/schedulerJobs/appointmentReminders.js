@@ -1,7 +1,7 @@
 const { APPOINTMENT_REMINDER_24H_MS, APPOINTMENT_REMINDER_2H_MS } = require('../../config/timing');
 const { logger } = require('../logger');
 
-function createAppointmentReminders(db, appointment, client) {
+async function createAppointmentReminders(db, appointment, client) {
   try {
     if (!appointment || !appointment.id || !appointment.datetime) {
       logger.warn('[Scheduler] createAppointmentReminders: missing appointment data');
@@ -42,15 +42,16 @@ function createAppointmentReminders(db, appointment, client) {
       if (scheduledAt.getTime() <= Date.now()) continue;
 
       // Dedup
-      const existing = db.prepare(
-        "SELECT id FROM followups WHERE lead_id = ? AND touch_number = ? AND type = 'reminder' AND status = 'scheduled'"
-      ).get(leadId, r.touchNumber);
+      const existing = await db.query(
+        "SELECT id FROM followups WHERE lead_id = ? AND touch_number = ? AND type = 'reminder' AND status = 'scheduled'",
+        [leadId, r.touchNumber], 'get'
+      );
       if (existing) continue;
 
-      db.prepare(`
+      await db.query(`
         INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
         VALUES (?, ?, ?, ?, 'reminder', ?, 'template', ?, 'scheduled')
-      `).run(randomUUID(), leadId, clientId, r.touchNumber, r.content, scheduledAt.toISOString());
+      `, [randomUUID(), leadId, clientId, r.touchNumber, r.content, scheduledAt.toISOString()], 'run');
     }
 
     logger.info(`[Scheduler] Appointment reminders created for ${appointment.phone || name}`);

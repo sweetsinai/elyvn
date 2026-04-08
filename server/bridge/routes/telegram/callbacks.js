@@ -3,11 +3,12 @@
 const telegram = require('../../utils/telegram');
 const { logger } = require('../../utils/logger');
 const { handleCommand } = require('./commands');
+const timing = require('../../config/timing');
 
 // Rate limiting for Telegram callback queries
 const callbackRateLimits = new Map();
-const CALLBACK_RATE_LIMIT = 10; // max callbacks per minute per chatId
-const CALLBACK_RATE_WINDOW = 60000; // 1 minute
+const CALLBACK_RATE_LIMIT = timing.TELEGRAM_CALLBACK_RATE_LIMIT;
+const CALLBACK_RATE_WINDOW = timing.TELEGRAM_CALLBACK_RATE_WINDOW_MS;
 
 function callbackRateLimit(chatId) {
   const now = Date.now();
@@ -28,7 +29,8 @@ function callbackRateLimit(chatId) {
   // Cleanup old entries every 5 minutes
   if (callbackRateLimits.size > 10000) {
     for (const [k, v] of callbackRateLimits) {
-      if (now - Math.max(...v.timestamps) > CALLBACK_RATE_WINDOW) callbackRateLimits.delete(k);
+      const latest = v.timestamps[v.timestamps.length - 1] || 0;
+      if (now - latest > CALLBACK_RATE_WINDOW) callbackRateLimits.delete(k);
     }
   }
 
@@ -67,7 +69,7 @@ async function handleCallback(db, callbackQuery) {
 
   if (data.startsWith('transcript:')) {
     const callId = data.split(':')[1];
-    const call = db.prepare('SELECT transcript, caller_phone, created_at, summary FROM calls WHERE call_id = ?').get(callId);
+    const call = await db.query('SELECT transcript, caller_phone, created_at, summary FROM calls WHERE call_id = ?', [callId], 'get');
     if (call && call.transcript) {
       const transcript = call.transcript;
       if (transcript.length > 3500) {
@@ -84,7 +86,8 @@ async function handleCallback(db, callbackQuery) {
         const filename = `transcript-${callId.substring(0, 8)}.txt`;
         await telegram.sendDocument(chatId, header + transcript, filename, `<b>Full transcript</b> (${transcript.length} chars)`);
       } else {
-        await telegram.sendMessage(chatId, `<b>Transcript</b>\n\n${transcript}`);
+        const escaped = transcript.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      await telegram.sendMessage(chatId, `<b>Transcript</b>\n\n${escaped}`);
       }
     } else {
       await telegram.sendMessage(chatId, 'Transcript not available.');
@@ -97,8 +100,28 @@ async function handleCallback(db, callbackQuery) {
     const phone = parts[2] || '';
     await telegram.answerCallback(callbackId, "You're handling this one");
     if (chatId) {
-      await telegram.sendMessage(chatId, `You're handling this one.${phone ? ` Contact: ${phone}` : ''}`);
+      const safePhone = phone.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      await telegram.sendMessage(chatId, `You're handling this one.${safePhone ? ` Contact: ${safePhone}` : ''}`);
     }
+  } else if (data.startsWith('reply_prompt:')) {
+    // Owner wants to reply to a lead — send ForceReply prompt
+    const phone = data.split(':')[1] || '';
+    await telegram.answerCallback(callbackId, 'Type your reply below');
+    // Send a prompt message with ForceReply — when the owner types a response,
+    // the webhook receives it as a reply_to_message, which index.js routes to handleReply()
+    const safePromptPhone = phone.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    await telegram.sendMessage(chatId,
+      `<b>Reply to ${safePromptPhone}</b>\nType your message below (reply to this message):`,
+      {
+        reply_markup: JSON.stringify({
+          force_reply: true,
+          selective: true,
+          input_field_placeholder: 'Type your SMS reply...',
+        }),
+        // Embed phone in the message so handleReply can extract it
+      }
+    );
+    return;
   } else if (data.startsWith('cancel_speed:')) {
     const leadId = data.split(':')[1];
 
@@ -111,7 +134,7 @@ async function handleCallback(db, callbackQuery) {
     }
 
     try {
-      const result = db.prepare(
+      const result = await db.query(
         `UPDATE followups
          SET status = 'cancelled'
          WHERE lead_id = ?
@@ -119,8 +142,9 @@ async function handleCallback(db, callbackQuery) {
            AND (
              content_source IN ('speed_to_lead', 'template')
              OR touch_number IN (1, 2, 3, 4, 5)
-           )`
-      ).run(leadId);
+           )`,
+        [leadId], 'run'
+      );
 
       const n = result.changes;
       logger.info(`[telegram] cancel_speed: cancelled ${n} scheduled followup(s) for lead ${leadId}`);

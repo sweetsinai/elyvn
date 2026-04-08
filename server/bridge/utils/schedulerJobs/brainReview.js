@@ -2,8 +2,12 @@ const { BRAIN_FOLLOWUP_THROTTLE_MS } = require('../../config/timing');
 const { logger } = require('../logger');
 
 async function dailyLeadReview(db) {
+  const startTime = Date.now();
+  let processed = 0;
+  let errors = 0;
+
   try {
-    const stale = db.prepare(`
+    const stale = await db.query(`
       SELECT l.*, c.id as cid
       FROM leads l
       JOIN clients c ON l.client_id = c.id
@@ -13,14 +17,15 @@ async function dailyLeadReview(db) {
       AND l.score >= 5
       ORDER BY l.score DESC
       LIMIT 10
-    `).all();
+    `);
 
     if (stale.length === 0) {
-      logger.info('[Brain] Daily review: no stale leads');
+      logger.info('[brainReview] START — no stale leads to process');
+      logger.info('[brainReview] DONE — processed 0, errors 0, duration 0ms');
       return;
     }
 
-    logger.info(`[Brain] Daily review: ${stale.length} stale leads`);
+    logger.info(`[brainReview] START — processing ${stale.length} stale leads`);
 
     const { getLeadMemory } = require('../leadMemory');
     const { think } = require('../brain');
@@ -28,7 +33,7 @@ async function dailyLeadReview(db) {
 
     for (const lead of stale) {
       try {
-        const memory = getLeadMemory(db, lead.phone, lead.client_id);
+        const memory = await getLeadMemory(db, lead.phone, lead.client_id);
         if (!memory) continue;
 
         const decision = await think('daily_review', {
@@ -38,14 +43,19 @@ async function dailyLeadReview(db) {
         }, memory, db);
 
         await executeActions(db, decision.actions, memory);
+        processed++;
         await new Promise(r => setTimeout(r, BRAIN_FOLLOWUP_THROTTLE_MS));
       } catch (err) {
-        logger.error(`[Brain] Daily review failed for ${lead.phone}:`, err.message);
+        logger.error(`[brainReview] Failed for ${lead.phone}:`, err.message);
+        errors++;
       }
     }
   } catch (err) {
-    logger.error('[Brain] dailyLeadReview error:', err);
+    logger.error('[brainReview] dailyLeadReview error:', err);
+    errors++;
   }
+
+  logger.info(`[brainReview] DONE — processed ${processed}, errors ${errors}, duration ${Date.now() - startTime}ms`);
 }
 
 module.exports = { dailyLeadReview };

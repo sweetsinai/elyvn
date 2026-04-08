@@ -16,6 +16,11 @@ const { logger } = require('./logger');
 
 const anthropic = new Anthropic();
 
+// Token bucket rate limiter for Claude API calls
+const BRAIN_MAX_QPS = 10;
+let brainTokens = BRAIN_MAX_QPS;
+setInterval(() => { brainTokens = Math.min(BRAIN_MAX_QPS, brainTokens + BRAIN_MAX_QPS); }, 1000);
+
 // Circuit breaker for Claude API — opens after 5 failures in 60s, cools down 30s
 const claudeBreaker = new CircuitBreaker(
   async (params) => anthropic.messages.create(params),
@@ -109,11 +114,32 @@ async function _think(eventType, eventData, leadMemory, db) {
           knowledgeBase = knowledgeBase.substring(0, MAX_KB_SIZE) + '\n[...truncated]';
         }
       }
-    } catch (_) {}
+    } catch (kbErr) {
+      logger.warn(`[brain] KB load failed for client ${client.id}:`, kbErr.message);
+    }
   }
 
   // Guardrails
-  const guardrails = checkGuardrails(db, lead, client);
+  const guardrails = await checkGuardrails(db, lead, client);
+
+  // Fetch conversation intelligence for client performance context (FIX 4)
+  let perfContext = '';
+  try {
+    if (client?.id) {
+      const { getConversationIntelligence } = require('./conversationIntelligence');
+      const intel = await getConversationIntelligence(db, client.id, 30);
+      if (intel && intel.summary) {
+        const bookingRate = intel.summary.booking_rate || '0%';
+        const avgDuration = intel.summary.avg_call_duration_seconds
+          ? Math.round(intel.summary.avg_call_duration_seconds / 60) : 0;
+        const peakHourStr = (intel.peak_hours && intel.peak_hours.length > 0)
+          ? `${intel.peak_hours[0].day} ${intel.peak_hours[0].hour}:00` : 'unknown';
+        perfContext = `\nCLIENT PERFORMANCE CONTEXT:\n${bookingRate} of calls convert to bookings. Average call duration: ${avgDuration} minutes. Peak hour: ${peakHourStr}. Use this context when making decisions.\n`;
+      }
+    }
+  } catch (_) {
+    // Conversation intelligence unavailable — proceed without it
+  }
 
   const safeBusinessName = sanitizeForPrompt(client?.business_name) || 'the business';
   const safeClientName   = sanitizeForPrompt(client?.business_name) || 'Unknown';
@@ -128,6 +154,9 @@ ${knowledgeBase || 'No knowledge base loaded.'}
 
 CLIENT: ${safeClientName} | Owner: ${safeOwnerName} | AI active: ${client?.is_active !== 0 ? 'YES' : 'NO — only notify owner'}
 Calendar: ${client?.calcom_booking_link || 'Not configured'}
+${perfContext}
+GROUNDING REQUIREMENT:
+You MUST only use facts explicitly provided in the TIMELINE, lead data, EVENT DATA, or BUSINESS KNOWLEDGE BASE above. Never invent dates, statistics, previous interactions, prices, service details, or specific details not present in the provided context. If a fact is not in the context, do not state it.
 
 RULES:
 1. Max 3 follow-up touches per lead unless they re-engage
@@ -205,6 +234,20 @@ What actions should ELYVN take?`;
   }
 
   try {
+    const { recordMetric } = require('./metrics');
+
+    // Rate limit check: bail out if too many concurrent decisions
+    if (brainTokens <= 0) {
+      logger.warn('[Brain] Rate limited — too many concurrent decisions');
+      return {
+        reasoning: 'Brain rate limited — deferring to owner notification',
+        actions: [{ action: 'notify_owner', message: `Brain rate limited for ${eventType} on ${lead?.phone || '?'}`, urgency: 'low' }],
+      };
+    }
+    brainTokens--;
+
+    const brainStart = Date.now();
+
     const response = await claudeBreaker.call({
       model: config.ai.model,
       max_tokens: 1000,
@@ -212,10 +255,30 @@ What actions should ELYVN take?`;
       messages: [{ role: 'user', content: userMessage }],
     });
 
+    recordMetric('brain_decision_time_ms', Date.now() - brainStart, 'histogram');
+
+    // Track AI decision usage for billing
+    try { const { trackUsage } = require('./usageTracker'); trackUsage(db, leadMemory?.clientId, 'ai_decision'); } catch (_) {}
+
     const text = response.content
       .filter(b => b.type === 'text')
       .map(b => b.text)
       .join('');
+
+    // Audit trail: log brain reasoning before parsing/executing (FIX 2)
+    try {
+      if (lead?.id) {
+        const { appendEvent, Events } = require('./eventStore');
+        await appendEvent(db, lead.id, 'lead', Events.BrainReasoningCaptured, {
+          prompt_preview: systemPrompt.substring(0, 500),
+          response: text,
+          model: config.ai.model || 'claude-unknown',
+          event_type: eventType,
+        }, client?.id || null);
+      }
+    } catch (_) {
+      // Audit logging failure is non-fatal
+    }
 
     const cleaned = text.replace(/```json|```/g, '').trim();
     let decision;
@@ -232,6 +295,9 @@ What actions should ELYVN take?`;
     // Validate actions
     if (decision.actions && Array.isArray(decision.actions)) {
       const { isValidAction, isValidStage, VALID_ACTIONS } = require('./validate');
+      const { validateBrainAction } = require('./groundingEnforcer');
+      const { recordMetric } = require('./metrics');
+
       decision.actions = decision.actions.filter(a => {
         if (!a.action || !isValidAction(a.action)) {
           logger.warn(`[Brain] Filtered invalid action type: ${a.action}. Valid: ${VALID_ACTIONS.join(', ')}`);
@@ -247,6 +313,15 @@ What actions should ELYVN take?`;
           logger.warn(`[Brain] Invalid score ${a.score} — filtering out`);
           return false;
         }
+
+        // Grounding enforcement: validate action against actual timeline/lead data
+        const grounding = validateBrainAction(a, timeline, lead, knowledgeBase);
+        if (!grounding.valid) {
+          logger.warn(`[Brain] Grounding violation for ${a.action}: ${grounding.violations.join('; ')}`);
+          recordMetric('brain_grounding_violations', 1, 'counter');
+          return false;
+        }
+
         return true;
       });
     }
@@ -268,36 +343,39 @@ What actions should ELYVN take?`;
   }
 }
 
-function checkGuardrails(db, lead, client) {
+async function checkGuardrails(db, lead, client) {
   const warnings = [];
   if (!lead?.id || !client?.id) return warnings;
 
   try {
     // Max 3 brain-initiated SMS per 24h
-    const recentSMS = db.prepare(
+    const recentSMS = await db.query(
       `SELECT COUNT(*) as c FROM messages
        WHERE phone = ? AND client_id = ? AND direction = 'outbound' AND reply_source = 'brain'
-       AND created_at > datetime('now', '-24 hours')`
-    ).get(lead.phone, client.id);
+       AND created_at > datetime('now', '-24 hours')`,
+      [lead.phone, client.id], 'get'
+    );
     if (recentSMS && recentSMS.c >= 3) {
       warnings.push('RATE_LIMIT: 3 brain SMS sent in 24h. Do NOT send_sms.');
     }
 
     // Owner took over via transfer (check most recent call only)
-    const lastCall = db.prepare(
+    const lastCall = await db.query(
       `SELECT outcome FROM calls WHERE caller_phone = ? AND client_id = ?
-       ORDER BY created_at DESC LIMIT 1`
-    ).get(lead.phone, client.id);
+       ORDER BY created_at DESC LIMIT 1`,
+      [lead.phone, client.id], 'get'
+    );
     if (lastCall && lastCall.outcome === 'transferred') {
       warnings.push('OWNER_HANDLING: Lead was most recently transferred to owner. Only notify_owner, no send_sms or schedule_followup.');
     }
 
     // Opt-out signals
-    const optOut = db.prepare(
+    const optOut = await db.query(
       `SELECT 1 FROM messages WHERE phone = ? AND client_id = ? AND direction = 'inbound'
        AND (LOWER(body) LIKE '%stop%' OR LOWER(body) LIKE '%unsubscribe%' OR LOWER(body) LIKE '%opt out%')
-       ORDER BY created_at DESC LIMIT 1`
-    ).get(lead.phone, client.id);
+       ORDER BY created_at DESC LIMIT 1`,
+      [lead.phone, client.id], 'get'
+    );
     if (optOut) {
       warnings.push('OPT_OUT: Lead may have opted out. Do NOT send_sms. Only notify_owner.');
     }

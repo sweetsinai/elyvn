@@ -7,6 +7,10 @@ const router = express.Router();
 const crypto = require('crypto');
 const { logger } = require('../utils/logger');
 const { verifyToken } = require('./auth');
+const { logDataMutation } = require('../utils/auditLog');
+const { AppError } = require('../utils/AppError');
+const { validateBody } = require('../middleware/validateRequest');
+const { CreateCheckoutSchema } = require('../utils/schemas/billing');
 
 // Stripe plans configuration
 const PLANS = {
@@ -33,14 +37,14 @@ const PLANS = {
 // Lazy-load Stripe (only when keys are configured)
 function getStripe() {
   if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error('STRIPE_SECRET_KEY not configured');
+    throw new AppError('INTERNAL_ERROR', 'STRIPE_SECRET_KEY not configured', 500);
   }
   // Dynamic require to avoid crash if stripe not installed
   try {
     const Stripe = require('stripe');
     return new Stripe(process.env.STRIPE_SECRET_KEY);
   } catch {
-    throw new Error('stripe package not installed — run: npm install stripe');
+    throw new AppError('INTERNAL_ERROR', 'stripe package not installed — run: npm install stripe', 500);
   }
 }
 
@@ -71,7 +75,7 @@ router.get('/plans', (req, res) => {
 });
 
 // POST /billing/create-checkout — create Stripe checkout session
-router.post('/create-checkout', requireAuth, async (req, res) => {
+router.post('/create-checkout', requireAuth, validateBody(CreateCheckoutSchema), async (req, res) => {
   const { planId } = req.body;
   const plan = PLANS[planId];
 
@@ -84,7 +88,7 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
     const db = req.app.locals.db;
 
     // Get client info
-    const client = db.prepare('SELECT id, owner_email, stripe_customer_id FROM clients WHERE id = ?').get(req.clientId);
+    const client = await db.query('SELECT id, owner_email, stripe_customer_id FROM clients WHERE id = ?', [req.clientId], 'get');
     if (!client) {
       return res.status(404).json({ error: 'Account not found' });
     }
@@ -97,7 +101,7 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
         metadata: { clientId: req.clientId },
       });
       customerId = customer.id;
-      db.prepare('UPDATE clients SET stripe_customer_id = ? WHERE id = ?').run(customerId, req.clientId);
+      await db.query('UPDATE clients SET stripe_customer_id = ? WHERE id = ?', [customerId, req.clientId], 'run');
     }
 
     const sessionParams = {
@@ -185,7 +189,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         const planId = session.metadata?.planId || 'starter';
 
         if (clientId) {
-          db.prepare(`
+          await db.query(`
             UPDATE clients SET
               stripe_customer_id = ?,
               stripe_subscription_id = ?,
@@ -194,9 +198,10 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               plan_started_at = datetime('now'),
               updated_at = datetime('now')
             WHERE id = ?
-          `).run(session.customer, session.subscription, planId, clientId);
+          `, [session.customer, session.subscription, planId, clientId], 'run');
 
           logger.info(`[billing] Client ${clientId} activated — plan: ${planId}`);
+          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: clientId, newValues: { plan: planId, subscription_status: 'active' } }); } catch (_) {}
         }
         break;
       }
@@ -204,10 +209,13 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object;
         const customerId = invoice.customer;
-        const client = db.prepare('SELECT id FROM clients WHERE stripe_customer_id = ?').get(customerId);
+        const client = await db.query('SELECT id FROM clients WHERE stripe_customer_id = ?', [customerId], 'get');
         if (client) {
-          db.prepare("UPDATE clients SET subscription_status = 'active', updated_at = datetime('now') WHERE id = ?").run(client.id);
+          await db.query("UPDATE clients SET subscription_status = 'active', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
           logger.info(`[billing] Payment succeeded for client ${client.id}`);
+          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'active' } }); } catch (_) {}
+        } else {
+          logger.warn(`[billing] ${event.type} — no client found for customerId ${customerId}`);
         }
         break;
       }
@@ -215,10 +223,13 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       case 'invoice.payment_failed': {
         const invoice = event.data.object;
         const customerId = invoice.customer;
-        const client = db.prepare('SELECT id FROM clients WHERE stripe_customer_id = ?').get(customerId);
+        const client = await db.query('SELECT id FROM clients WHERE stripe_customer_id = ?', [customerId], 'get');
         if (client) {
-          db.prepare("UPDATE clients SET subscription_status = 'past_due', updated_at = datetime('now') WHERE id = ?").run(client.id);
+          await db.query("UPDATE clients SET subscription_status = 'past_due', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
           logger.warn(`[billing] Payment failed for client ${client.id}`);
+          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'past_due' } }); } catch (_) {}
+        } else {
+          logger.warn(`[billing] ${event.type} — no client found for customerId ${customerId}`);
         }
         break;
       }
@@ -226,10 +237,13 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       case 'customer.subscription.deleted': {
         const sub = event.data.object;
         const customerId = sub.customer;
-        const client = db.prepare('SELECT id FROM clients WHERE stripe_customer_id = ?').get(customerId);
+        const client = await db.query('SELECT id FROM clients WHERE stripe_customer_id = ?', [customerId], 'get');
         if (client) {
-          db.prepare("UPDATE clients SET subscription_status = 'canceled', plan = 'canceled', updated_at = datetime('now') WHERE id = ?").run(client.id);
+          await db.query("UPDATE clients SET subscription_status = 'canceled', plan = 'canceled', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
           logger.info(`[billing] Subscription canceled for client ${client.id}`);
+          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'canceled', plan: 'canceled' } }); } catch (_) {}
+        } else {
+          logger.warn(`[billing] ${event.type} — no client found for customerId ${customerId}`);
         }
         break;
       }
@@ -237,11 +251,17 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       case 'customer.subscription.updated': {
         const sub = event.data.object;
         const customerId = sub.customer;
-        const client = db.prepare('SELECT id FROM clients WHERE stripe_customer_id = ?').get(customerId);
+        const client = await db.query('SELECT id FROM clients WHERE stripe_customer_id = ?', [customerId], 'get');
         if (client) {
           const status = sub.cancel_at_period_end ? 'canceling' : sub.status;
-          db.prepare("UPDATE clients SET subscription_status = ?, stripe_subscription_id = ?, updated_at = datetime('now') WHERE id = ?")
-            .run(status, sub.id, client.id);
+          await db.query(
+            "UPDATE clients SET subscription_status = ?, stripe_subscription_id = ?, updated_at = datetime('now') WHERE id = ?",
+            [status, sub.id, client.id],
+            'run'
+          );
+          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: status, stripe_subscription_id: sub.id } }); } catch (_) {}
+        } else {
+          logger.warn(`[billing] ${event.type} — no client found for customerId ${customerId}`);
         }
         break;
       }
@@ -254,10 +274,13 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 });
 
 // GET /billing/status — get current billing status
-router.get('/status', requireAuth, (req, res) => {
+router.get('/status', requireAuth, async (req, res) => {
   const db = req.app.locals.db;
-  const client = db.prepare('SELECT plan, subscription_status, stripe_customer_id, stripe_subscription_id, plan_started_at FROM clients WHERE id = ?')
-    .get(req.clientId);
+  const client = await db.query(
+    'SELECT plan, subscription_status, stripe_customer_id, stripe_subscription_id, plan_started_at FROM clients WHERE id = ?',
+    [req.clientId],
+    'get'
+  );
 
   if (!client) {
     return res.status(404).json({ error: 'Account not found' });
@@ -274,7 +297,7 @@ router.get('/status', requireAuth, (req, res) => {
 // POST /billing/portal — create Stripe billing portal session
 router.post('/portal', requireAuth, async (req, res) => {
   const db = req.app.locals.db;
-  const client = db.prepare('SELECT stripe_customer_id FROM clients WHERE id = ?').get(req.clientId);
+  const client = await db.query('SELECT stripe_customer_id FROM clients WHERE id = ?', [req.clientId], 'get');
 
   if (!client?.stripe_customer_id) {
     return res.status(400).json({ error: 'No billing account found. Please subscribe first.' });

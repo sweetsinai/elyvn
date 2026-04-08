@@ -4,6 +4,17 @@
  * Each migration is a function that receives the db instance.
  */
 
+// Lazy-load logger — migrations run during db init when logger is already available
+function getLogger() {
+  try { return require('./logger').logger; }
+  catch { return {
+    info: (m) => process.stdout.write(JSON.stringify({ level: 'info', message: String(m) }) + '\n'),
+    error: (m) => process.stderr.write(JSON.stringify({ level: 'error', message: String(m) }) + '\n'),
+    warn: (m) => process.stderr.write(JSON.stringify({ level: 'warn', message: String(m) }) + '\n'),
+    debug: () => {},
+  }; }
+}
+
 const migrations = [
   {
     id: '001_base_tables',
@@ -787,8 +798,305 @@ const migrations = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_job_queue_status_scheduled
                ON job_queue(status, scheduled_at) WHERE status = 'pending'`);
 
-      console.log('[migrations] 028: reliability fixes applied');
+      getLogger().info('[migrations] 028: reliability fixes applied');
     }
+  },
+  {
+    id: '029_email_verification',
+    description: 'Add email verification columns to clients table',
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+      if (!cols.includes('email_verified')) {
+        db.exec('ALTER TABLE clients ADD COLUMN email_verified INTEGER DEFAULT 0');
+      }
+      if (!cols.includes('verification_token')) {
+        db.exec('ALTER TABLE clients ADD COLUMN verification_token TEXT');
+      }
+      if (!cols.includes('verification_expires')) {
+        db.exec('ALTER TABLE clients ADD COLUMN verification_expires TEXT');
+      }
+      db.exec('CREATE INDEX IF NOT EXISTS idx_clients_verification_token ON clients(verification_token)');
+    },
+  },
+  {
+    id: '030_composite_indexes',
+    description: 'Add composite indexes for hot query paths: messages(lead_id,created_at), emails_sent(status,sent_at), jobs(status,job_type), leads(prospect_id)',
+    up(db) {
+      // Composite index for messages queried by lead with date range ordering
+      db.exec('CREATE INDEX IF NOT EXISTS idx_messages_lead_created ON messages(lead_id, created_at)');
+
+      // leads(prospect_id) already exists as idx_leads_prospect_id (migration 008) — skip
+
+      // Composite index for job_queue by status+job_type (job_queue uses "type" not "job_type")
+      // Check column name used in job_queue
+      const jqCols = db.prepare("PRAGMA table_info('job_queue')").all().map(c => c.name);
+      if (jqCols.includes('type')) {
+        db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_status_type ON job_queue(status, type)');
+      }
+
+      // Composite index for emails_sent by status+sent_at for funnel queries
+      db.exec('CREATE INDEX IF NOT EXISTS idx_emails_sent_status_sent_at ON emails_sent(status, sent_at)');
+
+      getLogger().info('[migrations] 030: composite indexes applied');
+    },
+  },
+  {
+    id: '031_event_store',
+    description: 'Create event_store table for event sourcing / audit trail of domain events',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS event_store (
+          id TEXT PRIMARY KEY,
+          aggregate_id TEXT NOT NULL,
+          aggregate_type TEXT NOT NULL CHECK(aggregate_type IN ('lead','campaign','client','message')),
+          event_type TEXT NOT NULL,
+          event_data TEXT NOT NULL,
+          client_id TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          version INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE INDEX IF NOT EXISTS idx_events_aggregate ON event_store(aggregate_id, aggregate_type);
+        CREATE INDEX IF NOT EXISTS idx_events_client ON event_store(client_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_events_type ON event_store(event_type, client_id);
+      `);
+      getLogger().info('[migrations] 031: event_store table created');
+    },
+  },
+  {
+    id: '032_audit_log_mutation_columns',
+    description: 'Add old_values and new_values columns to audit_log for data mutation tracking',
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info('audit_log')").all().map(c => c.name);
+      if (!cols.includes('old_values')) {
+        db.exec('ALTER TABLE audit_log ADD COLUMN old_values TEXT');
+      }
+      if (!cols.includes('new_values')) {
+        db.exec('ALTER TABLE audit_log ADD COLUMN new_values TEXT');
+      }
+      getLogger().info('[migrations] 032: audit_log mutation columns added');
+    },
+  },
+  {
+    id: '033_pii_encrypted_columns',
+    description: 'Add encrypted PII columns for leads (phone, email) and messages (body)',
+    up(db) {
+      const leadCols = db.prepare("PRAGMA table_info('leads')").all().map(c => c.name);
+      if (!leadCols.includes('phone_encrypted')) {
+        db.exec('ALTER TABLE leads ADD COLUMN phone_encrypted TEXT');
+      }
+      if (!leadCols.includes('email_encrypted')) {
+        db.exec('ALTER TABLE leads ADD COLUMN email_encrypted TEXT');
+      }
+      const msgCols = db.prepare("PRAGMA table_info('messages')").all().map(c => c.name);
+      if (!msgCols.includes('body_encrypted')) {
+        db.exec('ALTER TABLE messages ADD COLUMN body_encrypted TEXT');
+      }
+      getLogger().info('[migrations] 033: encrypted PII columns added (phone_encrypted, email_encrypted, body_encrypted)');
+    },
+  },
+  {
+    id: '034_feature_store',
+    description: 'Create feature_store table for ML feature pipeline',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS feature_store (
+          id TEXT PRIMARY KEY,
+          lead_id TEXT NOT NULL,
+          feature_name TEXT NOT NULL,
+          feature_value REAL,
+          feature_version TEXT NOT NULL DEFAULT 'v1',
+          computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(lead_id, feature_name, feature_version)
+        );
+        CREATE INDEX IF NOT EXISTS idx_features_lead ON feature_store(lead_id);
+      `);
+      getLogger().info('[migrations] 034: feature_store table created');
+    },
+  },
+  {
+    id: '035_experiments',
+    description: 'Create experiments, experiment_assignments, and experiment_outcomes tables for A/B testing',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS experiments (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          variants TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','completed')),
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS experiment_assignments (
+          id TEXT PRIMARY KEY,
+          experiment_id TEXT NOT NULL REFERENCES experiments(id),
+          subject_id TEXT NOT NULL,
+          variant_id TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(experiment_id, subject_id)
+        );
+        CREATE TABLE IF NOT EXISTS experiment_outcomes (
+          id TEXT PRIMARY KEY,
+          experiment_id TEXT NOT NULL REFERENCES experiments(id),
+          subject_id TEXT NOT NULL,
+          variant_id TEXT NOT NULL,
+          outcome TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+      getLogger().info('[migrations] 035: experiments tables created');
+    },
+  },
+  {
+    id: '036',
+    description: 'performance indexes for leads, messages, calls ordering and lookup',
+    up(db) {
+      db.exec(`
+        -- Leads: ORDER BY updated_at DESC (primary leads list API)
+        CREATE INDEX IF NOT EXISTS idx_leads_client_updated_at ON leads(client_id, updated_at);
+        -- Leads: ORDER BY score DESC (scoring queries)
+        CREATE INDEX IF NOT EXISTS idx_leads_client_score ON leads(client_id, score);
+        -- Messages: idempotency check on message_sid
+        CREATE INDEX IF NOT EXISTS idx_messages_sid ON messages(message_sid) WHERE message_sid IS NOT NULL;
+        -- Calls: lookup by call_id (retell webhook hot path)
+        CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id);
+        -- Job queue: priority-aware ordering (for future priority column migration)
+        CREATE INDEX IF NOT EXISTS idx_job_queue_status_scheduled ON job_queue(status, scheduled_at);
+        -- Event store: per-aggregate timeline queries
+        CREATE INDEX IF NOT EXISTS idx_event_store_aggregate ON event_store(client_id, aggregate_id, created_at);
+        -- Feature store: per-lead lookup
+        CREATE INDEX IF NOT EXISTS idx_feature_store_lead ON feature_store(lead_id, recorded_at);
+      `);
+      getLogger().info('[migrations] 036: performance indexes added');
+    },
+  },
+  {
+    id: '037',
+    description: 'job_queue priority column for speed-to-lead fast path',
+    up(db) {
+      db.exec(`
+        ALTER TABLE job_queue ADD COLUMN priority INTEGER DEFAULT 5;
+        CREATE INDEX IF NOT EXISTS idx_job_queue_priority ON job_queue(status, priority DESC, scheduled_at ASC);
+      `);
+      getLogger().info('[migrations] 037: job_queue priority column added');
+    },
+  },
+  {
+    id: '038_revenue_tracking',
+    description: 'Add revenue_closed and job_value columns to leads; add booking_webhook_url and whatsapp_phone to clients',
+    up(db) {
+      const leadCols = db.prepare("PRAGMA table_info('leads')").all().map(c => c.name);
+      if (!leadCols.includes('revenue_closed')) {
+        db.exec('ALTER TABLE leads ADD COLUMN revenue_closed REAL DEFAULT 0');
+      }
+      if (!leadCols.includes('job_value')) {
+        db.exec('ALTER TABLE leads ADD COLUMN job_value REAL DEFAULT 0');
+      }
+
+      const clientCols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+      if (!clientCols.includes('booking_webhook_url')) {
+        db.exec('ALTER TABLE clients ADD COLUMN booking_webhook_url TEXT');
+      }
+      if (!clientCols.includes('whatsapp_phone')) {
+        db.exec('ALTER TABLE clients ADD COLUMN whatsapp_phone TEXT');
+      }
+
+      // Index for revenue reporting queries
+      db.exec('CREATE INDEX IF NOT EXISTS idx_leads_revenue ON leads(client_id, revenue_closed) WHERE revenue_closed > 0');
+
+      getLogger().info('[migrations] 038: revenue tracking columns added');
+    },
+  },
+  {
+    id: '039_product_completeness',
+    description: 'Add columns for voice selection, usage metering, white-label, referrals, onboarding, social channels',
+    up(db) {
+      const clientCols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+      const addCol = (name, type) => {
+        if (!clientCols.includes(name)) db.exec(`ALTER TABLE clients ADD COLUMN ${name} ${type}`);
+      };
+
+      // Per-client voice selection
+      addCol('retell_voice', "TEXT DEFAULT '11labs-Adrian'");
+      addCol('retell_language', "TEXT DEFAULT 'en-US'");
+
+      // Usage metering
+      addCol('calls_this_month', 'INTEGER DEFAULT 0');
+      addCol('sms_this_month', 'INTEGER DEFAULT 0');
+      addCol('billing_cycle_start', 'TEXT');
+
+      // White-label / reseller
+      addCol('reseller_id', 'TEXT');
+      addCol('white_label_brand', 'TEXT');
+      addCol('white_label_domain', 'TEXT');
+
+      // Referral program
+      addCol('referral_code', 'TEXT');
+      addCol('referred_by', 'TEXT');
+      addCol('referral_credits', 'INTEGER DEFAULT 0');
+
+      // Social channels
+      addCol('facebook_page_token_encrypted', 'TEXT');
+      addCol('facebook_page_id', 'TEXT');
+      addCol('instagram_user_id', 'TEXT');
+      addCol('instagram_access_token_encrypted', 'TEXT');
+
+      // Indexes
+      db.exec('CREATE INDEX IF NOT EXISTS idx_clients_reseller ON clients(reseller_id) WHERE reseller_id IS NOT NULL');
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_referral_code ON clients(referral_code) WHERE referral_code IS NOT NULL');
+
+      // Reseller table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS resellers (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          email TEXT NOT NULL UNIQUE,
+          password_hash TEXT,
+          brand_name TEXT,
+          brand_color TEXT DEFAULT '#00E5CC',
+          brand_logo_url TEXT,
+          custom_domain TEXT,
+          wholesale_price_cents INTEGER DEFAULT 14900,
+          commission_pct REAL DEFAULT 0,
+          is_active INTEGER DEFAULT 1,
+          stripe_connect_id TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_resellers_email ON resellers(email);
+      `);
+
+      // Usage metering table (monthly snapshots)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS usage_records (
+          id TEXT PRIMARY KEY,
+          client_id TEXT NOT NULL REFERENCES clients(id),
+          month TEXT NOT NULL,
+          calls_count INTEGER DEFAULT 0,
+          sms_count INTEGER DEFAULT 0,
+          ai_decisions_count INTEGER DEFAULT 0,
+          emails_count INTEGER DEFAULT 0,
+          overage_calls INTEGER DEFAULT 0,
+          overage_charged_cents INTEGER DEFAULT 0,
+          created_at TEXT DEFAULT (datetime('now')),
+          UNIQUE(client_id, month)
+        );
+        CREATE INDEX IF NOT EXISTS idx_usage_client_month ON usage_records(client_id, month);
+      `);
+
+      // Referral tracking table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS referrals (
+          id TEXT PRIMARY KEY,
+          referrer_id TEXT NOT NULL REFERENCES clients(id),
+          referred_id TEXT NOT NULL REFERENCES clients(id),
+          status TEXT DEFAULT 'pending',
+          credit_cents INTEGER DEFAULT 0,
+          created_at TEXT DEFAULT (datetime('now')),
+          UNIQUE(referrer_id, referred_id)
+        );
+      `);
+
+      getLogger().info('[migrations] 039: product completeness columns added');
+    },
   },
 ];
 
@@ -824,9 +1132,9 @@ function runMigrations(db) {
           migration.description
         );
         newlyApplied.push(migration.id);
-        console.log(`[migrations] Applied: ${migration.id} — ${migration.description}`);
+        getLogger().info(`[migrations] Applied: ${migration.id} — ${migration.description}`);
       } catch (err) {
-        console.error(`[migrations] Failed: ${migration.id} — ${err.message}`);
+        getLogger().error(`[migrations] Failed: ${migration.id} — ${err.message}`);
         throw err; // Abort transaction
       }
     }
@@ -835,9 +1143,9 @@ function runMigrations(db) {
   runAll();
 
   if (newlyApplied.length) {
-    console.log(`[migrations] ${newlyApplied.length} new migration(s) applied`);
+    getLogger().info(`[migrations] ${newlyApplied.length} new migration(s) applied`);
   } else {
-    console.log('[migrations] Database is up to date');
+    getLogger().info('[migrations] Database is up to date');
   }
 
   return { applied: newlyApplied, skipped };

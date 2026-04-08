@@ -23,7 +23,7 @@ async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
       url.searchParams.set('key', GOOGLE_MAPS_API_KEY);
       if (nextPageToken) url.searchParams.set('pagetoken', nextPageToken);
 
-      const resp = await fetch(url.toString());
+      const resp = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
       const data = await resp.json();
 
       if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
@@ -60,7 +60,7 @@ async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
           detailUrl.searchParams.set('fields', 'formatted_phone_number,international_phone_number,website');
           detailUrl.searchParams.set('key', GOOGLE_MAPS_API_KEY);
 
-          const detailResp = await fetch(detailUrl.toString());
+          const detailResp = await fetch(detailUrl.toString(), { signal: AbortSignal.timeout(10000) });
           const detailData = await detailResp.json();
           const detail = detailData.result || {};
 
@@ -86,18 +86,20 @@ async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
       }
 
       // Dedup by name+city
-      const existing = db.prepare(
-        'SELECT id FROM prospects WHERE business_name = ? AND city = ?'
-      ).get(place.name, city);
+      const existing = await db.query(
+        'SELECT id FROM prospects WHERE business_name = ? AND city = ?',
+        [place.name, city],
+        'get'
+      );
 
       if (existing) continue;
 
       const now = new Date().toISOString();
 
-      db.prepare(`
+      await db.query(`
         INSERT INTO prospects (id, business_name, phone, email, website, address, industry, city, state, country, rating, review_count, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'US', ?, ?, 'new', ?, ?)
-      `).run(
+      `, [
         randomUUID(),
         place.name,
         phone,
@@ -111,7 +113,7 @@ async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
         place.user_ratings_total || 0,
         now,
         now
-      );
+      ], 'run');
 
       newCount++;
     } catch (err) {

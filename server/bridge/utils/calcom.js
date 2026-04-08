@@ -1,8 +1,26 @@
 const { logger } = require('./logger');
+const { CircuitBreaker } = require('./resilience');
+const { AppError } = require('./AppError');
 
 const CALCOM_API_KEY = process.env.CALCOM_API_KEY;
 const BASE_URL = 'https://api.cal.com/v2';
 const API_VERSION = '2024-08-13';
+
+// Circuit breaker for Cal.com API — opens after 3 failures in 60s, cools down 30s.
+const calcomBreaker = new CircuitBreaker(
+  async (url, opts) => {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10000), ...opts });
+    if (!resp.ok) throw new AppError('UPSTREAM_ERROR', `Cal.com API ${resp.status}`, 502);
+    return resp;
+  },
+  {
+    failureThreshold: 3,
+    failureWindow: 60000,
+    cooldownPeriod: 30000,
+    serviceName: 'Cal.com',
+    fallback: () => ({ ok: false, fallback: true }),
+  }
+);
 
 function headers() {
   return {
@@ -26,13 +44,12 @@ async function getBookings(eventTypeId, startDate, endDate) {
     if (startDate) params.set('afterStart', startDate);
     if (endDate) params.set('beforeEnd', endDate);
 
-    const resp = await fetch(`${BASE_URL}/bookings?${params.toString()}`, {
-      headers: headers()
+    const resp = await calcomBreaker.call(`${BASE_URL}/bookings?${params.toString()}`, {
+      headers: headers(),
     });
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      logger.error(`[calcom] getBookings failed (${resp.status}):`, errText);
+    if (resp.fallback) {
+      logger.warn('[calcom] getBookings — Cal.com circuit open');
       return [];
     }
 
@@ -51,15 +68,14 @@ async function getBookings(eventTypeId, startDate, endDate) {
  */
 async function cancelBooking(bookingId) {
   try {
-    const resp = await fetch(`${BASE_URL}/bookings/${bookingId}/cancel`, {
+    const resp = await calcomBreaker.call(`${BASE_URL}/bookings/${bookingId}/cancel`, {
       method: 'POST',
-      headers: headers()
+      headers: headers(),
     });
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      logger.error(`[calcom] cancelBooking failed (${resp.status}):`, errText);
-      return { success: false };
+    if (resp.fallback) {
+      logger.warn('[calcom] cancelBooking — Cal.com circuit open');
+      return { success: false, error: 'Cal.com temporarily unavailable' };
     }
 
     logger.info(`[calcom] Booking ${bookingId} cancelled`);
@@ -84,13 +100,12 @@ async function getAvailability(eventTypeId, date) {
       endTime: `${date}T23:59:59.999Z`
     });
 
-    const resp = await fetch(`${BASE_URL}/slots/available?${params.toString()}`, {
-      headers: headers()
+    const resp = await calcomBreaker.call(`${BASE_URL}/slots/available?${params.toString()}`, {
+      headers: headers(),
     });
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      logger.error(`[calcom] getAvailability failed (${resp.status}):`, errText);
+    if (resp.fallback) {
+      logger.warn('[calcom] getAvailability — Cal.com circuit open');
       return [];
     }
 
@@ -140,16 +155,15 @@ async function createBooking(opts) {
       body.responses.phone = phone;
     }
 
-    const resp = await fetch(`${BASE_URL}/bookings`, {
+    const resp = await calcomBreaker.call(`${BASE_URL}/bookings`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(body),
     });
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      logger.error(`[calcom] createBooking failed (${resp.status}):`, errText.substring(0, 300));
-      return { success: false, error: `Cal.com API error: ${resp.status}` };
+    if (resp.fallback) {
+      logger.warn('[calcom] createBooking — Cal.com circuit open');
+      return { success: false, error: 'Cal.com temporarily unavailable — please try again shortly' };
     }
 
     const data = await resp.json();
@@ -162,4 +176,4 @@ async function createBooking(opts) {
   }
 }
 
-module.exports = { getBookings, cancelBooking, getAvailability, createBooking };
+module.exports = { getBookings, cancelBooking, getAvailability, createBooking, _calcomBreaker: calcomBreaker };

@@ -10,31 +10,34 @@
  * @param {string} clientId
  * @returns {{ optimal_hour: number, optimal_day: string, confidence: number, reason: string }}
  */
-function getOptimalContactTime(db, leadId, clientId) {
+async function getOptimalContactTime(db, leadId, clientId) {
   if (!leadId || !clientId) {
     return null;
   }
 
-  const lead = db.prepare(
-    'SELECT phone FROM leads WHERE id = ? AND client_id = ?'
-  ).get(leadId, clientId);
+  const lead = await db.query(
+    'SELECT phone FROM leads WHERE id = ? AND client_id = ?',
+    [leadId, clientId], 'get'
+  );
 
   if (!lead) {
     return null;
   }
 
   // Get all interactions for this lead
-  const calls = db.prepare(
+  const calls = await db.query(
     `SELECT created_at, outcome, score FROM calls
      WHERE caller_phone = ? AND client_id = ?
-     ORDER BY created_at DESC LIMIT 20`
-  ).all(lead.phone, clientId);
+     ORDER BY created_at DESC LIMIT 20`,
+    [lead.phone, clientId]
+  );
 
-  const messages = db.prepare(
+  const messages = await db.query(
     `SELECT created_at, status FROM messages
      WHERE phone = ? AND client_id = ?
-     ORDER BY created_at DESC LIMIT 20`
-  ).all(lead.phone, clientId);
+     ORDER BY created_at DESC LIMIT 20`,
+    [lead.phone, clientId]
+  );
 
   // Analyze successful interactions
   const successfulTimes = [];
@@ -140,32 +143,36 @@ function getOptimalContactTime(db, leadId, clientId) {
  * @param {string} clientId
  * @returns {Array<{leadId, phone, name, scheduled_time, priority, reason}>}
  */
-function generateDailySchedule(db, clientId) {
+async function generateDailySchedule(db, clientId) {
   if (!clientId) {
     return [];
   }
 
   // Get all leads that should be contacted today
-  const leads = db.prepare(
+  const leads = await db.query(
     `SELECT id, phone, name, score, stage, updated_at FROM leads
      WHERE client_id = ? AND stage NOT IN ('booked', 'completed', 'lost')
      AND updated_at < datetime('now', '-1 day')
-     ORDER BY score DESC LIMIT 20`
-  ).all(clientId);
+     ORDER BY score DESC LIMIT 20`,
+    [clientId]
+  );
 
   const schedule = [];
   let currentHour = 10; // Start at 10 AM
 
   for (const lead of leads) {
     // Get conversion probability for this lead
-    const calls = db.prepare(
+    const calls = await db.query(
       `SELECT COUNT(*) as count FROM calls
-       WHERE caller_phone = ? AND client_id = ? AND outcome IN ('booked', 'qualified')`
-    ).get(lead.phone, clientId);
+       WHERE caller_phone = ? AND client_id = ? AND outcome IN ('booked', 'qualified')`,
+      [lead.phone, clientId], 'get'
+    );
 
-    const totalInteractions = db.prepare(
-      `SELECT COUNT(*) as count FROM calls WHERE caller_phone = ? AND client_id = ?`
-    ).all(lead.phone, clientId)[0]?.count || 1;
+    const totalInteractionsRows = await db.query(
+      `SELECT COUNT(*) as count FROM calls WHERE caller_phone = ? AND client_id = ?`,
+      [lead.phone, clientId]
+    );
+    const totalInteractions = totalInteractionsRows[0]?.count || 1;
 
     const successRate = totalInteractions > 0
       ? (calls?.count || 0) / totalInteractions
@@ -207,15 +214,16 @@ function generateDailySchedule(db, clientId) {
  * @param {string} clientId
  * @returns {{ slots: Array<{hour, success_rate, sample_size}>, recommendation: string }}
  */
-function analyzeTimeSlotSuccess(db, clientId) {
+async function analyzeTimeSlotSuccess(db, clientId) {
   if (!clientId) {
     return null;
   }
 
   // Get all calls with outcomes
-  const calls = db.prepare(
-    `SELECT created_at, outcome FROM calls WHERE client_id = ?`
-  ).all(clientId);
+  const calls = await db.query(
+    `SELECT created_at, outcome FROM calls WHERE client_id = ?`,
+    [clientId]
+  );
 
   // Group by hour
   const slots = {};
@@ -294,22 +302,27 @@ function analyzeTimeSlotSuccess(db, clientId) {
  * @param {string} clientId
  * @returns {Array<{leadId, phone, optimal_hour, optimal_day}>}
  */
-function getOptimalTimesForAllLeads(db, clientId) {
+async function getOptimalTimesForAllLeads(db, clientId) {
   if (!clientId) {
     return [];
   }
 
-  const leads = db.prepare(
-    'SELECT id FROM leads WHERE client_id = ?'
-  ).all(clientId);
+  const leads = await db.query(
+    'SELECT id FROM leads WHERE client_id = ?',
+    [clientId]
+  );
 
-  return leads.map(lead => {
-    const timing = getOptimalContactTime(db, lead.id, clientId);
-    return {
-      leadId: lead.id,
-      ...timing,
-    };
-  }).filter(item => item);
+  const results = [];
+  for (const lead of leads) {
+    const timing = await getOptimalContactTime(db, lead.id, clientId);
+    if (timing) {
+      results.push({
+        leadId: lead.id,
+        ...timing,
+      });
+    }
+  }
+  return results;
 }
 
 module.exports = {

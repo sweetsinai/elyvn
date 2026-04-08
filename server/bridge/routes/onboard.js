@@ -3,13 +3,17 @@ const router = express.Router();
 const { randomUUID } = require('crypto');
 const path = require('path');
 const fsPromises = require('fs').promises;
-const { isValidUUID, isValidPhone, isValidEmail, isValidURL, sanitizeString } = require('../utils/validate');
+const { isValidUUID, sanitizeString } = require('../utils/validate');
 const { logger } = require('../utils/logger');
+const { logDataMutation } = require('../utils/auditLog');
+const { validateBody } = require('../middleware/validateRequest');
+const { OnboardSchema } = require('../utils/schemas/onboard');
+const timing = require('../config/timing');
 
 // Rate limiting for onboarding
 const onboardRateLimits = new Map();
-const ONBOARD_RATE_LIMIT = 5; // max onboards per minute per IP
-const ONBOARD_RATE_WINDOW = 60000; // 1 minute
+const ONBOARD_RATE_LIMIT = timing.ONBOARD_RATE_LIMIT;
+const ONBOARD_RATE_WINDOW = timing.ONBOARD_RATE_WINDOW_MS;
 
 function onboardRateLimit(req, res, next) {
   const key = req.ip || req.connection.remoteAddress;
@@ -21,7 +25,7 @@ function onboardRateLimit(req, res, next) {
     record.timestamps = record.timestamps.filter(t => now - t < ONBOARD_RATE_WINDOW);
     if (record.timestamps.length >= ONBOARD_RATE_LIMIT) {
       const { logger } = require('../utils/logger');
-      logger.warn(`[onboard] Rate limit exceeded for ${key}`);
+      logger.warn(`[onboard] Rate limit exceeded`);
       return res.status(429).json({ error: 'Too many onboarding requests. Please try again later.' });
     }
     record.timestamps.push(now);
@@ -41,6 +45,16 @@ function onboardRateLimit(req, res, next) {
 
   next();
 }
+
+// Periodic cleanup every 5 min to prevent unbounded growth
+const _onboardCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of onboardRateLimits) {
+    const latest = v.timestamps[v.timestamps.length - 1] || 0;
+    if (now - latest > ONBOARD_RATE_WINDOW) onboardRateLimits.delete(k);
+  }
+}, 5 * 60 * 1000);
+if (_onboardCleanup.unref) _onboardCleanup.unref();
 
 
 /**
@@ -73,7 +87,10 @@ function onboardRateLimit(req, res, next) {
  *     embed_code: string (HTML snippet)
  *   }
  */
-router.post('/onboard', onboardRateLimit, async (req, res) => {
+router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (req, res, next) => {
+  if (!req.isAdmin) {
+    return next ? next(new (require('../utils/AppError').AppError)('FORBIDDEN', 'Admin access required', 403)) : res.status(403).json({ error: 'Admin access required' });
+  }
   try {
     const db = req.app.locals.db;
 
@@ -91,91 +108,12 @@ router.post('/onboard', onboardRateLimit, async (req, res) => {
       faq
     } = req.body;
 
-    // Validate required fields
-    const errors = [];
-
-    if (!business_name || typeof business_name !== 'string' || !business_name.trim()) {
-      errors.push('business_name is required and must be a non-empty string');
-    }
-
-    if (!owner_name || typeof owner_name !== 'string' || !owner_name.trim()) {
-      errors.push('owner_name is required and must be a non-empty string');
-    }
-
-    if (!owner_phone || typeof owner_phone !== 'string' || !owner_phone.trim()) {
-      errors.push('owner_phone is required and must be a non-empty string');
-    } else if (!isValidPhone(owner_phone)) {
-      errors.push('owner_phone must be a valid phone number');
-    }
-
-    if (!owner_email || typeof owner_email !== 'string' || !isValidEmail(owner_email)) {
-      errors.push('owner_email is required and must be a valid email address');
-    }
-
-    if (!industry || typeof industry !== 'string' || !industry.trim()) {
-      errors.push('industry is required and must be a non-empty string');
-    }
-
-    if (!Array.isArray(services) || services.length === 0) {
-      errors.push('services is required and must be a non-empty array of strings');
-    }
-
-    if (services && !services.every(s => typeof s === 'string' && s.trim())) {
-      errors.push('all services must be non-empty strings');
-    }
-
-    if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation failed',
-        details: errors
-      });
-    }
-
-    // Validate optional fields if provided
-    if (avg_ticket !== undefined && (typeof avg_ticket !== 'number' || avg_ticket < 0)) {
-      return res.status(400).json({
-        success: false,
-        error: 'avg_ticket must be a non-negative number'
-      });
-    }
-
-    if (booking_link && typeof booking_link !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'booking_link must be a string'
-      });
-    }
-
-    if (booking_link && !isValidURL(booking_link)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid booking link URL'
-      });
-    }
-
-    if (faq && !Array.isArray(faq)) {
-      return res.status(400).json({
-        success: false,
-        error: 'faq must be an array of {question, answer} objects'
-      });
-    }
-
-    if (faq) {
-      for (const item of faq) {
-        if (!item.question || !item.answer || typeof item.question !== 'string' || typeof item.answer !== 'string') {
-          return res.status(400).json({
-            success: false,
-            error: 'each FAQ item must have "question" and "answer" as non-empty strings'
-          });
-        }
-      }
-    }
-
     // Check if email already exists (prevent duplicate accounts)
-    const existingClient = db.prepare(
-      'SELECT id FROM clients WHERE owner_email = ?'
-    ).get(owner_email.toLowerCase().trim());
+    const existingClient = await db.query(
+      'SELECT id FROM clients WHERE owner_email = ?',
+      [owner_email.toLowerCase().trim()],
+      'get'
+    );
 
     if (existingClient) {
       return res.status(409).json({
@@ -244,13 +182,13 @@ router.post('/onboard', onboardRateLimit, async (req, res) => {
     await fsPromises.writeFile(kbAbsPath, JSON.stringify(knowledgeBase, null, 2));
 
     // Insert client record into database
-    db.prepare(`
+    await db.query(`
       INSERT INTO clients (
         id, business_name, owner_name, owner_phone, owner_email,
         industry, avg_ticket, kb_path, timezone, is_active,
         created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `, [
       clientId,
       sanitized.business_name,
       sanitized.owner_name,
@@ -263,7 +201,9 @@ router.post('/onboard', onboardRateLimit, async (req, res) => {
       1,
       now,
       now
-    );
+    ], 'run');
+
+    try { logDataMutation(db, { action: 'client_created', table: 'clients', recordId: clientId, newValues: { business_name: sanitized.business_name, owner_email: sanitized.owner_email, industry: sanitized.industry }, ip: req.ip }); } catch (_) {}
 
     // Determine base URL for webhooks
     const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
@@ -277,7 +217,7 @@ router.post('/onboard', onboardRateLimit, async (req, res) => {
     const baseUrl = "${baseUrl}";
     // Load ELYVN chat widget
     const script = document.createElement('script');
-    script.src = baseUrl + '/elyvn-widget.js';
+    script.src = baseUrl + '/embed.js';
     script.dataset.clientId = clientId;
     document.head.appendChild(script);
   })();
@@ -328,11 +268,7 @@ router.post('/onboard', onboardRateLimit, async (req, res) => {
 
   } catch (err) {
     logger.error('[onboard] Error:', err);
-    res.status(500).json({
-      success: false,
-      error: 'Onboarding failed',
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    next(err);
   }
 });
 

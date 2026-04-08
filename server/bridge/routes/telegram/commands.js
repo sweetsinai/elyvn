@@ -3,6 +3,7 @@
 const telegram = require('../../utils/telegram');
 const { isValidURL } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
+const { isAsync } = require('../../utils/dbAdapter');
 
 // HTML-escape user/stored data before sending via Telegram HTML parse mode
 function esc(str) {
@@ -60,17 +61,17 @@ async function handleCommand(db, message) {
 
   if (!text) return;
 
-  const client = db.prepare('SELECT * FROM clients WHERE telegram_chat_id = ?').get(chatId);
+  const client = await db.query('SELECT * FROM clients WHERE telegram_chat_id = ?', [chatId], 'get');
 
   // /start with linking param
   if (text.startsWith('/start ')) {
     const clientId = text.split(' ')[1];
-    const target = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    const target = await db.query('SELECT * FROM clients WHERE id = ?', [clientId], 'get');
     if (!target) {
       await telegram.sendMessage(chatId, 'Invalid link. Ask your admin for a new onboarding link.');
       return;
     }
-    db.prepare('UPDATE clients SET telegram_chat_id = ? WHERE id = ?').run(chatId, clientId);
+    await db.query('UPDATE clients SET telegram_chat_id = ? WHERE id = ?', [chatId, clientId], 'run');
     // Set plan-specific command menu for this client
     await telegram.setClientCommands(chatId, target.plan || 'starter').catch(err =>
       logger.error('[telegram] setClientCommands error:', err.message)
@@ -138,44 +139,50 @@ async function handleCommand(db, message) {
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
       // Today's stats
-      const todayCalls = db.prepare(
+      const todayCalls = await db.query(
         `SELECT COUNT(*) as total,
           SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked,
           SUM(CASE WHEN outcome = 'missed' THEN 1 ELSE 0 END) as missed
-        FROM calls WHERE client_id = ? AND date(created_at) = ?`
-      ).get(client.id, today);
+        FROM calls WHERE client_id = ? AND date(created_at) = ?`,
+        [client.id, today], 'get'
+      );
 
-      const todayMsgs = db.prepare(
-        `SELECT COUNT(*) as total FROM messages WHERE client_id = ? AND date(created_at) = ?`
-      ).get(client.id, today);
+      const todayMsgs = await db.query(
+        `SELECT COUNT(*) as total FROM messages WHERE client_id = ? AND date(created_at) = ?`,
+        [client.id, today], 'get'
+      );
 
       // 7-day stats
-      const weekCalls = db.prepare(
+      const weekCalls = await db.query(
         `SELECT COUNT(*) as total,
           SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked
-        FROM calls WHERE client_id = ? AND created_at >= ?`
-      ).get(client.id, weekAgo);
+        FROM calls WHERE client_id = ? AND created_at >= ?`,
+        [client.id, weekAgo], 'get'
+      );
 
       const weekRevenue = (weekCalls.booked || 0) * (client.avg_ticket || 0);
 
       // Active leads count
-      const leadCounts = db.prepare(
-        `SELECT stage, COUNT(*) as c FROM leads WHERE client_id = ? AND stage NOT IN ('lost', 'completed') GROUP BY stage`
-      ).all(client.id);
+      const leadCounts = await db.query(
+        `SELECT stage, COUNT(*) as c FROM leads WHERE client_id = ? AND stage NOT IN ('lost', 'completed') GROUP BY stage`,
+        [client.id]
+      );
       const totalActive = leadCounts.reduce((sum, l) => sum + l.c, 0);
       const hotCount = leadCounts.find(l => l.stage === 'hot')?.c || 0;
       const bookedCount = leadCounts.find(l => l.stage === 'booked')?.c || 0;
 
       // Last 3 calls
-      const recentCalls = db.prepare(
+      const recentCalls = await db.query(
         `SELECT caller_name, caller_phone, outcome, duration, score, summary, created_at
-         FROM calls WHERE client_id = ? ORDER BY created_at DESC LIMIT 3`
-      ).all(client.id);
+         FROM calls WHERE client_id = ? ORDER BY created_at DESC LIMIT 3`,
+        [client.id]
+      );
 
       // Pending jobs
-      const pendingJobs = db.prepare(
-        `SELECT COUNT(*) as c FROM job_queue WHERE status = 'pending'`
-      ).get();
+      const pendingJobs = await db.query(
+        `SELECT COUNT(*) as c FROM job_queue WHERE status = 'pending'`,
+        [], 'get'
+      );
 
       // Build the message
       let msg = `📊 <b>${client.business_name || 'Dashboard'}</b>\n\n`;
@@ -240,15 +247,14 @@ async function handleCommand(db, message) {
     // /leads — All leads grouped by stage
     // ═══════════════════════════════════════════════════════
     case '/leads': {
-      const leads = db.prepare(
+      const leads = await db.query(
         `SELECT name, phone, score, stage, updated_at
          FROM leads WHERE client_id = ? AND stage NOT IN ('lost', 'completed')
-         ORDER BY
-           CASE stage WHEN 'hot' THEN 1 WHEN 'booked' THEN 2 WHEN 'warm' THEN 3
+         ORDER BY CASE stage WHEN 'hot' THEN 1 WHEN 'booked' THEN 2 WHEN 'warm' THEN 3
            WHEN 'contacted' THEN 4 WHEN 'new' THEN 5 WHEN 'nurture' THEN 6 ELSE 7 END,
-           score DESC
-         LIMIT 20`
-      ).all(client.id);
+           score DESC LIMIT 20`,
+        [client.id]
+      );
 
       if (leads.length === 0) {
         await telegram.sendMessage(chatId, 'No active leads yet. They\'ll show up after your first call or message.');
@@ -276,9 +282,10 @@ async function handleCommand(db, message) {
     // /calls — Recent calls with transcripts
     // ═══════════════════════════════════════════════════════
     case '/calls': {
-      const recent = db.prepare(
-        `SELECT * FROM calls WHERE client_id = ? ORDER BY created_at DESC LIMIT 5`
-      ).all(client.id);
+      const recent = await db.query(
+        `SELECT * FROM calls WHERE client_id = ? ORDER BY created_at DESC LIMIT 5`,
+        [client.id]
+      );
 
       if (recent.length === 0) {
         await telegram.sendMessage(chatId, 'No calls yet.');
@@ -308,25 +315,25 @@ async function handleCommand(db, message) {
     // /pause & /resume — Toggle AI
     // ═══════════════════════════════════════════════════════
     case '/pause': {
-      db.prepare('UPDATE clients SET is_active = 0 WHERE id = ?').run(client.id);
+      await db.query('UPDATE clients SET is_active = 0 WHERE id = ?', [client.id], 'run');
       await telegram.sendMessage(chatId, '🔴 AI paused — calls will ring through to you. Use /resume to turn it back on.');
       break;
     }
 
     case '/resume': {
-      db.prepare('UPDATE clients SET is_active = 1 WHERE id = ?').run(client.id);
+      await db.query('UPDATE clients SET is_active = 1 WHERE id = ?', [client.id], 'run');
       await telegram.sendMessage(chatId, '🟢 AI resumed — I\'m back on duty.');
       break;
     }
 
     case '/digest': {
-      db.prepare("UPDATE clients SET notification_mode = 'digest', updated_at = datetime('now') WHERE id = ?").run(client.id);
+      await db.query("UPDATE clients SET notification_mode = 'digest', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
       await telegram.sendMessage(chatId, 'Digest mode on. Individual call/SMS alerts silenced — you\'ll only get the daily summary.\n\nUse /alerts to switch back.');
       break;
     }
 
     case '/alerts': {
-      db.prepare("UPDATE clients SET notification_mode = 'all', updated_at = datetime('now') WHERE id = ?").run(client.id);
+      await db.query("UPDATE clients SET notification_mode = 'all', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
       await telegram.sendMessage(chatId, 'Alert mode on. You\'ll get a notification for every call, SMS, and brain action.\n\nUse /digest for daily summaries only.');
       break;
     }
@@ -349,47 +356,93 @@ async function handleCommand(db, message) {
           : `Thanks for choosing ${client.business_name || 'us'}! We appreciate your business.`;
 
         // Use transaction to ensure atomicity
-        const transaction = db.transaction(() => {
-          db.prepare(
-            `UPDATE appointments SET status = 'completed', updated_at = datetime('now')
-             WHERE phone = ? AND client_id = ? AND status IN ('confirmed', 'pending')`
-          ).run(phone, client.id);
+        if (isAsync(db)) {
+          // Postgres: async transaction
+          await db.query('BEGIN', [], 'run');
+          try {
+            await db.query(
+              `UPDATE appointments SET status = 'completed', updated_at = datetime('now')
+               WHERE phone = ? AND client_id = ? AND status IN ('confirmed', 'pending')`,
+              [phone, client.id], 'run'
+            );
 
-          const lead = db.prepare('SELECT id, name FROM leads WHERE phone = ? AND client_id = ?').get(phone, client.id);
-          if (lead) {
-            db.prepare(
-              "UPDATE followups SET status = 'cancelled' WHERE lead_id = ? AND type = 'reminder' AND status = 'scheduled'"
-            ).run(lead.id);
+            const lead = await db.query('SELECT id, name FROM leads WHERE phone = ? AND client_id = ?', [phone, client.id], 'get');
+            if (lead) {
+              await db.query(
+                "UPDATE followups SET status = 'cancelled' WHERE lead_id = ? AND type = 'reminder' AND status = 'scheduled'",
+                [lead.id], 'run'
+              );
 
-            db.prepare("UPDATE leads SET stage = 'completed', updated_at = datetime('now') WHERE id = ?").run(lead.id);
+              await db.query("UPDATE leads SET stage = 'completed', updated_at = datetime('now') WHERE id = ?", [lead.id], 'run');
 
-            // Review request in 2 hours
-            const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-            db.prepare(`
-              INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
-              VALUES (?, ?, ?, 20, 'review_request', ?, 'template', ?, 'scheduled')
-            `).run(randomUUID(), lead.id, client.id, reviewMsg, scheduledAt);
+              const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+              await db.query(`
+                INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+                VALUES (?, ?, ?, 20, 'review_request', ?, 'template', ?, 'scheduled')
+              `, [randomUUID(), lead.id, client.id, reviewMsg, scheduledAt], 'run');
 
-            // Referral ask in 48 hours
-            const referralAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-            const firstName = lead.name ? ' ' + lead.name.split(' ')[0] : '';
-            const referralMsg = `Hi${firstName}! If you know anyone who could use our services, we'd love the referral. Thanks again for choosing ${client.business_name || 'us'}!`;
-            db.prepare(`
-              INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
-              VALUES (?, ?, ?, 21, 'referral_ask', ?, 'template', ?, 'scheduled')
-            `).run(randomUUID(), lead.id, client.id, referralMsg, referralAt);
+              const referralAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+              const firstName = lead.name ? ' ' + lead.name.split(' ')[0] : '';
+              const referralMsg = `Hi${firstName}! If you know anyone who could use our services, we'd love the referral. Thanks again for choosing ${client.business_name || 'us'}!`;
+              await db.query(`
+                INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+                VALUES (?, ?, ?, 21, 'referral_ask', ?, 'template', ?, 'scheduled')
+              `, [randomUUID(), lead.id, client.id, referralMsg, referralAt], 'run');
 
-            // Rebooking nudge in 30 days
-            const rebookAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-            const rebookMsg = `Hi${firstName}! It's been about a month since your last visit to ${client.business_name || 'us'}. Ready to book again?` +
-              (client.calcom_booking_link ? ` ${client.calcom_booking_link}` : '');
-            db.prepare(`
-              INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
-              VALUES (?, ?, ?, 22, 'rebook_nudge', ?, 'template', ?, 'scheduled')
-            `).run(randomUUID(), lead.id, client.id, rebookMsg, rebookAt);
+              const rebookAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+              const rebookMsg = `Hi${firstName}! It's been about a month since your last visit to ${client.business_name || 'us'}. Ready to book again?` +
+                (client.calcom_booking_link ? ` ${client.calcom_booking_link}` : '');
+              await db.query(`
+                INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+                VALUES (?, ?, ?, 22, 'rebook_nudge', ?, 'template', ?, 'scheduled')
+              `, [randomUUID(), lead.id, client.id, rebookMsg, rebookAt], 'run');
+            }
+            await db.query('COMMIT', [], 'run');
+          } catch (txErr) {
+            await db.query('ROLLBACK', [], 'run');
+            throw txErr;
           }
-        });
-        transaction();
+        } else {
+          // SQLite: sync transaction
+          const transaction = db.transaction(() => {
+            db.prepare(
+              `UPDATE appointments SET status = 'completed', updated_at = datetime('now')
+               WHERE phone = ? AND client_id = ? AND status IN ('confirmed', 'pending')`
+            ).run(phone, client.id);
+
+            const lead = db.prepare('SELECT id, name FROM leads WHERE phone = ? AND client_id = ?').get(phone, client.id);
+            if (lead) {
+              db.prepare(
+                "UPDATE followups SET status = 'cancelled' WHERE lead_id = ? AND type = 'reminder' AND status = 'scheduled'"
+              ).run(lead.id);
+
+              db.prepare("UPDATE leads SET stage = 'completed', updated_at = datetime('now') WHERE id = ?").run(lead.id);
+
+              const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+              db.prepare(`
+                INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+                VALUES (?, ?, ?, 20, 'review_request', ?, 'template', ?, 'scheduled')
+              `).run(randomUUID(), lead.id, client.id, reviewMsg, scheduledAt);
+
+              const referralAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+              const firstName = lead.name ? ' ' + lead.name.split(' ')[0] : '';
+              const referralMsg = `Hi${firstName}! If you know anyone who could use our services, we'd love the referral. Thanks again for choosing ${client.business_name || 'us'}!`;
+              db.prepare(`
+                INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+                VALUES (?, ?, ?, 21, 'referral_ask', ?, 'template', ?, 'scheduled')
+              `).run(randomUUID(), lead.id, client.id, referralMsg, referralAt);
+
+              const rebookAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+              const rebookMsg = `Hi${firstName}! It's been about a month since your last visit to ${client.business_name || 'us'}. Ready to book again?` +
+                (client.calcom_booking_link ? ` ${client.calcom_booking_link}` : '');
+              db.prepare(`
+                INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+                VALUES (?, ?, ?, 22, 'rebook_nudge', ?, 'template', ?, 'scheduled')
+              `).run(randomUUID(), lead.id, client.id, rebookMsg, rebookAt);
+            }
+          });
+          transaction();
+        }
 
         await telegram.sendMessage(chatId,
           `Done for ${phone}.\nReminders cancelled.\nReview request: 2h\nReferral ask: 48h\nRebook nudge: 30d${reviewLink ? '' : '\n\nSet a Google review link: /set review YOUR_LINK'}`
@@ -425,7 +478,7 @@ async function handleCommand(db, message) {
           await telegram.sendMessage(chatId, 'Invalid URL. Must start with https:// or http://');
           break;
         }
-        db.prepare('UPDATE clients SET google_review_link = ?, updated_at = datetime(\'now\') WHERE id = ?').run(value, client.id);
+        await db.query("UPDATE clients SET google_review_link = ?, updated_at = datetime('now') WHERE id = ?", [value, client.id], 'run');
         await telegram.sendMessage(chatId, `✅ Review link updated.`);
       } else if (key === 'ticket') {
         const amount = parseFloat(value);
@@ -433,10 +486,10 @@ async function handleCommand(db, message) {
           await telegram.sendMessage(chatId, 'Invalid amount. Usage: /set ticket 150');
           break;
         }
-        db.prepare('UPDATE clients SET avg_ticket = ?, updated_at = datetime(\'now\') WHERE id = ?').run(amount, client.id);
+        await db.query("UPDATE clients SET avg_ticket = ?, updated_at = datetime('now') WHERE id = ?", [amount, client.id], 'run');
         await telegram.sendMessage(chatId, `✅ Average ticket set to $${amount}.`);
       } else if (key === 'name') {
-        db.prepare('UPDATE clients SET business_name = ?, updated_at = datetime(\'now\') WHERE id = ?').run(value, client.id);
+        await db.query("UPDATE clients SET business_name = ?, updated_at = datetime('now') WHERE id = ?", [value, client.id], 'run');
         await telegram.sendMessage(chatId, `✅ Business name updated to "${value}".`);
       } else if (key === 'transfer') {
         // Validate phone number format
@@ -445,7 +498,7 @@ async function handleCommand(db, message) {
           await telegram.sendMessage(chatId, 'Invalid phone number. Use format: +15551234567');
           break;
         }
-        db.prepare('UPDATE clients SET transfer_phone = ?, updated_at = datetime(\'now\') WHERE id = ?').run(phone, client.id);
+        await db.query("UPDATE clients SET transfer_phone = ?, updated_at = datetime('now') WHERE id = ?", [phone, client.id], 'run');
         await telegram.sendMessage(chatId,
           `✅ Transfer number set to ${phone}.\n\n`
           + `When a caller says "transfer" or presses *, the AI will forward the call to this number.\n\n`
@@ -464,17 +517,19 @@ async function handleCommand(db, message) {
       const today = new Date().toISOString().split('T')[0];
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-      const appts = db.prepare(
+      const appts = await db.query(
         `SELECT name, phone, service, datetime, status
          FROM appointments WHERE client_id = ? AND date(datetime) = ?
-         ORDER BY datetime ASC`
-      ).all(client.id, today);
+         ORDER BY datetime ASC`,
+        [client.id, today]
+      );
 
-      const tomorrowAppts = db.prepare(
+      const tomorrowAppts = await db.query(
         `SELECT name, phone, service, datetime, status
          FROM appointments WHERE client_id = ? AND date(datetime) = ?
-         ORDER BY datetime ASC`
-      ).all(client.id, tomorrow);
+         ORDER BY datetime ASC`,
+        [client.id, tomorrow]
+      );
 
       if (appts.length === 0 && tomorrowAppts.length === 0) {
         await telegram.sendMessage(chatId, '📅 No appointments scheduled for today or tomorrow.');
@@ -517,32 +572,36 @@ async function handleCommand(db, message) {
       const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
 
       // This week
-      const thisWeek = db.prepare(
+      const thisWeek = await db.query(
         `SELECT COUNT(*) as calls,
           SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked,
           SUM(CASE WHEN outcome = 'missed' THEN 1 ELSE 0 END) as missed,
           AVG(duration) as avg_duration,
           AVG(score) as avg_score
-        FROM calls WHERE client_id = ? AND created_at >= ?`
-      ).get(client.id, weekAgo);
+        FROM calls WHERE client_id = ? AND created_at >= ?`,
+        [client.id, weekAgo], 'get'
+      );
 
       // Last week (for comparison)
-      const lastWeek = db.prepare(
+      const lastWeek = await db.query(
         `SELECT COUNT(*) as calls,
           SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked
-        FROM calls WHERE client_id = ? AND created_at >= ? AND created_at < ?`
-      ).get(client.id, twoWeeksAgo, weekAgo);
+        FROM calls WHERE client_id = ? AND created_at >= ? AND created_at < ?`,
+        [client.id, twoWeeksAgo, weekAgo], 'get'
+      );
 
-      const msgs = db.prepare(
+      const msgs = await db.query(
         `SELECT COUNT(*) as total,
           SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as inbound,
           SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outbound
-        FROM messages WHERE client_id = ? AND created_at >= ?`
-      ).get(client.id, weekAgo);
+        FROM messages WHERE client_id = ? AND created_at >= ?`,
+        [client.id, weekAgo], 'get'
+      );
 
-      const activeLeads = db.prepare(
-        `SELECT COUNT(*) as c FROM leads WHERE client_id = ? AND stage NOT IN ('lost', 'completed')`
-      ).get(client.id);
+      const activeLeads = await db.query(
+        `SELECT COUNT(*) as c FROM leads WHERE client_id = ? AND stage NOT IN ('lost', 'completed')`,
+        [client.id], 'get'
+      );
 
       const revenue = (thisWeek.booked || 0) * (client.avg_ticket || 0);
       const lastRevenue = (lastWeek.booked || 0) * (client.avg_ticket || 0);
@@ -578,11 +637,12 @@ async function handleCommand(db, message) {
         break;
       }
 
-      const decisions = db.prepare(
+      const decisions = await db.query(
         `SELECT details, created_at FROM audit_log
          WHERE client_id = ? AND action = 'brain_decision'
-         ORDER BY created_at DESC LIMIT 10`
-      ).all(client.id);
+         ORDER BY created_at DESC LIMIT 10`,
+        [client.id]
+      );
 
       if (decisions.length === 0) {
         await telegram.sendMessage(chatId, '🧠 No brain activity yet. The AI Brain activates after your first call or message.');
@@ -614,9 +674,10 @@ async function handleCommand(db, message) {
       }
 
       // Brain stats
-      const brainCount = db.prepare(
-        `SELECT COUNT(*) as c FROM audit_log WHERE client_id = ? AND action = 'brain_decision' AND created_at >= datetime('now', '-7 days')`
-      ).get(client.id);
+      const brainCount = await db.query(
+        `SELECT COUNT(*) as c FROM audit_log WHERE client_id = ? AND action = 'brain_decision' AND created_at >= datetime('now', '-7 days')`,
+        [client.id], 'get'
+      );
       msg += `\n<b>7-day total:</b> ${brainCount.c || 0} decisions`;
 
       await telegram.sendMessage(chatId, msg);
@@ -632,10 +693,11 @@ async function handleCommand(db, message) {
         break;
       }
 
-      const campaigns = db.prepare(
+      const campaigns = await db.query(
         `SELECT id, name, industry, city, total_prospects, total_sent, total_replied, total_positive, total_booked, status, created_at
-         FROM campaigns WHERE client_id = ? ORDER BY created_at DESC LIMIT 5`
-      ).all(client.id);
+         FROM campaigns WHERE client_id = ? ORDER BY created_at DESC LIMIT 5`,
+        [client.id]
+      );
 
       if (campaigns.length === 0) {
         await telegram.sendMessage(chatId, '📧 No campaigns yet. Use /scrape industry city to find prospects.');
@@ -653,10 +715,11 @@ async function handleCommand(db, message) {
       }
 
       // Overall stats
-      const totals = db.prepare(
+      const totals = await db.query(
         `SELECT SUM(total_sent) as sent, SUM(total_replied) as replied, SUM(total_booked) as booked
-         FROM campaigns WHERE client_id = ?`
-      ).get(client.id);
+         FROM campaigns WHERE client_id = ?`,
+        [client.id], 'get'
+      );
       msg += `<b>Overall:</b> ${totals.sent || 0} sent → ${totals.replied || 0} replies → ${totals.booked || 0} booked`;
 
       await telegram.sendMessage(chatId, msg);
@@ -752,14 +815,15 @@ async function handleCommand(db, message) {
         break;
       }
 
-      const prospects = db.prepare(
+      const prospects = await db.query(
         `SELECT p.business_name, p.phone, p.email, p.industry, p.city, p.rating, p.review_count, p.status
          FROM prospects p
          JOIN campaign_prospects cp ON cp.prospect_id = p.id
          JOIN campaigns c ON c.id = cp.campaign_id AND c.client_id = ?
          ORDER BY p.rating DESC, p.review_count DESC
-         LIMIT 10`
-      ).all(client.id);
+         LIMIT 10`,
+        [client.id]
+      );
 
       if (prospects.length === 0) {
         await telegram.sendMessage(chatId, '🔍 No prospects yet. Use /scrape industry city to find some.');
@@ -803,7 +867,7 @@ async function handleCommand(db, message) {
         break;
       }
 
-      db.prepare('UPDATE clients SET google_review_link = ?, updated_at = datetime(\'now\') WHERE id = ?').run(link, client.id);
+      await db.query("UPDATE clients SET google_review_link = ?, updated_at = datetime('now') WHERE id = ?", [link, client.id], 'run');
       await telegram.sendMessage(chatId, '✅ Google review link updated. Customers will get this link after /complete.');
       break;
     }
@@ -821,12 +885,12 @@ async function handleCommand(db, message) {
       // Smart natural language detection — clients shouldn't need to learn commands
       const lower = text.toLowerCase();
       if (lower.includes('pause') || lower.includes('stop') || lower.includes('turn off')) {
-        db.prepare('UPDATE clients SET is_active = 0 WHERE id = ?').run(client.id);
+        await db.query('UPDATE clients SET is_active = 0 WHERE id = ?', [client.id], 'run');
         await telegram.sendMessage(chatId, '🔴 AI paused. Calls will ring through to you. Say "resume" or tap below to turn it back on.', {
           reply_markup: { inline_keyboard: [[{ text: '▶️ Resume AI', callback_data: 'quick:resume' }]] }
         });
       } else if (lower.includes('resume') || lower.includes('turn on') || lower.includes('unpause')) {
-        db.prepare('UPDATE clients SET is_active = 1 WHERE id = ?').run(client.id);
+        await db.query('UPDATE clients SET is_active = 1 WHERE id = ?', [client.id], 'run');
         await telegram.sendMessage(chatId, '🟢 AI is back on. I\'m handling calls again.');
       } else if (lower.includes('lead') || lower.includes('prospect')) {
         // Redirect to leads

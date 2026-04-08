@@ -2,25 +2,30 @@ const express = require('express');
 const router = express.Router();
 const { isValidUUID } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
+const { AppError } = require('../../utils/AppError');
+const { decrypt } = require('../../utils/encryption');
+const { parsePagination } = require('../../utils/dbHelpers');
+const { validateQuery, validateParams } = require('../../middleware/validateRequest');
+const { MessageQuerySchema, MessageParamsSchema } = require('../../utils/schemas/message');
+const { clientIsolationParam } = require('../../utils/clientIsolation');
+router.param('clientId', clientIsolationParam);
 
-// GET /messages/:clientId
-router.get('/messages/:clientId', (req, res) => {
+// GET /messages/:clientId — migrated to async db.query() for SQLite + Supabase compatibility
+router.get('/messages/:clientId', validateParams(MessageParamsSchema), validateQuery(MessageQuerySchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
 
     // Validate clientId format
     if (!isValidUUID(clientId)) {
-      return res.status(400).json({ error: 'Invalid client ID format' });
+      return next(new AppError('INVALID_INPUT', 'Invalid client ID format', 400));
     }
 
     const { status, startDate, endDate } = req.query;
-    const pageNum = Math.max(1, Math.min(10000, parseInt(req.query.page) || 1));
-    const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const { page: pageNum, limit: limitNum, offset } = parsePagination(req.query, 20, 100);
     if (isNaN(pageNum) || isNaN(limitNum)) {
-      return res.status(400).json({ error: 'Invalid pagination parameters' });
+      return next(new AppError('INVALID_INPUT', 'Invalid pagination parameters', 400));
     }
-    const offset = (pageNum - 1) * limitNum;
     const conditions = [];
     const params = [clientId];
 
@@ -41,19 +46,30 @@ router.get('/messages/:clientId', (req, res) => {
 
     const where = conditions.join(' AND ');
 
-    const countParams = [...params];
-    const total = db.prepare(`SELECT COUNT(*) as count FROM messages WHERE ${where}`).get(...countParams).count;
+    const countResult = await db.query(`SELECT COUNT(*) as count FROM messages WHERE ${where}`, params, 'get');
+    const total = countResult.count;
 
     const queryParams = [...params, limitNum, offset];
-    const messages = db.prepare(
-      `SELECT * FROM messages WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all(...queryParams);
+    const messages = await db.query(
+      `SELECT * FROM messages WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      queryParams, 'all'
+    );
+
+    // Gradual encryption migration: prefer decrypted body_encrypted, fall back to plaintext
+    for (const msg of messages) {
+      if (msg.body_encrypted) {
+        try {
+          const decrypted = decrypt(msg.body_encrypted);
+          if (decrypted && decrypted !== msg.body_encrypted) msg.body = decrypted;
+        } catch (_) { /* fall back to plaintext body */ }
+      }
+    }
 
     const totalPages = Math.ceil(total / limitNum);
     res.json({ data: messages, meta: { page: pageNum, limit: limitNum, total, total_pages: totalPages } });
   } catch (err) {
     logger.error('[api] messages error:', err);
-    res.status(500).json({ error: 'Failed to fetch messages' });
+    return next(new AppError('INTERNAL_ERROR', 'Failed to fetch messages', 500));
   }
 });
 

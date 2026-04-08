@@ -6,13 +6,11 @@
 const fs = require('fs');
 const path = require('path');
 
-// backup.js may run before logger is initialized — use console directly
-// (setupLogger() overrides console methods to also write to log files)
-const logger = {
-  info: (...args) => console.log(...args),
-  error: (...args) => console.error(...args),
-  warn: (...args) => console.warn(...args),
-};
+// Lazy-load logger — backup.js may run before logger is initialized
+function getLogger() {
+  try { return require('./logger').logger; }
+  catch { return { info: (m) => process.stdout.write(`[INFO] ${m}\n`), error: (m) => process.stderr.write(`[ERROR] ${m}\n`), warn: (m) => process.stderr.write(`[WARN] ${m}\n`), debug: () => {} }; }
+}
 
 /**
  * Create a backup of the SQLite database
@@ -32,9 +30,9 @@ async function backupDatabase(dbPath, db) {
     if (db) {
       try {
         db.pragma('wal_checkpoint(TRUNCATE)');
-        logger.info('[backup] WAL checkpoint completed (TRUNCATE)');
+        getLogger().info('[backup] WAL checkpoint completed (TRUNCATE)');
       } catch (err) {
-        logger.warn('[backup] WAL checkpoint failed (non-fatal):', err.message);
+        getLogger().warn('[backup] WAL checkpoint failed (non-fatal):', err.message);
         // Continue with backup attempt even if checkpoint fails
       }
     }
@@ -46,16 +44,16 @@ async function backupDatabase(dbPath, db) {
     if (db && typeof db.backup === 'function') {
       try {
         db.backup(backupPath);
-        logger.info(`[backup] Created backup using db.backup() API: ${backupPath}`);
+        getLogger().info(`[backup] Created backup using db.backup() API: ${backupPath}`);
       } catch (err) {
-        logger.warn('[backup] db.backup() failed, falling back to fs.copyFileSync:', err.message);
+        getLogger().warn('[backup] db.backup() failed, falling back to fs.copyFileSync:', err.message);
         fs.copyFileSync(dbPath, backupPath);
-        logger.info(`[backup] Created backup using fs.copyFileSync: ${backupPath}`);
+        getLogger().info(`[backup] Created backup using fs.copyFileSync: ${backupPath}`);
       }
     } else {
       // Fallback: copy the database file synchronously
       fs.copyFileSync(dbPath, backupPath);
-      logger.info(`[backup] Created backup using fs.copyFileSync: ${backupPath}`);
+      getLogger().info(`[backup] Created backup using fs.copyFileSync: ${backupPath}`);
     }
 
     // Clean up old backups (keep last 7)
@@ -63,7 +61,7 @@ async function backupDatabase(dbPath, db) {
 
     return { success: true, backupPath };
   } catch (err) {
-    logger.error('[backup] backupDatabase error:', err.message);
+    getLogger().error('[backup] backupDatabase error:', err.message);
     return { success: false, error: err.message };
   }
 }
@@ -92,13 +90,13 @@ function cleanupOldBackups(dbPath, keepCount = 7) {
     for (let i = keepCount; i < files.length; i++) {
       try {
         fs.unlinkSync(files[i].path);
-        logger.info(`[backup] Deleted old backup: ${files[i].name}`);
+        getLogger().info(`[backup] Deleted old backup: ${files[i].name}`);
       } catch (err) {
-        logger.error(`[backup] Failed to delete ${files[i].name}:`, err.message);
+        getLogger().error(`[backup] Failed to delete ${files[i].name}:`, err.message);
       }
     }
   } catch (err) {
-    logger.error('[backup] cleanupOldBackups error:', err.message);
+    getLogger().error('[backup] cleanupOldBackups error:', err.message);
   }
 }
 
@@ -114,17 +112,17 @@ function scheduleBackups(dbPath, intervalHours = 24, db) {
 
   // Run first backup immediately
   backupDatabase(dbPath, db).catch(err =>
-    logger.error('[backup] Initial backup failed:', err)
+    getLogger().error('[backup] Initial backup failed:', err)
   );
 
   // Schedule recurring backups
   const handle = setInterval(() => {
     backupDatabase(dbPath, db).catch(err =>
-      logger.error('[backup] Scheduled backup failed:', err)
+      getLogger().error('[backup] Scheduled backup failed:', err)
     );
   }, intervalMs);
 
-  logger.info(`[backup] Backups scheduled every ${intervalHours} hours (with WAL checkpoint and rotation)`);
+  getLogger().info(`[backup] Backups scheduled every ${intervalHours} hours (with WAL checkpoint and rotation)`);
   return handle;
 }
 

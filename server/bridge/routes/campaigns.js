@@ -3,38 +3,61 @@ const router = express.Router();
 const { randomUUID } = require('crypto');
 const config = require('../utils/config');
 const { logger } = require('../utils/logger');
+const { logDataMutation } = require('../utils/auditLog');
+const { isAsync } = require('../utils/dbAdapter');
+const { validateBody, validateParams } = require('../middleware/validateRequest');
+const { CampaignCreateSchema, CampaignParamsSchema } = require('../utils/schemas/campaigns');
+const { emailSendLimit } = require('../middleware/rateLimits');
+const { AppError } = require('../utils/AppError');
 
 // POST /campaign
-router.post('/campaign', (req, res) => {
+router.post('/campaign', validateBody(CampaignCreateSchema), async (req, res) => {
   try {
     const db = req.app.locals.db;
     const { name, industry, city, prospectIds } = req.body;
 
-    if (!name || !prospectIds?.length) {
-      return res.status(400).json({ error: 'name and prospectIds are required' });
-    }
-
     const id = randomUUID();
     const now = new Date().toISOString();
 
-    // Wrap campaign creation in transaction to ensure all-or-nothing semantics
-    const createCampaign = db.transaction((campaignId, campaignName, industryVal, cityVal, timestamp) => {
-      // Insert campaign
-      db.prepare(`
-        INSERT INTO campaigns (id, name, industry, city, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'draft', ?, ?)
-      `).run(campaignId, campaignName, industryVal, cityVal, timestamp, timestamp);
+    if (isAsync(db)) {
+      // Postgres: async transaction
+      await db.query('BEGIN', [], 'run');
+      try {
+        await db.query(`
+          INSERT INTO campaigns (id, name, industry, city, client_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'draft', ?, ?)
+        `, [id, name, industry || null, city || null, req.clientId, now, now], 'run');
 
-      // Link prospects to campaign
-      const linkStmt = db.prepare(
-        'INSERT INTO campaign_prospects (id, campaign_id, prospect_id, created_at) VALUES (?, ?, ?, ?)'
-      );
-      for (const pid of prospectIds) {
-        linkStmt.run(randomUUID(), campaignId, pid, timestamp);
+        for (const pid of prospectIds) {
+          await db.query(
+            'INSERT INTO campaign_prospects (id, campaign_id, prospect_id, created_at) VALUES (?, ?, ?, ?)',
+            [randomUUID(), id, pid, now], 'run'
+          );
+        }
+        await db.query('COMMIT', [], 'run');
+      } catch (txErr) {
+        await db.query('ROLLBACK', [], 'run');
+        throw txErr;
       }
-    });
+    } else {
+      // SQLite: sync transaction
+      const createCampaign = db.transaction((campaignId, campaignName, industryVal, cityVal, clientId, timestamp) => {
+        db.prepare(`
+          INSERT INTO campaigns (id, name, industry, city, client_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'draft', ?, ?)
+        `).run(campaignId, campaignName, industryVal, cityVal, clientId, timestamp, timestamp);
 
-    createCampaign(id, name, industry || null, city || null, now);
+        const linkStmt = db.prepare(
+          'INSERT INTO campaign_prospects (id, campaign_id, prospect_id, created_at) VALUES (?, ?, ?, ?)'
+        );
+        for (const pid of prospectIds) {
+          linkStmt.run(randomUUID(), campaignId, pid, timestamp);
+        }
+      });
+      createCampaign(id, name, industry || null, city || null, req.clientId, now);
+    }
+
+    try { logDataMutation(db, { action: 'client_created', table: 'campaigns', recordId: id, newValues: { name, industry, city, status: 'draft', prospect_count: prospectIds.length } }); } catch (_) {}
 
     res.status(201).json({ campaign: { id, name, industry, city, status: 'draft', prospect_count: prospectIds.length } });
   } catch (err) {
@@ -44,22 +67,26 @@ router.post('/campaign', (req, res) => {
 });
 
 // POST /campaign/:campaignId/generate
-router.post('/campaign/:campaignId/generate', async (req, res) => {
+// POST /campaign/:campaignId/generate — 20/min per client (AI call per prospect)
+router.post('/campaign/:campaignId/generate', emailSendLimit, validateParams(CampaignParamsSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { campaignId } = req.params;
 
-    const campaign = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campaignId);
+    const campaign = await db.query('SELECT * FROM campaigns WHERE id = ?', [campaignId], 'get');
     if (!campaign) {
       return res.status(404).json({ error: 'Campaign not found' });
     }
+    if (!req.isAdmin && campaign.client_id !== req.clientId) {
+      return next(new AppError('FORBIDDEN', 'Access denied', 403));
+    }
 
     // Get all prospects in campaign
-    const prospects = db.prepare(`
+    const prospects = await db.query(`
       SELECT p.* FROM prospects p
       JOIN campaign_prospects cp ON cp.prospect_id = p.id
       WHERE cp.campaign_id = ?
-    `).all(campaignId);
+    `, [campaignId], 'all');
 
     if (!prospects.length) {
       return res.status(400).json({ error: 'No prospects in campaign' });
@@ -84,10 +111,10 @@ router.post('/campaign/:campaignId/generate', async (req, res) => {
         const emailId = randomUUID();
         const now = new Date().toISOString();
 
-        db.prepare(`
+        await db.query(`
           INSERT INTO emails_sent (id, campaign_id, prospect_id, to_email, from_email, subject, body, subject_a, subject_b, variant, status, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
-        `).run(emailId, campaignId, prospect.id, prospect.email, senderEmail, subject, emailGen.body, emailGen.subject_a, emailGen.subject_b, variant, now, now);
+        `, [emailId, campaignId, prospect.id, prospect.email, senderEmail, subject, emailGen.body, emailGen.subject_a, emailGen.subject_b, variant, now, now], 'run');
 
         emails.push({ id: emailId, prospect_id: prospect.id, to_email: prospect.email, subject, body: emailGen.body, variant, status: 'draft' });
       } catch (err) {
@@ -103,46 +130,57 @@ router.post('/campaign/:campaignId/generate', async (req, res) => {
 });
 
 // GET /campaign/:campaignId/ab-results
-router.get('/campaign/:campaignId/ab-results', (req, res) => {
+router.get('/campaign/:campaignId/ab-results', validateParams(CampaignParamsSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { campaignId } = req.params;
 
-    // Get all emails in campaign grouped by variant
-    const variantA = db.prepare(`
-      SELECT
-        COUNT(*) as sent,
-        SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened,
-        SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked
-      FROM emails_sent
-      WHERE campaign_id = ? AND status IN ('sent', 'bounced', 'failed') AND variant = 'A'
-    `).get(campaignId);
+    const campaign = await db.query('SELECT * FROM campaigns WHERE id = ?', [campaignId], 'get');
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+    if (!req.isAdmin && campaign.client_id !== req.clientId) {
+      return next(new AppError('FORBIDDEN', 'Access denied', 403));
+    }
 
-    const variantB = db.prepare(`
+    // Get all emails in campaign grouped by variant
+    const clientFilter = req.isAdmin ? '' : 'AND client_id = ?';
+    const clientParams = req.isAdmin ? [] : [req.clientId];
+
+    const variantA = await db.query(`
       SELECT
         COUNT(*) as sent,
         SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened,
         SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked
       FROM emails_sent
-      WHERE campaign_id = ? AND status IN ('sent', 'bounced', 'failed') AND variant = 'B'
-    `).get(campaignId);
+      WHERE campaign_id = ? AND status IN ('sent', 'bounced', 'failed') AND variant = 'A' ${clientFilter}
+    `, [campaignId, ...clientParams], 'get');
+
+    const variantB = await db.query(`
+      SELECT
+        COUNT(*) as sent,
+        SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened,
+        SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked
+      FROM emails_sent
+      WHERE campaign_id = ? AND status IN ('sent', 'bounced', 'failed') AND variant = 'B' ${clientFilter}
+    `, [campaignId, ...clientParams], 'get');
 
     // Get top subject line for each variant
-    const topSubjectA = db.prepare(`
+    const topSubjectA = await db.query(`
       SELECT subject, COUNT(*) as count FROM emails_sent
-      WHERE campaign_id = ? AND variant = 'A'
+      WHERE campaign_id = ? AND variant = 'A' ${clientFilter}
       GROUP BY subject
       ORDER BY count DESC
       LIMIT 1
-    `).get(campaignId);
+    `, [campaignId, ...clientParams], 'get');
 
-    const topSubjectB = db.prepare(`
+    const topSubjectB = await db.query(`
       SELECT subject, COUNT(*) as count FROM emails_sent
-      WHERE campaign_id = ? AND variant = 'B'
+      WHERE campaign_id = ? AND variant = 'B' ${clientFilter}
       GROUP BY subject
       ORDER BY count DESC
       LIMIT 1
-    `).get(campaignId);
+    `, [campaignId, ...clientParams], 'get');
 
     // Calculate rates
     const aOpenRate = variantA.sent > 0 ? variantA.opened / variantA.sent : 0;

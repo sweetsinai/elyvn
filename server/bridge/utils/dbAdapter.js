@@ -1,13 +1,104 @@
 /**
  * Database Adapter — abstracts SQLite/PostgreSQL behind a unified interface.
- * Current: SQLite via better-sqlite3 (sync)
- * Future: PostgreSQL via pg (async) — flip DATABASE_URL env var
  *
- * This adapter ensures all business logic code works unchanged when migrating.
+ * IMPORTANT — SYNC vs ASYNC:
+ *
+ *   SQLite  (better-sqlite3): db.prepare(sql).get/all/run() are SYNCHRONOUS.
+ *   Postgres (supabaseAdapter): db.prepare(sql).get/all/run() return PROMISES.
+ *
+ *   Existing route code calls db.prepare().get() synchronously and does NOT
+ *   await the result. That works fine for SQLite but silently breaks with
+ *   Postgres — the caller gets a Promise object instead of data.
+ *
+ *   To bridge the gap WITHOUT rewriting every route at once:
+ *
+ *   1. `db._async` — boolean flag. true for Postgres, false/undefined for SQLite.
+ *   2. `isAsync(db)` — helper to check which mode is active.
+ *   3. `db.query(sql, params, mode)` — unified async method that works on BOTH
+ *      backends. For SQLite it wraps the sync call in a resolved Promise.
+ *      For Postgres it delegates to the pool.
+ *
+ *   Migration path for routes:
+ *     - Old sync code: `db.prepare(sql).get(args)` — works for SQLite only.
+ *     - New async code: `await db.query(sql, [args], 'get')` — works for BOTH.
+ *     - Routes should be gradually migrated to use `db.query()`.
  */
 
 const path = require('path');
 const { logger } = require('./logger');
+
+// ─── In-memory query result cache ────────────────────────────────────────────
+// Simple Map-based cache with TTL. No external dependency.
+// Designed for hot read-only lookups (clients by ID, campaigns by ID).
+
+const _cache = new Map(); // key → { value, expiresAt }
+
+/**
+ * Get a cached value or compute it via queryFn and cache the result.
+ *
+ * @param {string} key       - Cache key (e.g. 'client:abc-123')
+ * @param {number} ttlMs     - Time-to-live in milliseconds
+ * @param {Function} queryFn - Synchronous function returning the value to cache
+ * @returns {*} Cached or freshly-computed value
+ */
+function cachedGet(key, ttlMs, queryFn) {
+  const now = Date.now();
+  const entry = _cache.get(key);
+
+  if (entry && entry.expiresAt > now) {
+    return entry.value;
+  }
+
+  const value = queryFn();
+  _cache.set(key, { value, expiresAt: now + ttlMs });
+  return value;
+}
+
+/**
+ * Invalidate a specific cache key.
+ * Call this after UPDATE or DELETE on a cached record.
+ *
+ * @param {string} key - Cache key to evict
+ */
+function invalidateCache(key) {
+  _cache.delete(key);
+}
+
+/**
+ * Invalidate all cache entries whose key starts with a given prefix.
+ * Useful for bulk invalidation (e.g. invalidateCachePrefix('client:') on client list queries).
+ *
+ * @param {string} prefix
+ */
+function invalidateCachePrefix(prefix) {
+  for (const key of _cache.keys()) {
+    if (key.startsWith(prefix)) {
+      _cache.delete(key);
+    }
+  }
+}
+
+/**
+ * Clear all cached entries (e.g. on DB reconnect or tests).
+ */
+function clearCache() {
+  _cache.clear();
+}
+
+// TTL constants
+const CACHE_TTL = {
+  CLIENT: 5 * 60 * 1000,   // 5 minutes
+  CAMPAIGN: 5 * 60 * 1000, // 5 minutes
+};
+
+/**
+ * Check whether a db instance uses async methods (Postgres) or sync (SQLite).
+ * @param {object} db - The database object returned by createDatabase()
+ * @returns {boolean}
+ */
+function isAsync(db) {
+  return !!(db && db._async);
+}
 
 /**
  * Create and configure a database connection.
@@ -16,19 +107,20 @@ const { logger } = require('./logger');
 function createDatabase(options = {}) {
   const dbUrl = process.env.DATABASE_URL;
 
-  // Future: if DATABASE_URL starts with postgres://, use pg adapter
+  // PostgreSQL mode via Supabase adapter
+  // NOTE: prepare().get/all/run() return Promises. Use `await db.query()` or
+  // `await db.prepare(sql).get()` in route handlers when DATABASE_URL is set.
   if (dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) {
-    logger.info('[db] PostgreSQL mode detected — adapter ready for migration');
-    // For now, throw a helpful error. When migrating, replace with pg pool.
-    throw new Error(
-      'PostgreSQL adapter not yet implemented. Set DATABASE_PATH for SQLite, or implement the pg adapter in dbAdapter.js'
-    );
+    const { createSupabaseDatabase } = require('./supabaseAdapter');
+    const pgDb = createSupabaseDatabase({ url: dbUrl });
+    logger.info('[db] PostgreSQL mode active via supabaseAdapter (async — use await)');
+    return pgDb;
   }
 
   // SQLite mode (current production)
   const Database = require('better-sqlite3');
   const dbPath = options.path || process.env.DATABASE_PATH || path.join(__dirname, '../../mcp/elyvn.db');
-  const verbose = options.verbose || (process.env.NODE_ENV === 'development' ? console.log : undefined);
+  const verbose = options.verbose || (process.env.NODE_ENV === 'development' ? (...args) => logger.debug('[db:verbose]', ...args) : undefined);
 
   const db = new Database(dbPath, { verbose });
 
@@ -68,8 +160,32 @@ function createDatabase(options = {}) {
 
   // Attach connection metadata
   db._adapter = 'sqlite';
+  db._async = false;
   db._path = dbPath;
   db._createdAt = new Date().toISOString();
+
+  /**
+   * Unified async query helper (SQLite implementation).
+   * Wraps the synchronous better-sqlite3 calls so callers can use the same
+   * `await db.query(sql, params, mode)` interface regardless of backend.
+   *
+   * @param {string} sql    - SQL with `?` placeholders
+   * @param {Array}  params - Positional parameters
+   * @param {'get'|'all'|'run'} [mode='all'] - Return mode
+   * @returns {Promise<*>}
+   */
+  db.query = function query(sql, params = [], mode = 'all') {
+    try {
+      const stmt = db.prepare(sql);
+      let result;
+      if (mode === 'get') result = stmt.get(...params);
+      else if (mode === 'run') result = stmt.run(...params);
+      else result = stmt.all(...params);
+      return Promise.resolve(result);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  };
 
   logger.info(`[db] SQLite connected: ${dbPath} (WAL mode, 64MB cache, FK enforced)`);
   return db;
@@ -117,4 +233,15 @@ function getDatabaseHealth(db) {
   }
 }
 
-module.exports = { createDatabase, closeDatabase, getDatabaseHealth };
+module.exports = {
+  createDatabase,
+  closeDatabase,
+  getDatabaseHealth,
+  isAsync,
+  // Cache helpers — use these in routes/services to avoid hot-path DB hits
+  cachedGet,
+  invalidateCache,
+  invalidateCachePrefix,
+  clearCache,
+  CACHE_TTL,
+};

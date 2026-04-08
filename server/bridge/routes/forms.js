@@ -4,13 +4,17 @@ const { randomUUID } = require('crypto');
 const telegram = require('../utils/telegram');
 const { triggerSpeedSequence } = require('../utils/speed-to-lead');
 const { normalizePhone } = require('../utils/phone');
-const { isValidUUID, isValidPhone, isValidEmail, sanitizeString } = require('../utils/validate');
+const { isValidUUID } = require('../utils/validate');
 const { logger } = require('../utils/logger');
 const { validateEmail: validateEmailFormat, validatePhone: validatePhoneFormat, validateLength, LENGTH_LIMITS, sanitizeString: sanitizeInput } = require('../utils/inputValidation');
+const { validateBody, validateParams } = require('../middleware/validateRequest');
+const { FormSubmissionSchema, FormParamsSchema } = require('../utils/schemas/form');
+const { AppError } = require('../utils/AppError');
+const timing = require('../config/timing');
 
 // Speed-to-lead deduplication store: tracks recent speed-to-lead jobs by phone+email within 5 minutes
 const speedToLeadStore = new Map();
-const SPEED_TO_LEAD_DEDUP_WINDOW = 5 * 60 * 1000; // 5 minutes
+const SPEED_TO_LEAD_DEDUP_WINDOW = timing.FORM_SPEED_TO_LEAD_DEDUP_WINDOW_MS;
 
 /**
  * Check if a speed-to-lead job was already created for this phone/email in the last 5 minutes.
@@ -49,8 +53,8 @@ const dedupsCleanupInterval = setInterval(() => {
 
 // Simple in-memory rate limiter for form submissions
 const formRateLimitStore = new Map();
-const FORM_RATE_LIMIT = 10; // max requests
-const FORM_RATE_WINDOW = 60000; // per 60 seconds
+const FORM_RATE_LIMIT = timing.FORM_RATE_LIMIT;
+const FORM_RATE_WINDOW = timing.FORM_RATE_WINDOW_MS;
 
 function checkFormRateLimit(ip) {
   const now = Date.now();
@@ -82,17 +86,18 @@ function formRateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress;
   if (!checkFormRateLimit(ip)) {
     logger.warn(`[forms] Rate limit exceeded for ${ip}`);
-    return res.status(429).json({ error: 'Too many submissions. Please try again later.' });
+    return res.status(429).json({ success: false, error: 'Too many submissions. Please try again later.', code: 'RATE_LIMIT_EXCEEDED' });
   }
   next();
 }
 
 // Shared form processing logic
+// Throws AppError for validation failures so route handlers can return 4xx responses.
 async function processFormSubmission(db, body, clientId, req) {
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND is_active = 1').get(clientId);
+  const client = await db.query('SELECT * FROM clients WHERE id = ? AND is_active = 1', [clientId], 'get');
   if (!client) {
     logger.error(`[Form] Unknown or inactive client: ${clientId}`);
-    return;
+    throw new AppError('CLIENT_NOT_FOUND', 'Unknown or inactive client', 404);
   }
 
   // Normalize field names across form builder conventions
@@ -103,12 +108,12 @@ async function processFormSubmission(db, body, clientId, req) {
 
   const name = rawName ? sanitizeInput(rawName, LENGTH_LIMITS.name) : null;
 
-  // Validate name length if provided
+  // Validate name length if provided (max 255 chars per LENGTH_LIMITS.name = 200; using that limit)
   if (name) {
     const nameValidation = validateLength(name, 'name', LENGTH_LIMITS.name);
     if (!nameValidation.valid) {
-      logger.warn(`[Form] ${nameValidation.error}`);
-      return;
+      logger.warn(`[Form] Name validation failed: ${nameValidation.error}`);
+      throw new AppError('INVALID_NAME', nameValidation.error, 400);
     }
   }
 
@@ -117,24 +122,28 @@ async function processFormSubmission(db, body, clientId, req) {
     || body.telephone || body.mobile || body.cell || body.phone_number || null
   );
 
+  // Phone is required — reject submission without it
+  if (!phone) {
+    logger.warn(`[Form] Missing phone in submission for client ${clientId}`);
+    throw new AppError('MISSING_PHONE', 'phone is required', 400);
+  }
+
+  // Validate phone format
+  const phoneValidation = validatePhoneFormat(phone);
+  if (!phoneValidation.valid) {
+    logger.warn(`[Form] Invalid phone format: ${phone} — ${phoneValidation.error}`);
+    throw new AppError('INVALID_PHONE', phoneValidation.error, 400);
+  }
+
   const email = body.email || body.Email || body['your-email']
     || body.email_address || body.emailAddress || null;
 
-  // Validate phone if provided
-  if (phone) {
-    const phoneValidation = validatePhoneFormat(phone);
-    if (!phoneValidation.valid) {
-      logger.warn(`[Form] Invalid phone format: ${phone}`);
-      return;
-    }
-  }
-
-  // Validate email if provided
+  // Validate email format if provided
   if (email) {
     const emailValidation = validateEmailFormat(email);
     if (!emailValidation.valid) {
-      logger.warn(`[Form] Invalid email format: ${email}`);
-      return;
+      logger.warn(`[Form] Invalid email format: ${email} — ${emailValidation.error}`);
+      throw new AppError('INVALID_EMAIL', emailValidation.error, 400);
     }
   }
 
@@ -149,36 +158,9 @@ async function processFormSubmission(db, body, clientId, req) {
   const rawSource = body.utm_source || body.source || body.referrer || 'website_form';
   const source = sanitizeInput(rawSource, LENGTH_LIMITS.name);
 
-  // No phone — create lead with email only + notify client
-  if (!phone) {
-    logger.info(`[Form] No phone in submission for ${clientId}`);
-    if (email) {
-      const leadId = randomUUID();
-      db.prepare(`
-        INSERT INTO leads (id, client_id, name, phone, source, score, stage, last_contact, created_at, updated_at)
-        VALUES (?, ?, ?, '', ?, 5, 'new', datetime('now'), datetime('now'), datetime('now'))
-      `).run(leadId, clientId, name, source);
-
-      if (client.telegram_chat_id) {
-        const escapeHtml = (str) => (str || '').replace(/[&<>"]/g, c => ({
-          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'
-        }[c]));
-        telegram.sendMessage(
-          client.telegram_chat_id,
-          `📋 <b>New form submission (no phone)</b>\n\n` +
-          (name ? `<b>Name:</b> ${escapeHtml(name)}\n` : '') +
-          `<b>Email:</b> ${escapeHtml(email)}\n` +
-          (message ? `<b>Message:</b> "${escapeHtml(message.substring(0, 200))}"\n` : '') +
-          `\n⚠️ No phone — can't auto-call or text.`
-        ).catch(err => logger.warn('[forms] Telegram notification failed', err.message));
-      }
-    }
-    return;
-  }
-
   // Atomic upsert using INSERT ... ON CONFLICT (no race conditions)
   const leadId = randomUUID();
-  db.prepare(`
+  await db.query(`
     INSERT INTO leads (id, client_id, phone, name, email, source, score, stage, last_contact, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'))
     ON CONFLICT(client_id, phone) DO UPDATE SET
@@ -187,13 +169,13 @@ async function processFormSubmission(db, body, clientId, req) {
       source = COALESCE(excluded.source, leads.source),
       last_contact = datetime('now'),
       updated_at = datetime('now')
-  `).run(leadId, clientId, phone, name || null, email || null, source);
+  `, [leadId, clientId, phone, name || null, email || null, source], 'run');
 
   // Log inbound message
-  db.prepare(`
+  await db.query(`
     INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at, updated_at)
     VALUES (?, ?, ?, ?, 'form', 'inbound', ?, 'received', datetime('now'), datetime('now'))
-  `).run(randomUUID(), clientId, leadId, phone, message || `Form submission: ${service || 'General inquiry'}`);
+  `, [randomUUID(), clientId, leadId, phone, message || `Form submission: ${service || 'General inquiry'}`], 'run');
 
   // Deduplication: only trigger speed-to-lead if not a duplicate within 5 minutes
   if (!isDuplicateSpeedToLead(phone, email)) {
@@ -222,28 +204,60 @@ async function processFormSubmission(db, body, clientId, req) {
     logger.error('[Brain] Form submission error:', brainErr.message);
   }
 
+  // Outbound webhook: notify client CRM/callback URL if configured
+  if (client.lead_webhook_url) {
+    try {
+      const { enqueue } = require('../utils/webhookQueue');
+      await enqueue(
+        client.lead_webhook_url,
+        {
+          event: 'lead.created',
+          clientId,
+          leadId,
+          name: name || null,
+          phone: phone || null,
+          email: email || null,
+          service: service || null,
+          source,
+          message: message || null,
+        },
+        { 'X-Client-Id': clientId }
+      );
+    } catch (err) {
+      logger.error('[Form] Webhook enqueue failed:', err.message);
+    }
+  }
+
   logger.info(`[Form] Processed: ${name || phone} → ${client.business_name}`);
 }
 
 // POST /webhooks/form (no clientId in URL — reads client_id from body)
-router.post('/', formRateLimit, async (req, res) => {
+router.post('/', formRateLimit, validateBody(FormSubmissionSchema), async (req, res) => {
   const body = req.body || {};
   const clientId = body.client_id || body.clientId;
   if (!clientId) {
-    return res.status(400).json({ error: 'client_id required in body' });
+    return res.status(400).json({ success: false, error: 'client_id required in body', code: 'MISSING_CLIENT_ID' });
   }
   if (!isValidUUID(clientId)) {
-    return res.status(400).json({ error: 'invalid client_id format' });
+    return res.status(400).json({ success: false, error: 'invalid client_id format', code: 'INVALID_CLIENT_ID' });
   }
-  res.status(200).json({ status: 'received', message: 'Lead captured' });
 
   const db = req.app.locals.db;
-  if (!db) return;
+  if (!db) {
+    logger.error('[Form] No database connection');
+    return res.status(500).json({ success: false, error: 'Service unavailable', code: 'DB_UNAVAILABLE' });
+  }
 
   try {
     await processFormSubmission(db, body, clientId, req);
+    return res.status(200).json({ success: true, data: { status: 'received', message: 'Lead captured' } });
   } catch (err) {
-    logger.error('[Form] Error:', err.message);
+    if (err.name === 'AppError') {
+      logger.warn(`[Form] Validation error (${err.code}): ${err.message}`);
+      return res.status(err.statusCode).json({ success: false, error: err.message, code: err.code });
+    }
+    logger.error('[Form] Unexpected error:', err.message, err.stack);
+    return res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' });
   }
 });
 
@@ -251,26 +265,30 @@ router.post('/', formRateLimit, async (req, res) => {
 // Accepts form submissions from any source (WordPress, Typeform, Wix, Squarespace, custom HTML)
 // Supports JSON and URL-encoded bodies
 // Field aliases: Contact Form 7, Typeform, generic caps, standard
-router.post('/:clientId', formRateLimit, async (req, res) => {
-  // Always 200 immediately — form builders retry on failure
-  res.status(200).json({ status: 'received', message: 'Lead captured' });
+router.post('/:clientId', formRateLimit, validateParams(FormParamsSchema), validateBody(FormSubmissionSchema), async (req, res) => {
+  const clientId = req.params.clientId;
+
+  if (!isValidUUID(clientId)) {
+    logger.warn(`[Form] Invalid clientId format: ${clientId}`);
+    return res.status(400).json({ success: false, error: 'invalid client_id format', code: 'INVALID_CLIENT_ID' });
+  }
 
   const db = req.app.locals.db;
   if (!db) {
     logger.error('[Form] No database connection');
-    return;
-  }
-  const clientId = req.params.clientId;
-
-  if (!isValidUUID(clientId)) {
-    logger.error(`[Form] Invalid clientId format: ${clientId}`);
-    return;
+    return res.status(500).json({ success: false, error: 'Service unavailable', code: 'DB_UNAVAILABLE' });
   }
 
   try {
     await processFormSubmission(db, req.body || {}, clientId, req);
+    return res.status(200).json({ success: true, data: { status: 'received', message: 'Lead captured' } });
   } catch (err) {
-    logger.error('[Form] Error processing submission:', err.message);
+    if (err.name === 'AppError') {
+      logger.warn(`[Form] Validation error (${err.code}): ${err.message}`);
+      return res.status(err.statusCode).json({ success: false, error: err.message, code: err.code });
+    }
+    logger.error('[Form] Error processing submission:', err.message, err.stack);
+    return res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' });
   }
 });
 

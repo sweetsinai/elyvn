@@ -5,22 +5,29 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { getTransporter } = require('../utils/mailer');
 const config = require('../utils/config');
 const { logger } = require('../utils/logger');
+const { appendEvent, Events } = require('../utils/eventStore');
+const { validateParams } = require('../middleware/validateRequest');
+const { ReplyEmailParamsSchema } = require('../utils/schemas/replies');
+const { AppError } = require('../utils/AppError');
 
 const anthropic = new Anthropic();
 
 // GET /replies
-router.get('/replies', (req, res) => {
+router.get('/replies', async (req, res) => {
   try {
     const db = req.app.locals.db;
 
-    const replies = db.prepare(`
+    const clientFilter = req.isAdmin ? '' : 'AND es.client_id = ?';
+    const clientParams = req.isAdmin ? [] : [req.clientId];
+
+    const replies = await db.query(`
       SELECT es.*, p.business_name, p.phone, p.website, c.name as campaign_name
       FROM emails_sent es
       JOIN prospects p ON p.id = es.prospect_id
       LEFT JOIN campaigns c ON c.id = es.campaign_id
-      WHERE es.reply_text IS NOT NULL
+      WHERE es.reply_text IS NOT NULL ${clientFilter}
       ORDER BY es.reply_at DESC
-    `).all();
+    `, [...clientParams], 'all');
 
     res.json({ replies });
   } catch (err) {
@@ -30,23 +37,35 @@ router.get('/replies', (req, res) => {
 });
 
 // POST /replies/:emailId/classify
-router.post('/replies/:emailId/classify', async (req, res) => {
+router.post('/replies/:emailId/classify', validateParams(ReplyEmailParamsSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { emailId } = req.params;
 
-    const email = db.prepare('SELECT * FROM emails_sent WHERE id = ?').get(emailId);
+    const email = await db.query('SELECT * FROM emails_sent WHERE id = ?', [emailId], 'get');
     if (!email || !email.reply_text) {
       return res.status(404).json({ error: 'Email or reply not found' });
+    }
+
+    // Idempotency: skip if already classified
+    if (email.reply_classification) {
+      return res.json({
+        classification: email.reply_classification,
+        suggested_response: '',
+        skipped: true,
+        reason: 'already_classified',
+      });
     }
 
     // Classify with Claude
     const resp = await anthropic.messages.create({
       model: config.ai.model,
-      max_tokens: 200,
+      max_tokens: 250,
       messages: [{
         role: 'user',
-        content: `Classify this email reply into exactly one category. Reply with JSON: {"classification": "INTERESTED" | "QUESTION" | "NOT_INTERESTED" | "UNSUBSCRIBE", "suggested_response": "brief response text"}
+        content: `Classify this email reply into exactly one category. Reply with JSON: {"classification": "INTERESTED" | "QUESTION" | "NOT_INTERESTED" | "UNSUBSCRIBE", "confidence": 0.0-1.0, "suggested_response": "brief response text"}
+
+confidence: how certain you are in this classification (0.0 = no idea, 1.0 = absolutely certain).
 
 Original email subject: ${email.subject}
 Original email: ${email.body}
@@ -56,25 +75,48 @@ Reply: ${email.reply_text}`
     });
 
     let classification = 'QUESTION';
+    let confidence = 0.5;
     let suggestedResponse = '';
 
     try {
       const parsed = JSON.parse(resp.content[0]?.text || '{}');
       classification = parsed.classification || 'QUESTION';
+      confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.5;
       suggestedResponse = parsed.suggested_response || '';
     } catch (err) {
       const text = resp.content[0]?.text || '';
       if (text.includes('INTERESTED')) classification = 'INTERESTED';
       else if (text.includes('NOT_INTERESTED')) classification = 'NOT_INTERESTED';
       else if (text.includes('UNSUBSCRIBE')) classification = 'UNSUBSCRIBE';
+      confidence = 0.5;
     }
 
-    // Update email record
-    db.prepare(
-      'UPDATE emails_sent SET reply_classification = ?, updated_at = ? WHERE id = ?'
-    ).run(classification, new Date().toISOString(), emailId);
+    confidence = Math.max(0, Math.min(1, confidence));
 
-    // Update prospect status based on classification
+    // Determine if this reply is attributable to a prior link click (within 7 days)
+    const ATTRIBUTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+    const replyAttributedToClick = email.clicked_at &&
+      (Date.now() - new Date(email.clicked_at).getTime()) <= ATTRIBUTION_WINDOW_MS ? 1 : 0;
+
+    // Update email record
+    await db.query(
+      'UPDATE emails_sent SET reply_classification = ?, reply_attributed_to_click = ?, updated_at = ? WHERE id = ?',
+      [classification, replyAttributedToClick, new Date().toISOString(), emailId],
+      'run'
+    );
+
+    // Emit ReplyReceived event (fire-and-forget)
+    try {
+      appendEvent(db, emailId, 'email', Events.ReplyReceived, {
+        classification,
+        emailId,
+        reply_attributed_to_click: replyAttributedToClick,
+      });
+    } catch (_) { /* non-fatal */ }
+
+    // Confidence gate: if low confidence, mark as needs_review instead of auto-updating stage
+    const CONFIDENCE_THRESHOLD = 0.7;
+
     const statusMap = {
       'INTERESTED': 'interested',
       'QUESTION': 'engaged',
@@ -83,11 +125,41 @@ Reply: ${email.reply_text}`
     };
 
     const now = new Date().toISOString();
-    const prospect = db.prepare('SELECT * FROM prospects WHERE id = ?').get(email.prospect_id);
+    const prospect = await db.query('SELECT * FROM prospects WHERE id = ?', [email.prospect_id], 'get');
 
-    db.prepare(
-      'UPDATE prospects SET status = ?, updated_at = ? WHERE id = ?'
-    ).run(statusMap[classification] || 'engaged', now, email.prospect_id);
+    if (confidence < CONFIDENCE_THRESHOLD) {
+      // Low confidence: store classification as needs_review, don't update prospect stage
+      logger.warn(`[outreach] Low confidence (${confidence.toFixed(2)}) for email ${emailId} classified as ${classification} — marking needs_review`);
+      await db.query(
+        'UPDATE emails_sent SET reply_classification = ?, updated_at = ? WHERE id = ?',
+        ['needs_review', now, emailId],
+        'run'
+      );
+
+      return res.json({ classification, confidence, needs_review: true, suggested_response: suggestedResponse });
+    }
+
+    // Update prospect status based on classification
+    const oldStatus = prospect?.status;
+    const newStatus = statusMap[classification] || 'engaged';
+
+    await db.query(
+      'UPDATE prospects SET status = ?, updated_at = ? WHERE id = ?',
+      [newStatus, now, email.prospect_id],
+      'run'
+    );
+
+    // Emit LeadStageChanged if prospect status actually changed (fire-and-forget)
+    if (oldStatus && oldStatus !== newStatus) {
+      try {
+        appendEvent(db, email.prospect_id, 'lead', Events.LeadStageChanged, {
+          from: oldStatus,
+          to: newStatus,
+          trigger: 'reply_classification',
+          emailId,
+        });
+      } catch (_) { /* non-fatal */ }
+    }
 
     const BOOKING_LINK = config.outreach.bookingLink;
     const SENDER_NAME = config.outreach.senderName;
@@ -96,21 +168,23 @@ Reply: ${email.reply_text}`
     if (classification === 'INTERESTED') {
       // 0. Create a lead record so this prospect enters the lead pipeline
       try {
-        const client = db.prepare('SELECT * FROM clients WHERE is_active = 1 LIMIT 1').get();
+        const client = await db.query('SELECT * FROM clients WHERE is_active = 1 LIMIT 1', [], 'get');
         if (client && prospect) {
-          const existingLead = db.prepare(
-            'SELECT id FROM leads WHERE client_id = ? AND (email = ? OR (phone IS NOT NULL AND phone = ?))'
-          ).get(client.id, email.to_email, prospect.phone || '');
+          const existingLead = await db.query(
+            'SELECT id FROM leads WHERE client_id = ? AND (email = ? OR (phone IS NOT NULL AND phone = ?))',
+            [client.id, email.to_email, prospect.phone || ''],
+            'get'
+          );
           if (!existingLead) {
             const leadId = randomUUID();
-            db.prepare(`
+            await db.query(`
               INSERT INTO leads (id, client_id, name, phone, email, source, score, stage, prospect_id, last_contact, created_at, updated_at)
               VALUES (?, ?, ?, ?, ?, 'outreach', 7, 'qualified', ?, ?, ?, ?)
-            `).run(leadId, client.id, prospect.business_name || '', prospect.phone || null, email.to_email, prospect.id, now, now, now);
+            `, [leadId, client.id, prospect.business_name || '', prospect.phone || null, email.to_email, prospect.id, now, now, now], 'run');
             logger.info(`[outreach] Lead ${leadId} created from INTERESTED prospect ${prospect.id}`);
           } else {
             // Update existing lead score
-            db.prepare("UPDATE leads SET score = MAX(score, 7), stage = 'qualified', updated_at = ? WHERE id = ?").run(now, existingLead.id);
+            await db.query("UPDATE leads SET score = MAX(score, 7), stage = 'qualified', updated_at = ? WHERE id = ?", [now, existingLead.id], 'run');
           }
         }
       } catch (err) {
@@ -130,9 +204,11 @@ Reply: ${email.reply_text}`
         });
         logger.info(`[outreach] INTERESTED auto-reply sent to ${email.to_email} with booking link`);
 
-        db.prepare(
-          'UPDATE emails_sent SET auto_response_sent = 1, updated_at = ? WHERE id = ?'
-        ).run(now, emailId);
+        await db.query(
+          'UPDATE emails_sent SET auto_response_sent = 1, updated_at = ? WHERE id = ?',
+          [now, emailId],
+          'run'
+        );
       } catch (err) {
         logger.error('[outreach] INTERESTED auto-reply failed:', err.message);
       }
@@ -218,14 +294,16 @@ Reply: ${email.reply_text}`
     res.json({ classification, suggested_response: suggestedResponse });
   } catch (err) {
     logger.error('[outreach] classify error:', err);
-    res.status(500).json({ error: 'Failed to classify reply' });
+    next(err);
   }
 });
 
-// POST /auto-classify — automatically classify all unclassified replies
-// Call this on a cron (every 5 min) or after IMAP fetch
-// Delegates to shared utility to avoid duplication and HTTP overhead
-router.post('/auto-classify', async (req, res) => {
+// POST /auto-classify — admin/cron only: classify all unclassified replies across all clients
+// Guard against AI cost amplification: only service-level callers (ELYVN_API_KEY with isAdmin)
+router.post('/auto-classify', async (req, res, next) => {
+  if (!req.isAdmin) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
   try {
     const db = req.app.locals.db;
     const { autoClassifyReplies } = require('../utils/autoClassify');
@@ -233,7 +311,7 @@ router.post('/auto-classify', async (req, res) => {
     res.json({ classified: result.classified, results: result.results, message: result.message });
   } catch (err) {
     logger.error('[outreach] auto-classify error:', err);
-    res.status(500).json({ error: 'Failed to auto-classify replies' });
+    next(err);
   }
 });
 

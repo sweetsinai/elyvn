@@ -2,32 +2,39 @@ const telegram = require('../telegram');
 const { logger } = require('../logger');
 
 async function sendDailySummaries(db) {
-  const clients = db.prepare(
+  const startTime = Date.now();
+  const clients = await db.query(
     'SELECT * FROM clients WHERE telegram_chat_id IS NOT NULL AND is_active = 1'
-  ).all();
+  );
+
+  logger.info(`[dailySummary] START — processing ${clients.length} clients`);
 
   const today = new Date().toISOString().split('T')[0];
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
   for (const client of clients) {
-    const calls = db.prepare(
+    const calls = await db.query(
       `SELECT COUNT(*) as total,
         SUM(CASE WHEN outcome = 'booked' THEN 1 ELSE 0 END) as booked,
         SUM(CASE WHEN outcome = 'missed' THEN 1 ELSE 0 END) as missed
-      FROM calls WHERE client_id = ? AND date(created_at) = ?`
-    ).get(client.id, today);
+      FROM calls WHERE client_id = ? AND date(created_at) = ?`,
+      [client.id, today], 'get'
+    );
 
-    const msgs = db.prepare(
-      `SELECT COUNT(*) as total FROM messages WHERE client_id = ? AND date(created_at) = ?`
-    ).get(client.id, today);
+    const msgs = await db.query(
+      `SELECT COUNT(*) as total FROM messages WHERE client_id = ? AND date(created_at) = ?`,
+      [client.id, today], 'get'
+    );
 
-    const rev = db.prepare(
-      `SELECT COALESCE(COUNT(*) * ?, 0) as revenue FROM calls WHERE client_id = ? AND outcome = 'booked' AND date(created_at) = ?`
-    ).get(client.avg_ticket || 0, client.id, today);
+    const rev = await db.query(
+      `SELECT COALESCE(COUNT(*) * ?, 0) as revenue FROM calls WHERE client_id = ? AND outcome = 'booked' AND date(created_at) = ?`,
+      [client.avg_ticket || 0, client.id, today], 'get'
+    );
 
-    const tomorrowSchedule = db.prepare(
-      `SELECT * FROM calls WHERE client_id = ? AND outcome = 'booked' AND date(created_at) = ? ORDER BY created_at ASC`
-    ).all(client.id, tomorrow);
+    const tomorrowSchedule = await db.query(
+      `SELECT * FROM calls WHERE client_id = ? AND outcome = 'booked' AND date(created_at) = ? ORDER BY created_at ASC`,
+      [client.id, tomorrow]
+    );
 
     const stats = {
       total_calls: calls.total || 0,
@@ -42,7 +49,7 @@ async function sendDailySummaries(db) {
     try {
       const { extractCommonTopics } = require('../conversationIntelligence');
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const topics = extractCommonTopics(db, client.id, weekAgo);
+      const topics = await extractCommonTopics(db, client.id, weekAgo);
       if (topics && topics.length > 0) {
         const { loadKnowledgeBase } = require('../kbCache');
         let kbText = '';
@@ -64,6 +71,8 @@ async function sendDailySummaries(db) {
       logger.error(`Daily summary failed for client ${client.id}:`, err)
     );
   }
+
+  logger.info(`[dailySummary] DONE — processed ${clients.length} clients, duration ${Date.now() - startTime}ms`);
 }
 
 module.exports = { sendDailySummaries };

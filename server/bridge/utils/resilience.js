@@ -94,6 +94,7 @@ class CircuitBreaker {
     this.failureWindow = options.failureWindow || CIRCUIT_BREAKER_FAILURE_WINDOW_MS; // 1 min
     this.cooldownPeriod = options.cooldownPeriod || CIRCUIT_BREAKER_COOLDOWN_MS; // 30 sec
     this.serviceName = options.serviceName || 'service';
+    this.fallback = options.fallback || null; // Optional fallback fn when circuit is open
 
     this.state = 'closed'; // closed | open | half-open
     this.failures = [];
@@ -107,6 +108,11 @@ class CircuitBreaker {
       if (Date.now() < this.cooldownUntil) {
         const remaining = Math.ceil((this.cooldownUntil - Date.now()) / 1000);
         logger.warn(`[circuit-breaker] ${this.serviceName} circuit open (${remaining}s remaining)`);
+        // If a fallback is provided, call it instead of throwing
+        if (this.fallback) {
+          logger.info(`[circuit-breaker] ${this.serviceName} using fallback response`);
+          return this.fallback(...args);
+        }
         throw new Error(`Circuit breaker open for ${this.serviceName}`);
       }
       // Try half-open

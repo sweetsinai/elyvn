@@ -6,7 +6,9 @@
 module.exports = {
   // ===== API & Network Timeouts =====
   // External service request timeouts (Retell, Anthropic, etc.)
+  ANTHROPIC_TIMEOUT: process.env.ANTHROPIC_TIMEOUT ? parseInt(process.env.ANTHROPIC_TIMEOUT) : 30000, // Anthropic API call timeout (30 seconds)
   API_TIMEOUT_MS: 5000,           // Generic API call timeout (5 seconds)
+  FETCH_TIMEOUT: process.env.FETCH_TIMEOUT ? parseInt(process.env.FETCH_TIMEOUT) : 5000,  // Generic fetch timeout for scraping (5 seconds)
   RETELL_CALL_TIMEOUT_MS: 15000,  // Retell outbound call creation timeout (15 seconds)
 
   // ===== Job Queue & Processing =====
@@ -16,6 +18,12 @@ module.exports = {
   STALLED_JOB_THRESHOLD_MS: 30 * 60 * 1000,  // Jobs stuck in 'processing' for 30+ minutes are recovered
   STALE_JOB_THRESHOLD_MS: 1 * 60 * 60 * 1000, // Jobs pending for 1+ hour are rescheduled
   JOB_RETRY_BACKOFF_BASE_MS: 60000, // Base exponential backoff: 2^n * 60 seconds
+
+  // ===== SMS =====
+  SMS_MAX_LENGTH: 1600,             // Max SMS length (10 concatenated segments, Telnyx/Twilio compat)
+
+  // ===== Email =====
+  EMAIL_DAILY_LIMIT: process.env.EMAIL_DAILY_LIMIT ? parseInt(process.env.EMAIL_DAILY_LIMIT) : 300, // Max outbound emails per day
 
   // ===== SMS Rate Limiting =====
   SMS_MIN_GAP_MS: 5 * 60 * 1000,   // Minimum 5 minutes between SMS to same number (rate limit)
@@ -29,7 +37,8 @@ module.exports = {
   CIRCUIT_BREAKER_COOLDOWN_MS: 30000, // Cooldown period when circuit opens (30 seconds)
 
   // ===== Rate Limiting =====
-  RATE_LIMIT_WINDOW_MS: 60000,     // Rate limit window (1 minute) = 60,000ms
+  RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS ? parseInt(process.env.RATE_LIMIT_WINDOW_MS) : 60000,     // Rate limit window (1 minute) = 60,000ms
+  RATE_LIMIT_MAX_REQUESTS: process.env.RATE_LIMIT_MAX_REQUESTS ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) : 100, // Max requests per window for general limiter
   RATE_LIMIT_CLEANUP_MS: 5 * 60 * 1000, // Cleanup rate limiter entries every 5 minutes
   RATE_LIMIT_MAX_ENTRIES: 10000,   // Cap rate limiter entries
 
@@ -84,4 +93,22 @@ module.exports = {
 
   // ===== Graceful Shutdown =====
   GRACEFUL_SHUTDOWN_TIMEOUT_MS: 5000, // Force shutdown after 5 seconds of waiting
+
+  // ===== Telegram Callback Rate Limiting =====
+  TELEGRAM_CALLBACK_RATE_LIMIT: 10,      // Max callbacks per minute per chatId
+  TELEGRAM_CALLBACK_RATE_WINDOW_MS: 60000, // 1 minute
+
+  // ===== Onboarding Rate Limiting =====
+  ONBOARD_RATE_LIMIT: 5,                  // Max onboards per minute per IP
+  ONBOARD_RATE_WINDOW_MS: 60000,          // 1 minute
+
+  // ===== Form Submission Rate Limiting =====
+  FORM_RATE_LIMIT: 10,                    // Max form submissions per window per IP
+  FORM_RATE_WINDOW_MS: 60000,             // 1 minute
+  FORM_SPEED_TO_LEAD_DEDUP_WINDOW_MS: 5 * 60 * 1000, // 5 minutes dedup window
+
+  // ===== Auth / Login Lockout =====
+  LOGIN_MAX_ATTEMPTS: 5,                  // Failed attempts before lockout
+  LOGIN_LOCKOUT_MS: 15 * 60 * 1000,       // 15 minutes lockout
+  RESEND_VERIFICATION_COOLDOWN_MS: 5 * 60 * 1000, // 5 minutes between resend requests
 };

@@ -9,7 +9,8 @@ const crypto = require('crypto');
 const { logger } = require('./logger');
 
 let wss = null;
-const authenticatedClients = new Set();
+// Map of ws => { clientId: string|null } — null means admin/global key, string means per-tenant
+const authenticatedClients = new Map();
 let heartbeatInterval;
 
 function initWebSocket(server, db) {
@@ -27,7 +28,7 @@ function initWebSocket(server, db) {
         }
       }, 5000);
 
-      ws.on('message', (raw) => {
+      ws.on('message', async (raw) => {
         try {
           const msg = JSON.parse(raw);
 
@@ -45,17 +46,19 @@ function initWebSocket(server, db) {
             if (provided.length === expected.length && crypto.timingSafeEqual(provided, expected)) {
               authenticated = true;
               clearTimeout(authTimeout);
-              authenticatedClients.add(ws);
+              // Global admin key — clientId null means receives all broadcasts
+              authenticatedClients.set(ws, { clientId: null });
               ws.send(JSON.stringify({ type: 'authenticated', timestamp: new Date().toISOString() }));
             } else {
               // Also check client API keys
               try {
                 const keyHash = crypto.createHash('sha256').update(msg.api_key).digest('hex');
-                const keyRecord = db.prepare('SELECT id FROM client_api_keys WHERE api_key_hash = ? AND is_active = 1').get(keyHash);
+                const keyRecord = await db.query('SELECT id, client_id FROM client_api_keys WHERE api_key_hash = ? AND is_active = 1', [keyHash], 'get');
                 if (keyRecord) {
                   authenticated = true;
                   clearTimeout(authTimeout);
-                  authenticatedClients.add(ws);
+                  // Tag the connection with the tenant's clientId for isolation
+                  authenticatedClients.set(ws, { clientId: keyRecord.client_id });
                   ws.send(JSON.stringify({ type: 'authenticated', timestamp: new Date().toISOString() }));
                   return;
                 }
@@ -69,6 +72,15 @@ function initWebSocket(server, db) {
           // Ignore non-auth messages from unauthenticated clients
           if (!authenticated) return;
 
+          // Handle analytics channel subscription
+          if (msg.type === 'subscribe' && msg.channel === 'analytics') {
+            try {
+              const { subscribeToAnalytics } = require('./analyticsStream');
+              subscribeToAnalytics(ws);
+              ws.send(JSON.stringify({ type: 'subscribed', channel: 'analytics', timestamp: new Date().toISOString() }));
+            } catch (_) { /* analyticsStream not available */ }
+          }
+
         } catch (err) {
           // Invalid JSON, ignore
         }
@@ -76,7 +88,7 @@ function initWebSocket(server, db) {
 
       ws.on('close', () => {
         clearTimeout(authTimeout);
-        authenticatedClients.delete(ws);
+        authenticatedClients.delete(ws); // Map.delete works the same as Set.delete
       });
 
       ws.on('error', () => {
@@ -90,7 +102,7 @@ function initWebSocket(server, db) {
 
     // Heartbeat
     heartbeatInterval = setInterval(() => {
-      for (const client of authenticatedClients) {
+      for (const [client] of authenticatedClients) {
         if (client.readyState === WebSocket.OPEN) {
           client.ping();
         } else {
@@ -114,24 +126,44 @@ function cleanupWebSocket() {
   }
 }
 
-function broadcast(event, data) {
+/**
+ * Broadcast an event to WebSocket clients.
+ * @param {string} event - Event type name
+ * @param {any} data - Payload
+ * @param {string|null} [targetClientId] - If provided, only send to connections belonging to this
+ *   clientId (tenant isolation). If null or omitted, sends to all admin connections (clientId===null)
+ *   AND any connection whose clientId matches targetClientId.
+ *   To send to ALL connected clients (admin use only), pass targetClientId=undefined explicitly and
+ *   note that tenant-scoped connections will still only receive their own events.
+ */
+function broadcast(event, data, targetClientId) {
   if (!wss || authenticatedClients.size === 0) return;
 
   const message = JSON.stringify({ type: event, data, timestamp: new Date().toISOString() });
 
-  for (const client of authenticatedClients) {
-    if (client.readyState === WebSocket.OPEN) {
-      try {
-        client.send(message);
-      } catch (err) {
-        authenticatedClients.delete(client);
-      }
+  for (const [client, meta] of authenticatedClients) {
+    if (client.readyState !== WebSocket.OPEN) {
+      authenticatedClients.delete(client);
+      continue;
+    }
+
+    // Tenant isolation: skip client if it has a scoped clientId that doesn't match the target
+    if (meta.clientId !== null && targetClientId !== undefined && meta.clientId !== targetClientId) {
+      continue;
+    }
+    // Admin connections (clientId === null) receive everything
+    // Tenant connections only receive events matching their clientId
+
+    try {
+      client.send(message);
+    } catch (err) {
+      authenticatedClients.delete(client);
     }
   }
 }
 
 function getConnectionCount() {
-  return authenticatedClients.size;
+  return authenticatedClients.size; // Map.size works identically to Set.size
 }
 
 module.exports = { initWebSocket, broadcast, getConnectionCount, cleanupWebSocket };

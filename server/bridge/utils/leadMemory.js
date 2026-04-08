@@ -5,46 +5,51 @@
 const { randomUUID } = require('crypto');
 const { normalizePhone } = require('./phone');
 
-function getLeadMemory(db, phone, clientId) {
+async function getLeadMemory(db, phone, clientId) {
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedPhone || !clientId) return null;
 
   // 1. Get or create lead (INSERT ON CONFLICT to prevent TOCTOU race)
   const id = randomUUID();
   try {
-    db.prepare(
+    await db.query(
       `INSERT INTO leads (id, client_id, phone, score, stage, created_at, updated_at)
        VALUES (?, ?, ?, 0, 'new', datetime('now'), datetime('now'))
-       ON CONFLICT(client_id, phone) DO NOTHING`
-    ).run(id, clientId, normalizedPhone);
+       ON CONFLICT(client_id, phone) DO NOTHING`,
+      [id, clientId, normalizedPhone], 'run'
+    );
   } catch (err) {
     // FK constraint fails if client doesn't exist — continue to lookup
   }
 
-  let lead = db.prepare(
-    'SELECT * FROM leads WHERE phone = ? AND client_id = ?'
-  ).get(normalizedPhone, clientId);
+  let lead = await db.query(
+    'SELECT * FROM leads WHERE phone = ? AND client_id = ?',
+    [normalizedPhone, clientId], 'get'
+  );
 
   // 2. All calls from this number
-  const calls = db.prepare(
+  const calls = await db.query(
     `SELECT id, direction, duration, transcript, summary, sentiment, score, outcome, created_at
-     FROM calls WHERE caller_phone = ? AND client_id = ? ORDER BY created_at DESC LIMIT 20`
-  ).all(normalizedPhone, clientId);
+     FROM calls WHERE caller_phone = ? AND client_id = ? ORDER BY created_at DESC LIMIT 20`,
+    [normalizedPhone, clientId]
+  );
 
   // 3. All messages
-  const messages = db.prepare(
+  const messages = await db.query(
     `SELECT id, channel, direction, body, reply_text, status, confidence, created_at
-     FROM messages WHERE phone = ? AND client_id = ? ORDER BY created_at DESC LIMIT 30`
-  ).all(normalizedPhone, clientId);
+     FROM messages WHERE phone = ? AND client_id = ? ORDER BY created_at DESC LIMIT 30`,
+    [normalizedPhone, clientId]
+  );
 
   // 4. All follow-ups
-  const followups = lead ? db.prepare(
+  const followups = lead ? await db.query(
     `SELECT id, touch_number, type, content, scheduled_at, sent_at, status
-     FROM followups WHERE lead_id = ? ORDER BY scheduled_at DESC LIMIT 20`
-  ).all(lead.id) : [];
+     FROM followups WHERE lead_id = ? ORDER BY scheduled_at DESC LIMIT 20`,
+    [lead.id]
+  ) : [];
 
   // 5. Client record
-  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+  const client = await db.query('SELECT * FROM clients WHERE id = ?', [clientId], 'get');
 
   // 6. Build timeline (chronological, all channels merged)
   const timeline = [

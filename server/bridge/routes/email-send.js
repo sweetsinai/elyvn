@@ -4,26 +4,37 @@ const router = express.Router();
 const { getTransporter } = require('../utils/mailer');
 const config = require('../utils/config');
 const { logger } = require('../utils/logger');
+const { logDataMutation } = require('../utils/auditLog');
+const { emailSendLimit } = require('../middleware/rateLimits');
+const { AppError } = require('../utils/AppError');
 
 const DAILY_SEND_LIMIT = config.outreach.dailySendLimit;
 
 // PUT /campaign/:campaignId/email/:emailId
-router.put('/campaign/:campaignId/email/:emailId', (req, res) => {
+router.put('/campaign/:campaignId/email/:emailId', async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { campaignId, emailId } = req.params;
     const { subject, body } = req.body;
 
-    const result = db.prepare(`
+    const emailRecord = await db.query('SELECT client_id FROM emails_sent WHERE id = ?', [emailId], 'get');
+    if (!emailRecord) return next(new AppError('NOT_FOUND', 'Email not found', 404));
+    if (!req.isAdmin && emailRecord.client_id !== req.clientId) return next(new AppError('FORBIDDEN', 'Access denied', 403));
+
+    if (subject && subject.length > 200) return next(new AppError('INVALID_INPUT', 'Subject too long (max 200 chars)', 400));
+    if (body && body.length > 50000) return next(new AppError('INVALID_INPUT', 'Body too long (max 50000 chars)', 400));
+
+    const result = await db.query(`
       UPDATE emails_sent SET subject = COALESCE(?, subject), body = COALESCE(?, body), updated_at = ?
       WHERE id = ? AND campaign_id = ?
-    `).run(subject || null, body || null, new Date().toISOString(), emailId, campaignId);
+    `, [subject || null, body || null, new Date().toISOString(), emailId, campaignId], 'run');
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Email not found' });
     }
 
-    const email = db.prepare('SELECT * FROM emails_sent WHERE id = ?').get(emailId);
+    const email = await db.query('SELECT * FROM emails_sent WHERE id = ?', [emailId], 'get');
+    try { logDataMutation(db, { action: 'client_updated', table: 'emails_sent', recordId: emailId, newValues: { subject, body } }); } catch (_) {}
     res.json({ email });
   } catch (err) {
     logger.error('[outreach] edit email error:', err);
@@ -31,17 +42,27 @@ router.put('/campaign/:campaignId/email/:emailId', (req, res) => {
   }
 });
 
-// POST /campaign/:campaignId/send
-router.post('/campaign/:campaignId/send', async (req, res) => {
+// POST /campaign/:campaignId/send — 20/min per client (SMTP sending is expensive)
+router.post('/campaign/:campaignId/send', emailSendLimit, async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { campaignId } = req.params;
 
+    // Verify campaign belongs to this client
+    if (!req.isAdmin) {
+      const campaign = await db.query('SELECT client_id FROM campaigns WHERE id = ?', [campaignId], 'get');
+      if (!campaign) return next(new AppError('NOT_FOUND', 'Campaign not found', 404));
+      if (campaign.client_id !== req.clientId) return next(new AppError('FORBIDDEN', 'Access denied', 403));
+    }
+
     // Check daily send limit
     const today = new Date().toISOString().split('T')[0];
-    const sentToday = db.prepare(
-      "SELECT COUNT(*) as count FROM emails_sent WHERE status = 'sent' AND sent_at >= ?"
-    ).get(today + 'T00:00:00.000Z').count;
+    const sentTodayResult = await db.query(
+      "SELECT COUNT(*) as count FROM emails_sent WHERE status = 'sent' AND sent_at >= ?",
+      [today + 'T00:00:00.000Z'],
+      'get'
+    );
+    const sentToday = sentTodayResult.count;
 
     const remaining = DAILY_SEND_LIMIT - sentToday;
     if (remaining <= 0) {
@@ -49,9 +70,11 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
     }
 
     // Get draft emails for this campaign
-    const drafts = db.prepare(
-      "SELECT * FROM emails_sent WHERE campaign_id = ? AND status = 'draft' LIMIT ?"
-    ).all(campaignId, remaining);
+    const drafts = await db.query(
+      "SELECT * FROM emails_sent WHERE campaign_id = ? AND status = 'draft' LIMIT ?",
+      [campaignId, remaining],
+      'all'
+    );
 
     if (!drafts.length) {
       return res.status(400).json({ error: 'No draft emails to send' });
@@ -79,10 +102,10 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
           const verification = await verifyEmail(email.to_email);
           if (!verification.valid) {
             logger.info(`[outreach] Skipping invalid email ${email.to_email}: ${verification.reason}`);
-            db.prepare("UPDATE emails_sent SET status = 'invalid', error = ?, updated_at = ? WHERE id = ?")
-              .run(`verification_failed: ${verification.reason}`, new Date().toISOString(), email.id);
-            db.prepare("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?")
-              .run(new Date().toISOString(), email.prospect_id);
+            await db.query("UPDATE emails_sent SET status = 'invalid', error = ?, updated_at = ? WHERE id = ?",
+              [`verification_failed: ${verification.reason}`, new Date().toISOString(), email.id], 'run');
+            await db.query("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?",
+              [new Date().toISOString(), email.prospect_id], 'run');
             return { status: 'invalid', email_id: email.id, prospect_id: email.prospect_id };
           }
         } catch (verifyErr) {
@@ -114,9 +137,11 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
         });
 
         const sentNow = new Date().toISOString();
-        db.prepare(
-          "UPDATE emails_sent SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?"
-        ).run(sentNow, sentNow, email.id);
+        await db.query(
+          "UPDATE emails_sent SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?",
+          [sentNow, sentNow, email.id],
+          'run'
+        );
 
         // Schedule Day 3 no-reply follow-up
         try {
@@ -135,6 +160,8 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
           logger.error('[outreach] Failed to schedule follow-up:', err.message);
         }
 
+        try { logDataMutation(db, { action: 'email_sent', table: 'emails_sent', recordId: email.id, newValues: { status: 'sent', to_email: email.to_email } }); } catch (_) {}
+
         return { status: 'sent', email_id: email.id, prospect_id: email.prospect_id };
       } catch (err) {
         logger.error(`[outreach] Failed to send to ${email.to_email}:`, err.message);
@@ -146,13 +173,15 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
         const status = isBounce ? 'bounced' : 'failed';
         const now = new Date().toISOString();
 
-        db.prepare(
-          "UPDATE emails_sent SET status = ?, error = ?, updated_at = ? WHERE id = ?"
-        ).run(status, err.message, now, email.id);
+        await db.query(
+          "UPDATE emails_sent SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+          [status, err.message, now, email.id],
+          'run'
+        );
 
         // Mark bounced prospects so we never email them again
         if (isBounce) {
-          db.prepare("UPDATE prospects SET status = 'bounced', updated_at = ? WHERE id = ?").run(now, email.prospect_id);
+          await db.query("UPDATE prospects SET status = 'bounced', updated_at = ? WHERE id = ?", [now, email.prospect_id], 'run');
         }
 
         return { status: status, email_id: email.id, prospect_id: email.prospect_id, error: err.message };
@@ -195,9 +224,11 @@ router.post('/campaign/:campaignId/send', async (req, res) => {
     }
 
     // Update campaign status
-    db.prepare(
-      "UPDATE campaigns SET status = 'active', updated_at = ? WHERE id = ?"
-    ).run(new Date().toISOString(), campaignId);
+    await db.query(
+      "UPDATE campaigns SET status = 'active', updated_at = ? WHERE id = ?",
+      [new Date().toISOString(), campaignId],
+      'run'
+    );
 
     logger.info(`[outreach] Campaign ${campaignId}: sent=${sent} failed=${failed} invalid=${skippedInvalid}`);
     res.json({ sent, failed, skipped_invalid: skippedInvalid, remaining: remaining - sent });

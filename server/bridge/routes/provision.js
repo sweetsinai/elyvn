@@ -6,6 +6,8 @@ const path = require('path');
 const https = require('https');
 const { getOnboardingLink } = require('../utils/telegram');
 const { logger } = require('../utils/logger');
+const { logDataMutation } = require('../utils/auditLog');
+const { AppError } = require('../utils/AppError');
 
 // NOTE: The 'plan' column is handled by migration 022_auth_and_billing.
 // Removed rogue DB connection that opened a second database handle at module load.
@@ -44,10 +46,10 @@ function httpsRequest(options, data = null) {
 /**
  * Create a Retell AI agent
  */
-async function createRetellAgent(businessName, knowledgeBaseSummary) {
+async function createRetellAgent(businessName, knowledgeBaseSummary, voiceId, language) {
   const apiKey = process.env.RETELL_API_KEY;
   if (!apiKey) {
-    throw new Error('RETELL_API_KEY is required');
+    throw new AppError('INTERNAL_ERROR', 'RETELL_API_KEY is required', 500);
   }
 
   const kbText = knowledgeBaseSummary || 'Help customers with their inquiries professionally and courteously.';
@@ -55,8 +57,8 @@ async function createRetellAgent(businessName, knowledgeBaseSummary) {
 
   const payload = {
     agent_name: businessName,
-    voice_id: '11labs-Adrian',
-    language: 'en-US',
+    voice_id: voiceId || '11labs-Adrian',
+    language: language || 'en-US',
     response_engine: {
       type: 'retell-llm',
       llm_id: null,
@@ -77,7 +79,7 @@ async function createRetellAgent(businessName, knowledgeBaseSummary) {
 
   const response = await httpsRequest(options, payload);
   if (response.status !== 200 && response.status !== 201) {
-    throw new Error(`Retell creation failed (${response.status}): ${JSON.stringify(response.body || response.parseError)}`);
+    throw new AppError('INTERNAL_ERROR', `Retell creation failed (${response.status}): ${JSON.stringify(response.body || response.parseError)}`, 500);
   }
 
   return response.body.agent_id || response.body.id;
@@ -86,7 +88,8 @@ async function createRetellAgent(businessName, knowledgeBaseSummary) {
 /**
  * POST / — Provision a new client with Telnyx number, Retell agent, and knowledge base
  */
-router.post('/', async (req, res) => {
+router.post('/', async (req, res, next) => {
+  if (!req.isAdmin) return next(new AppError('FORBIDDEN', 'Admin access required', 403));
   try {
     const db = req.app.locals.db;
     if (!db) {
@@ -139,7 +142,7 @@ router.post('/', async (req, res) => {
         : null;
 
       logger.info(`[provision] Creating Retell agent for ${business_name}...`);
-      retellAgentId = await createRetellAgent(business_name, kbSummary);
+      retellAgentId = await createRetellAgent(business_name, kbSummary, req.body.retell_voice, req.body.retell_language);
       provisioning_status.retell_agent_id = retellAgentId;
       logger.info(`[provision] Successfully created Retell agent: ${retellAgentId}`);
     } catch (err) {
@@ -150,13 +153,13 @@ router.post('/', async (req, res) => {
 
     // Step 2: Save client to database
     try {
-      db.prepare(`
+      await db.query(`
         INSERT INTO clients (
           id, business_name, owner_name, owner_phone, owner_email,
           retell_agent_id, twilio_phone, industry, timezone,
           avg_ticket, plan, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `, [
         clientId,
         business_name,
         owner_name || null,
@@ -170,16 +173,17 @@ router.post('/', async (req, res) => {
         plan || 'growth',
         now,
         now
-      );
+      ], 'run');
 
       provisioning_status.db_save = true;
       logger.info(`[provision] Successfully saved client to database: ${clientId}`);
+      try { logDataMutation(db, { action: 'client_created', table: 'clients', recordId: clientId, newValues: { business_name, owner_phone, plan, industry }, ip: req.ip }); } catch (_) {}
     } catch (err) {
       provisioning_status.db_error = err.message;
       logger.error(`[provision] Database save failed: ${err.message}`);
       return res.status(500).json({
         error: 'Failed to save client to database',
-        message: err.message,
+        message: process.env.NODE_ENV !== 'production' ? err.message : undefined,
         provisioning_status,
       });
     }
@@ -203,7 +207,7 @@ router.post('/', async (req, res) => {
     }
 
     // Retrieve the full client record
-    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    const client = await db.query('SELECT id, business_name, owner_name, owner_email, owner_phone, industry, timezone, plan, retell_agent_id, retell_phone, twilio_phone, is_active, created_at FROM clients WHERE id = ?', [clientId], 'get');
 
     // Generate Telegram onboarding link
     const telegram_link = getOnboardingLink(clientId);
@@ -222,7 +226,7 @@ router.post('/', async (req, res) => {
     logger.error('[provision] Unexpected error:', err);
     return res.status(500).json({
       error: 'Unexpected error during provisioning',
-      message: err.message,
+      message: process.env.NODE_ENV !== 'production' ? err.message : undefined,
     });
   }
 });

@@ -7,18 +7,20 @@ const { logger } = require('./logger');
 
 /**
  * Check if a phone number has opted out from SMS
- * @param {object} db - better-sqlite3 instance
+ * @param {object} db - database instance
  * @param {string} phone - Phone number
  * @param {string} clientId - Client ID
- * @returns {boolean} True if opted out
+ * @returns {Promise<boolean>} True if opted out
  */
-function isOptedOut(db, phone, clientId) {
+async function isOptedOut(db, phone, clientId) {
   if (!db || !phone) return false;
 
   try {
-    const result = db.prepare(
-      'SELECT id FROM sms_opt_outs WHERE phone = ? AND client_id = ? AND opted_out_at IS NOT NULL'
-    ).get(phone, clientId);
+    const result = await db.query(
+      'SELECT id FROM sms_opt_outs WHERE phone = ? AND client_id = ? AND opted_out_at IS NOT NULL',
+      [phone, clientId],
+      'get'
+    );
 
     return !!result;
   } catch (err) {
@@ -29,23 +31,36 @@ function isOptedOut(db, phone, clientId) {
 
 /**
  * Record a phone number as opted out
- * @param {object} db - better-sqlite3 instance
+ * @param {object} db - database instance
  * @param {string} phone - Phone number
  * @param {string} clientId - Client ID
  * @param {string} [reason] - Reason for opt-out (STOP, UNSUBSCRIBE, etc)
- * @returns {boolean} Success
+ * @returns {Promise<boolean>} Success
  */
-function recordOptOut(db, phone, clientId, reason = 'user_request') {
+async function recordOptOut(db, phone, clientId, reason = 'user_request') {
   if (!db || !phone || !clientId) return false;
 
   try {
     const { randomUUID } = require('crypto');
-    db.prepare(`
+    await db.query(`
       INSERT OR REPLACE INTO sms_opt_outs (id, phone, client_id, opted_out_at, reason)
       VALUES (?, ?, ?, datetime('now'), ?)
-    `).run(randomUUID(), phone, clientId, reason);
+    `, [randomUUID(), phone, clientId, reason], 'run');
 
     logger.info(`[optOut] Recorded opt-out for ${phone} (${reason})`);
+
+    // Emit OptOutRecorded event for audit trail
+    try {
+      const { appendEvent, Events } = require('./eventStore');
+      // Look up the lead ID for this phone + client
+      const lead = await db.query('SELECT id FROM leads WHERE phone = ? AND client_id = ? LIMIT 1', [phone, clientId], 'get');
+      if (lead) {
+        await appendEvent(db, lead.id, 'lead', Events.OptOutRecorded, { phone, reason }, clientId);
+      }
+    } catch (_) {
+      // Event logging failure is non-fatal
+    }
+
     return true;
   } catch (err) {
     logger.error('[optOut] recordOptOut error:', err.message);
@@ -55,18 +70,20 @@ function recordOptOut(db, phone, clientId, reason = 'user_request') {
 
 /**
  * Record a phone number as opted in (remove from opt-out list)
- * @param {object} db - better-sqlite3 instance
+ * @param {object} db - database instance
  * @param {string} phone - Phone number
  * @param {string} clientId - Client ID
- * @returns {boolean} Success
+ * @returns {Promise<boolean>} Success
  */
-function recordOptIn(db, phone, clientId) {
+async function recordOptIn(db, phone, clientId) {
   if (!db || !phone || !clientId) return false;
 
   try {
-    db.prepare(
-      'DELETE FROM sms_opt_outs WHERE phone = ? AND client_id = ?'
-    ).run(phone, clientId);
+    await db.query(
+      'DELETE FROM sms_opt_outs WHERE phone = ? AND client_id = ?',
+      [phone, clientId],
+      'run'
+    );
 
     logger.info(`[optOut] Recorded opt-in for ${phone}`);
     return true;

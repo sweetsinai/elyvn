@@ -1,0 +1,255 @@
+/**
+ * Server Startup & Initialization
+ * Database init, migrations, scheduler, metrics, job processor, graceful shutdown.
+ */
+
+const { logger } = require('../utils/logger');
+const { captureException } = require('../utils/monitoring');
+const { createDatabase } = require('../utils/dbAdapter');
+const { JOB_PROCESSOR_INTERVAL, DATA_RETENTION_DAILY_INTERVAL_MS, AUTO_CLASSIFY_INTERVAL_MS } = require('./timing');
+
+/**
+ * Send critical errors to Telegram (admin chat).
+ */
+async function alertCriticalError(context, error) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+  if (!token || !chatId) return;
+  const msg = `ELYVN Error\n\nContext: ${context}\nError: ${String(error?.message || error).slice(0, 500)}\nTime: ${new Date().toISOString()}`;
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: msg }),
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch (_) { /* alerting failure is non-fatal */ }
+}
+
+/**
+ * Validate required/recommended environment variables. Exits on fatal missing vars.
+ */
+function validateEnv() {
+  const REQUIRED_ENV = ['ANTHROPIC_API_KEY'];
+  const RECOMMENDED_ENV = ['RETELL_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'ELYVN_API_KEY'];
+  const missingRequired = REQUIRED_ENV.filter(v => !process.env[v]);
+  if (missingRequired.length > 0) {
+    logger.error(`[FATAL] Missing required env vars: ${missingRequired.join(', ')}`);
+    logger.error('[FATAL] Server cannot start without these. Check your .env file.');
+    process.exit(1);
+  }
+  const missingRecommended = RECOMMENDED_ENV.filter(v => !process.env[v]);
+  if (missingRecommended.length > 0) {
+    logger.warn(`[WARN] Missing recommended env vars: ${missingRecommended.join(', ')} — some features will be disabled`);
+  }
+  if (!process.env.ELYVN_API_KEY) {
+    logger.warn('[WARN] ELYVN_API_KEY not set — API endpoints are UNPROTECTED. Set this before going live!');
+  }
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    logger.error('[FATAL] JWT_SECRET must be set and at least 32 characters for security');
+    process.exit(1);
+  }
+  if (process.env.NODE_ENV === 'production' && !process.env.STRIPE_SECRET_KEY) {
+    logger.warn('[WARN] STRIPE_SECRET_KEY not set — billing features disabled');
+  }
+  if (process.env.NODE_ENV === 'production' && !process.env.TELEGRAM_ADMIN_CHAT_ID) {
+    logger.warn('[WARN] TELEGRAM_ADMIN_CHAT_ID not set — critical error alerts to Telegram disabled');
+  }
+  if (!process.env.ENCRYPTION_KEY) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[FATAL] ENCRYPTION_KEY not set in production — PII (phone, email) will be stored unencrypted. Set a 32-byte hex key and restart.');
+      process.exit(1);
+    } else {
+      logger.warn('[WARN] ENCRYPTION_KEY not set — PII columns will not be encrypted. Set before going to production.');
+    }
+  }
+}
+
+/**
+ * Initialize database, cancel stale jobs, recover stalled jobs.
+ * @param {import('express').Application} app
+ * @returns {object} better-sqlite3 db instance
+ */
+async function initializeDatabase(app) {
+  let db;
+  try {
+    db = createDatabase();
+  } catch (err) {
+    logger.error('[server] Database connection failed:', err.message);
+    process.exit(1);
+  }
+
+  app.locals.db = db;
+
+  // Cancel all pending followup_sms jobs
+  try {
+    const cancelled = await db.query("UPDATE job_queue SET status = 'cancelled' WHERE status = 'pending' AND type = 'followup_sms'", [], 'run');
+    if (cancelled.changes > 0) {
+      logger.info(`[server] Cancelled ${cancelled.changes} pending followup_sms jobs`);
+    }
+  } catch (err) {
+    logger.error('[server] Failed to cancel pending SMS jobs:', err.message);
+  }
+
+  // Recover stalled jobs from crashes
+  (async () => {
+    try {
+      const { recoverStalledJobs } = require('../utils/jobQueue');
+      const result = await recoverStalledJobs(db);
+      if (result.recovered > 0) {
+        logger.info(`[server] Job recovery complete: ${result.recovered} jobs recovered`);
+      }
+    } catch (err) {
+      logger.error('[server] Job recovery failed:', err.message);
+    }
+  })();
+
+  return db;
+}
+
+/**
+ * Initialize all server services after listen (WebSocket, metrics, scheduler, jobs, graceful shutdown).
+ * @param {import('express').Application} app
+ * @param {import('http').Server} server
+ * @param {{ rateLimiterInterval: NodeJS.Timer }} routeHandles - cleanup handles from mountRoutes
+ */
+function initializeServer(app, server, routeHandles) {
+  const db = app.locals.db;
+  const PORT = process.env.PORT || 3001;
+
+  // Graceful shutdown
+  const { initGracefulShutdown } = require('../utils/gracefulShutdown');
+  initGracefulShutdown(server, db);
+
+  // Initialize WebSocket
+  const { initWebSocket } = require('../utils/websocket');
+  initWebSocket(server, db);
+
+  // Initialize metrics flush & threshold alerting
+  const { initMetricsFlush } = require('../utils/metrics');
+  if (db) initMetricsFlush(db);
+
+  // Initialize Telegram scheduler
+  const { initScheduler } = require('../utils/scheduler');
+  if (db) initScheduler(db);
+
+  // Start backup scheduler
+  if (db) {
+    const { scheduleBackups } = require('../utils/backup');
+    scheduleBackups(db._path, 24, db);
+  }
+
+  // Data retention is scheduled exclusively by scheduler.js at 3 AM — do not double-schedule here.
+
+  // Start job queue processor
+  let jobProcessorInterval;
+  if (db) {
+    const { processJobs } = require('../utils/jobQueue');
+    const { sendSMS } = require('../utils/sms');
+    const { triggerSpeedSequence } = require('../utils/speed-to-lead');
+    const { createJobHandlers } = require('../utils/jobHandlers');
+
+    const jobHandlers = createJobHandlers(db, sendSMS, captureException);
+
+    jobProcessorInterval = setInterval(() => {
+      try {
+        processJobs(db, jobHandlers).catch(err => {
+          logger.error('[jobQueue] Processing error:', err.message);
+          if (captureException) {
+            captureException(err, { context: 'jobQueue.processJobs' });
+          }
+        });
+      } catch (err) {
+        logger.error('[jobQueue] Unexpected error in setInterval:', err.message);
+        if (captureException) {
+          captureException(err, { context: 'jobQueue.setInterval' });
+        }
+      }
+    }, JOB_PROCESSOR_INTERVAL);
+  }
+
+  // Start outbound webhook delivery processor
+  if (db) {
+    const { startProcessor: startWebhookProcessor } = require('../utils/webhookQueue');
+    startWebhookProcessor();
+  }
+
+  // Auto-classify replies
+  const { autoClassifyReplies } = require('../utils/autoClassify');
+  const autoClassifyInterval = setInterval(async () => {
+    try {
+      const unclassified = await db.query(`
+        SELECT COUNT(*) as c FROM emails_sent
+        WHERE reply_text IS NOT NULL AND reply_classification IS NULL
+      `, [], 'get');
+      if (unclassified.c > 0) {
+        logger.info(`[auto-classify] Found ${unclassified.c} unclassified replies, triggering...`);
+        try {
+          const result = await autoClassifyReplies(db);
+          logger.info(`[auto-classify] Completed: ${result.classified} classified`);
+        } catch (err) {
+          logger.error('[auto-classify] Processing error:', err.message);
+          if (captureException) {
+            captureException(err, { context: 'auto-classify.processing' });
+          }
+        }
+      }
+    } catch (err) {
+      logger.error('[auto-classify] Periodic check error:', err.message);
+      if (captureException) {
+        captureException(err, { context: 'auto-classify.periodic' });
+      }
+    }
+  }, AUTO_CLASSIFY_INTERVAL_MS);
+
+  // Register timers for graceful shutdown
+  const { onShutdown } = require('../utils/gracefulShutdown');
+  onShutdown(async () => {
+    if (routeHandles.rateLimiterInterval) clearInterval(routeHandles.rateLimiterInterval);
+    if (jobProcessorInterval) clearInterval(jobProcessorInterval);
+    if (autoClassifyInterval) clearInterval(autoClassifyInterval);
+    try {
+      const { stopProcessor: stopWebhookProcessor } = require('../utils/webhookQueue');
+      stopWebhookProcessor();
+    } catch (err) {
+      logger.error('[shutdown] Error stopping webhookQueue processor:', err.message);
+    }
+    try {
+      const { shutdownTracing } = require('../utils/tracing');
+      await shutdownTracing();
+    } catch (err) {
+      logger.error('[shutdown] Error shutting down tracing:', err.message);
+    }
+    try {
+      const { stopScheduler } = require('../utils/scheduler');
+      stopScheduler();
+    } catch (err) {
+      logger.error('[shutdown] Error stopping scheduler:', err.message);
+    }
+    try {
+      const { cleanupFormTimers } = require('../routes/forms');
+      cleanupFormTimers();
+    } catch (err) {
+      logger.error('[shutdown] Error cleaning up form timers:', err.message);
+    }
+    try {
+      const { cleanupSMSTimers } = require('../utils/sms');
+      cleanupSMSTimers();
+    } catch (err) {
+      logger.error('[shutdown] Error cleaning up SMS timers:', err.message);
+    }
+  });
+
+  // Set Telegram webhook on startup
+  if (process.env.TELEGRAM_BOT_TOKEN) {
+    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : process.env.BASE_URL || `http://localhost:${PORT}`;
+    const { setWebhook } = require('../utils/telegram');
+    setWebhook(`${baseUrl}/webhooks/telegram`).catch(err =>
+      logger.error('[startup] Telegram setWebhook failed (non-fatal):', err.message)
+    );
+  }
+}
+
+module.exports = { alertCriticalError, validateEnv, initializeDatabase, initializeServer };

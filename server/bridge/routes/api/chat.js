@@ -8,13 +8,14 @@ const config = require('../../utils/config');
 const { withTimeout } = require('../../utils/resilience');
 const { logger } = require('../../utils/logger');
 const { LENGTH_LIMITS } = require('../../utils/inputValidation');
+const { emailSendLimit } = require('../../middleware/rateLimits');
 
+const { ANTHROPIC_TIMEOUT } = require('../../config/timing');
 const anthropic = new Anthropic();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ANTHROPIC_TIMEOUT = 30000;
 
-// POST /chat — Anthropic API proxy for dashboard AI features
-router.post('/chat', async (req, res) => {
+// POST /chat — Anthropic API proxy for dashboard AI features — 20/min per client
+router.post('/chat', emailSendLimit, async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { messages, clientId } = req.body;
@@ -40,11 +41,17 @@ router.post('/chat', async (req, res) => {
       }
     }
 
-    // Load client KB as system context
+    // Load client KB as system context — use auth-derived clientId, not body-supplied one
+    // req.clientId comes from JWT/API-key middleware; req.isAdmin may override
+    const resolvedClientId = req.isAdmin
+      ? (clientId && UUID_RE.test(clientId) ? clientId : req.clientId)
+      : req.clientId;
+
     let systemPrompt = 'You are an AI assistant for the ELYVN operations dashboard.';
 
-    if (clientId && UUID_RE.test(clientId)) {
-      const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    if (resolvedClientId && UUID_RE.test(resolvedClientId)) {
+      const clientId = resolvedClientId; // shadow body var so rest of block uses auth value
+      const client = await db.query('SELECT id, business_name FROM clients WHERE id = ?', [clientId], 'get');
       if (client) {
         systemPrompt += `\n\nYou are assisting with ${client.business_name}.`;
       }
@@ -68,8 +75,10 @@ router.post('/chat', async (req, res) => {
 
       // Add recent stats context
       try {
-        const callCount = db.prepare('SELECT COUNT(*) as count FROM calls WHERE client_id = ?').get(clientId).count;
-        const leadCount = db.prepare('SELECT COUNT(*) as count FROM leads WHERE client_id = ?').get(clientId).count;
+        const callCountResult = await db.query('SELECT COUNT(*) as count FROM calls WHERE client_id = ?', [clientId], 'get');
+        const callCount = callCountResult.count;
+        const leadCountResult = await db.query('SELECT COUNT(*) as count FROM leads WHERE client_id = ?', [clientId], 'get');
+        const leadCount = leadCountResult.count;
         systemPrompt += `\n\nCurrent stats: ${callCount} total calls, ${leadCount} total leads.`;
       } catch (err) {
         logger.error('[api] Failed to load stats:', err.message);
@@ -108,7 +117,7 @@ router.post('/chat', async (req, res) => {
     });
   } catch (err) {
     logger.error('[api] chat error:', err);
-    res.status(500).json({ error: 'Failed to process chat' });
+    next(err);
   }
 });
 

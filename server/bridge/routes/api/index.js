@@ -14,5 +14,10 @@ router.use(require('./schedule'));
 router.use(require('./chat'));
 router.use(require('./reports'));
 router.use(require('./health'));
+router.use(require('./system'));
+router.use(require('./exports'));
+router.use(require('./usage'));
+router.use(require('./settings'));
+router.use(require('./referral'));
 
 module.exports = router;

@@ -1,5 +1,6 @@
 const https = require('https');
 const { logger } = require('./logger');
+const { CircuitBreaker } = require('./resilience');
 
 // === Twilio config ===
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
@@ -16,6 +17,24 @@ if (SMS_PROVIDER) {
 }
 
 const { SMS_MIN_GAP_MS, SMS_RATE_LIMIT_CLEANUP_MS, SMS_MAX_RATE_LIMIT_ENTRIES, DUPLICATE_SMS_LOOKBACK_MS } = require('../config/timing');
+
+// Circuit breaker for Twilio REST API — opens after 5 failures in 60s, cools down 30s.
+const twilioBreaker = new CircuitBreaker(
+  async (options, data) => {
+    const response = await httpsRequest(options, data);
+    if (response.status !== 201 && response.status !== 200) {
+      const errorMsg = response.body?.message || response.body?.error_message || JSON.stringify(response.body);
+      throw new Error(`Twilio API error (${response.status}): ${errorMsg}`);
+    }
+    return response;
+  },
+  {
+    failureThreshold: 5,
+    failureWindow: 60000,
+    cooldownPeriod: 30000,
+    serviceName: 'Twilio',
+  }
+);
 
 /**
  * Make an HTTPS request and return {status, body}
@@ -86,13 +105,7 @@ async function sendViaTwilio(to, body, from) {
     },
   };
 
-  const response = await httpsRequest(options, formData);
-
-  if (response.status !== 201 && response.status !== 200) {
-    const errorMsg = response.body?.message || response.body?.error_message || JSON.stringify(response.body);
-    throw new Error(`Twilio API error (${response.status}): ${errorMsg}`);
-  }
-
+  const response = await twilioBreaker.call(options, formData);
   return response.body?.sid || response.body?.message_sid;
 }
 
@@ -117,7 +130,7 @@ async function sendSMS(to, body, from, db, clientId) {
   if (db && clientId) {
     try {
       const { isOptedOut } = require('./optOut');
-      if (isOptedOut(db, to, clientId)) {
+      if (await isOptedOut(db, to, clientId)) {
         logger.info(`[sms] Number ${to} is opted out — skipping send`);
         return { success: false, reason: 'opted_out' };
       }
@@ -157,6 +170,9 @@ async function sendSMS(to, body, from, db, clientId) {
       recordMetric('total_sms_sent', 1, 'counter');
     } catch (_) {}
 
+    // Track usage for billing
+    try { const { trackUsage } = require('./usageTracker'); trackUsage(db, clientId, 'sms'); } catch (_) {}
+
     return { success: true, messageId };
   } catch (err) {
     logger.error(`[sms] [twilio] Failed to send to ${to}:`, err.message);
@@ -184,7 +200,7 @@ async function sendSMS(to, body, from, db, clientId) {
  */
 async function sendSMSToOwner(db, clientId, body) {
   try {
-    const client = db.prepare('SELECT owner_phone, twilio_phone FROM clients WHERE id = ?').get(clientId);
+    const client = await db.query('SELECT owner_phone, twilio_phone FROM clients WHERE id = ?', [clientId], 'get');
 
     if (!client?.owner_phone) {
       logger.error(`[sms] No owner_phone for client ${clientId}`);
@@ -203,15 +219,15 @@ function cleanupSMSTimers() {
   if (smsRateLimitCleanupInterval) clearInterval(smsRateLimitCleanupInterval);
 }
 
-function initRateLimiterFromDB(db) {
+async function initRateLimiterFromDB(db) {
   if (!db) return;
   try {
-    const recentSent = db.prepare(`
+    const recentSent = await db.query(`
       SELECT phone, MAX(created_at) as last_sent
       FROM messages
       WHERE direction = 'outbound' AND created_at > datetime('now', '-1 hour')
       GROUP BY phone
-    `).all();
+    `);
     for (const row of recentSent) {
       lastSendTime.set(row.phone, new Date(row.last_sent).getTime());
     }
@@ -223,4 +239,4 @@ function initRateLimiterFromDB(db) {
   }
 }
 
-module.exports = { sendSMS, sendSMSToOwner, cleanupSMSTimers, initRateLimiterFromDB, SMS_PROVIDER };
+module.exports = { sendSMS, sendSMSToOwner, cleanupSMSTimers, initRateLimiterFromDB, SMS_PROVIDER, _twilioBreaker: twilioBreaker };

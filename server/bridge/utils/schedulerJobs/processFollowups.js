@@ -2,17 +2,21 @@ const { BRAIN_FOLLOWUP_THROTTLE_MS } = require('../../config/timing');
 const { logger } = require('../logger');
 
 async function processFollowups(db) {
+  const startTime = Date.now();
+  let processed = 0;
+  let errors = 0;
+
   try {
-    const due = db.prepare(
+    const due = await db.query(
       `SELECT f.*, l.phone, l.client_id as lead_client_id
        FROM followups f
        JOIN leads l ON f.lead_id = l.id
        WHERE f.status = 'scheduled' AND f.scheduled_at <= datetime('now')
        LIMIT 10`
-    ).all();
+    );
 
     if (due.length === 0) return;
-    logger.info(`[Scheduler] Processing ${due.length} due follow-ups`);
+    logger.info(`[processFollowups] START — processing ${due.length} due follow-ups`);
 
     const { getLeadMemory } = require('../leadMemory');
     const { think } = require('../brain');
@@ -20,9 +24,10 @@ async function processFollowups(db) {
 
     for (const followup of due) {
       try {
-        const memory = getLeadMemory(db, followup.phone, followup.lead_client_id || followup.client_id);
+        const memory = await getLeadMemory(db, followup.phone, followup.lead_client_id || followup.client_id);
         if (!memory) {
-          db.prepare("UPDATE followups SET status = 'failed' WHERE id = ?").run(followup.id);
+          await db.query("UPDATE followups SET status = 'failed' WHERE id = ?", [followup.id], 'run');
+          errors++;
           continue;
         }
 
@@ -34,18 +39,23 @@ async function processFollowups(db) {
         }, memory, db);
 
         await executeActions(db, decision.actions, memory);
-        db.prepare("UPDATE followups SET status = 'sent', sent_at = datetime('now') WHERE id = ?").run(followup.id);
+        await db.query("UPDATE followups SET status = 'sent', sent_at = datetime('now') WHERE id = ?", [followup.id], 'run');
+        processed++;
       } catch (err) {
-        logger.error(`[Scheduler] Follow-up ${followup.id} failed:`, err.message);
-        db.prepare("UPDATE followups SET status = 'failed' WHERE id = ?").run(followup.id);
+        logger.error(`[processFollowups] Follow-up ${followup.id} failed:`, err.message);
+        await db.query("UPDATE followups SET status = 'failed' WHERE id = ?", [followup.id], 'run');
+        errors++;
       }
 
       // Rate limit between brain calls
       await new Promise(r => setTimeout(r, BRAIN_FOLLOWUP_THROTTLE_MS));
     }
   } catch (err) {
-    logger.error('[Scheduler] processFollowups error:', err);
+    logger.error('[processFollowups] error:', err);
+    errors++;
   }
+
+  logger.info(`[processFollowups] DONE — processed ${processed}, errors ${errors}, duration ${Date.now() - startTime}ms`);
 }
 
 module.exports = { processFollowups };

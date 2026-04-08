@@ -70,26 +70,26 @@ async function checkReplies(db) {
 
                   // Match reply to a sent email by to_email (the address we sent TO)
                   // This handles cases where prospect's reply-from differs from scraped email
-                  const sentEmail = db.prepare(`
+                  const sentEmail = await db.query(`
                     SELECT es.*, p.id as p_id, p.business_name, p.phone as p_phone, p.city as p_city
                     FROM emails_sent es
                     LEFT JOIN prospects p ON p.id = es.prospect_id
                     WHERE es.to_email = ? AND es.reply_text IS NULL AND es.status = 'sent'
                     ORDER BY es.sent_at DESC LIMIT 1
-                  `).get(from);
+                  `, [from], 'get');
 
                   if (!sentEmail) {
                     // Fallback: try matching by prospects.email (in case reply came from a different address)
-                    const fallbackProspect = db.prepare('SELECT * FROM prospects WHERE email = ?').get(from);
+                    const fallbackProspect = await db.query('SELECT * FROM prospects WHERE email = ?', [from], 'get');
                     if (!fallbackProspect) {
                       logger.info(`[Replies] No matching email found for reply from: ${from}`);
                       continue;
                     }
                     // Try to find the sent email via prospect_id
-                    const fallbackEmail = db.prepare(`
+                    const fallbackEmail = await db.query(`
                       SELECT * FROM emails_sent WHERE prospect_id = ? AND reply_text IS NULL AND status = 'sent'
                       ORDER BY sent_at DESC LIMIT 1
-                    `).get(fallbackProspect.id);
+                    `, [fallbackProspect.id], 'get');
                     if (!fallbackEmail) continue;
                     // Patch sentEmail for downstream use
                     Object.assign(sentEmail || {}, fallbackEmail, {
@@ -112,10 +112,10 @@ async function checkReplies(db) {
                   logger.info(`[Replies] ${from}: ${result.classification} -- ${result.summary}`);
 
                   // Update the emails_sent record with reply data
-                  db.prepare(`
+                  await db.query(`
                     UPDATE emails_sent SET reply_text = ?, reply_at = datetime('now'), updated_at = datetime('now')
                     WHERE id = ?
-                  `).run(body.substring(0, 2000), sentEmail.id);
+                  `, [body.substring(0, 2000), sentEmail.id], 'run');
                   // NOTE: reply_classification left NULL — auto-classify cron will handle it
 
                   // Act on reply — update prospect status, notify owner
@@ -123,10 +123,10 @@ async function checkReplies(db) {
                   const now = new Date().toISOString();
                   if (prospect) {
                     // Mark prospect as replied so auto-classify picks it up
-                    db.prepare("UPDATE prospects SET status = 'replied', updated_at = ? WHERE id = ?").run(now, prospect.id);
+                    await db.query("UPDATE prospects SET status = 'replied', updated_at = ? WHERE id = ?", [now, prospect.id], 'run');
 
                     // Telegram notification for all replies
-                    const clients = db.prepare('SELECT telegram_chat_id, calcom_booking_link FROM clients WHERE telegram_chat_id IS NOT NULL').all();
+                    const clients = await db.query('SELECT telegram_chat_id, calcom_booking_link FROM clients WHERE telegram_chat_id IS NOT NULL');
                     for (const c of clients) {
                       telegram.sendMessage(c.telegram_chat_id,
                         `<b>New reply from prospect</b>\n\n<b>${prospect.business_name || from}</b>\n"${result.summary}"\n\nAuto-classification pending.`

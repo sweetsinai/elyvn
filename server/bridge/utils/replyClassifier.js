@@ -14,9 +14,11 @@ async function classifyReply(emailBody, originalSubject) {
   try {
     const resp = await anthropic.messages.create({
       model: config.ai.model,
-      max_tokens: 100,
+      max_tokens: 150,
       system: `Classify this email reply into exactly one category. Return JSON only:
-{"classification": "INTERESTED" | "QUESTION" | "NOT_INTERESTED" | "UNSUBSCRIBE", "summary": "one sentence summary"}
+{"classification": "INTERESTED" | "QUESTION" | "NOT_INTERESTED" | "UNSUBSCRIBE", "confidence": 0.0-1.0, "summary": "one sentence summary"}
+
+confidence: how certain you are in this classification (0.0 = no idea, 1.0 = absolutely certain).
 
 INTERESTED: wants to learn more, book a call, see a demo
 QUESTION: has a question but not clearly interested or disinterested
@@ -45,10 +47,16 @@ UNSUBSCRIBE: asks to be removed, stop emailing, etc.`,
     }
     result.summary = result.summary.substring(0, 500);
 
+    // Normalize confidence to a number between 0 and 1
+    if (typeof result.confidence !== 'number' || isNaN(result.confidence)) {
+      result.confidence = 0.5; // uncertain if model didn't return it
+    }
+    result.confidence = Math.max(0, Math.min(1, result.confidence));
+
     return result;
   } catch (err) {
     logger.error('[ReplyClassifier] Error:', err.message);
-    return { classification: 'QUESTION', summary: 'Classification failed — needs manual review' };
+    return { classification: 'QUESTION', confidence: 0, summary: 'Classification failed — needs manual review' };
   }
 }
 

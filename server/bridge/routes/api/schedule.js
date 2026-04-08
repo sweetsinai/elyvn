@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { logger } = require('../../utils/logger');
 const { isValidUUID } = require('../../utils/validate');
+const { clientIsolationParam } = require('../../utils/clientIsolation');
+router.param('clientId', clientIsolationParam);
 
 // GET /schedule/:clientId — AI-generated daily contact schedule
-router.get('/schedule/:clientId', (req, res) => {
+router.get('/schedule/:clientId', (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
@@ -18,12 +20,12 @@ router.get('/schedule/:clientId', (req, res) => {
     res.json({ data: schedule, meta: { total: schedule.length } });
   } catch (err) {
     logger.error('[api] schedule error:', err);
-    res.status(500).json({ error: 'Failed to generate schedule' });
+    next(err);
   }
 });
 
 // GET /schedule/:clientId/time-slots — Optimal time slot analysis
-router.get('/schedule/:clientId/time-slots', (req, res) => {
+router.get('/schedule/:clientId/time-slots', (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
@@ -37,7 +39,7 @@ router.get('/schedule/:clientId/time-slots', (req, res) => {
     res.json({ data: analysis });
   } catch (err) {
     logger.error('[api] time-slots error:', err);
-    res.status(500).json({ error: 'Failed to analyze time slots' });
+    next(err);
   }
 });
 

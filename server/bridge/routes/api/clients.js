@@ -6,9 +6,21 @@ const fsPromises = require('fs').promises;
 const path = require('path');
 const { isValidUUID } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
+const { AppError } = require('../../utils/AppError');
 const { validateEmail, validatePhone, validateLength, LENGTH_LIMITS } = require('../../utils/inputValidation');
+const { cachedGet, invalidateCache, CACHE_TTL } = require('../../utils/dbAdapter');
+const { parsePagination } = require('../../utils/dbHelpers');
+const { logDataMutation } = require('../../utils/auditLog');
+const { validateParams, validateBody, validateQuery } = require('../../middleware/validateRequest');
+const { ClientParamsSchema, ClientCreateSchema } = require('../../utils/schemas/client');
+const { PaginationSchema } = require('../../utils/schemas/common');
+const { clientIsolationParam } = require('../../utils/clientIsolation');
+router.param('clientId', clientIsolationParam);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Safe columns to return — never expose password_hash, verification_token, verification_expires
+const CLIENT_SAFE_COLS = 'id, business_name, owner_name, owner_email, owner_phone, phone, email, website, industry, timezone, plan, subscription_status, stripe_customer_id, stripe_subscription_id, retell_agent_id, retell_phone, twilio_phone, transfer_phone, calcom_event_type_id, calcom_booking_link, booking_link, google_review_link, telegram_chat_id, avg_ticket, ticket_price, ai_enabled, auto_followup_enabled, is_active, created_at, updated_at';
 
 // Whitelist of allowed client fields for updates (prevents SQL injection)
 const ALLOWED_CLIENT_FIELDS = new Set([
@@ -16,39 +28,44 @@ const ALLOWED_CLIENT_FIELDS = new Set([
   'google_review_link', 'ticket_price', 'timezone', 'ai_enabled',
   'booking_link', 'industry', 'auto_followup_enabled',
   'owner_name', 'owner_phone', 'owner_email',
-  'retell_agent_id', 'retell_phone', 'twilio_phone', 'transfer_phone',
+  'retell_agent_id', 'retell_phone', 'retell_voice', 'retell_language',
+  'twilio_phone', 'transfer_phone',
   'calcom_event_type_id', 'calcom_booking_link', 'telegram_chat_id',
-  'avg_ticket', 'is_active', 'plan'
+  'avg_ticket', 'is_active', 'plan',
+  'notification_mode', 'whatsapp_phone',
+  'facebook_page_id', 'instagram_user_id',
 ]);
 
-// GET /clients
-router.get('/clients', (req, res) => {
+// GET /clients — migrated to async db.query() for SQLite + Supabase compatibility
+router.get('/clients', validateQuery(PaginationSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 25));
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination(req.query, 25, 100);
 
     let clients;
     let total;
     if (req.isAdmin) {
-      total = db.prepare('SELECT COUNT(*) as count FROM clients').get().count;
-      clients = db.prepare('SELECT * FROM clients ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset);
+      const countResult = await db.query('SELECT COUNT(*) as count FROM clients', [], 'get');
+      total = countResult.count;
+      clients = await db.query(`SELECT ${CLIENT_SAFE_COLS} FROM clients ORDER BY created_at DESC LIMIT ? OFFSET ?`, [limit, offset], 'all');
     } else if (req.clientId) {
-      clients = db.prepare('SELECT * FROM clients WHERE id = ?').all(req.clientId);
+      // Use db.query for SQLite + Supabase compat
+      const clientRecord = await db.query(`SELECT ${CLIENT_SAFE_COLS} FROM clients WHERE id = ?`, [req.clientId], 'get');
+      clients = clientRecord ? [clientRecord] : [];
       total = clients.length;
     } else {
-      return res.status(403).json({ error: 'Forbidden' });
+      return next(new AppError('FORBIDDEN', 'Forbidden', 403));
     }
     res.json({ data: clients, meta: { page, limit, total, total_pages: Math.ceil(total / limit) } });
   } catch (err) {
     logger.error('[api] clients error:', err);
-    res.status(500).json({ error: 'Failed to fetch clients' });
+    return next(new AppError('INTERNAL_ERROR', 'Failed to fetch clients', 500));
   }
 });
 
-// POST /clients
-router.post('/clients', async (req, res) => {
+// POST /clients — admin only
+router.post('/clients', validateBody(ClientCreateSchema), async (req, res, next) => {
+  if (!req.isAdmin) return next(new AppError('FORBIDDEN', 'Admin access required', 403));
   try {
     const db = req.app.locals.db;
     const {
@@ -60,20 +77,20 @@ router.post('/clients', async (req, res) => {
 
     // Validate required business_name
     if (!business_name) {
-      return res.status(400).json({ error: 'business_name is required' });
+      return next(new AppError('MISSING_FIELD', 'business_name is required', 400));
     }
 
     // Validate input lengths
     const nameValidation = validateLength(business_name, 'business_name', LENGTH_LIMITS.name);
     if (!nameValidation.valid) {
-      return res.status(400).json({ error: nameValidation.error });
+      return next(new AppError('VALIDATION_ERROR', nameValidation.error, 400));
     }
 
     // Validate owner_email if provided
     if (owner_email) {
       const emailValidation = validateEmail(owner_email);
       if (!emailValidation.valid) {
-        return res.status(400).json({ error: emailValidation.error });
+        return next(new AppError('VALIDATION_ERROR', emailValidation.error, 400));
       }
     }
 
@@ -81,7 +98,7 @@ router.post('/clients', async (req, res) => {
     if (owner_phone) {
       const phoneValidation = validatePhone(owner_phone);
       if (!phoneValidation.valid) {
-        return res.status(400).json({ error: phoneValidation.error });
+        return next(new AppError('VALIDATION_ERROR', phoneValidation.error, 400));
       }
     }
 
@@ -89,21 +106,21 @@ router.post('/clients', async (req, res) => {
     if (retell_phone) {
       const phoneValidation = validatePhone(retell_phone);
       if (!phoneValidation.valid) {
-        return res.status(400).json({ error: `Invalid retell_phone: ${phoneValidation.error}` });
+        return next(new AppError('VALIDATION_ERROR', `Invalid retell_phone: ${phoneValidation.error}`, 400));
       }
     }
 
     if (twilio_phone) {
       const phoneValidation = validatePhone(twilio_phone);
       if (!phoneValidation.valid) {
-        return res.status(400).json({ error: `Invalid twilio_phone: ${phoneValidation.error}` });
+        return next(new AppError('VALIDATION_ERROR', `Invalid twilio_phone: ${phoneValidation.error}`, 400));
       }
     }
 
     if (transfer_phone) {
       const phoneValidation = validatePhone(transfer_phone);
       if (!phoneValidation.valid) {
-        return res.status(400).json({ error: `Invalid transfer_phone: ${phoneValidation.error}` });
+        return next(new AppError('VALIDATION_ERROR', `Invalid transfer_phone: ${phoneValidation.error}`, 400));
       }
     }
 
@@ -111,40 +128,40 @@ router.post('/clients', async (req, res) => {
     if (owner_name) {
       const validation = validateLength(owner_name, 'owner_name', LENGTH_LIMITS.name);
       if (!validation.valid) {
-        return res.status(400).json({ error: validation.error });
+        return next(new AppError('VALIDATION_ERROR', validation.error, 400));
       }
     }
 
     if (industry) {
       const validation = validateLength(industry, 'industry', LENGTH_LIMITS.name);
       if (!validation.valid) {
-        return res.status(400).json({ error: validation.error });
+        return next(new AppError('VALIDATION_ERROR', validation.error, 400));
       }
     }
 
     if (calcom_booking_link) {
       const validation = validateLength(calcom_booking_link, 'calcom_booking_link', LENGTH_LIMITS.url);
       if (!validation.valid) {
-        return res.status(400).json({ error: validation.error });
+        return next(new AppError('VALIDATION_ERROR', validation.error, 400));
       }
     }
 
     const id = randomUUID();
     const now = new Date().toISOString();
 
-    db.prepare(`
+    await db.query(`
       INSERT INTO clients (
         id, business_name, owner_name, owner_phone, owner_email,
         retell_agent_id, retell_phone, twilio_phone, transfer_phone, industry, timezone,
         calcom_event_type_id, calcom_booking_link,
         avg_ticket, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `, [
       id, business_name, owner_name || null, owner_phone || null, owner_email || null,
       retell_agent_id || null, retell_phone || null, twilio_phone || null, transfer_phone || null, industry || null, timezone || 'UTC',
       calcom_event_type_id || null, calcom_booking_link || null,
       avg_ticket || 0, now, now
-    );
+    ], 'run');
 
     // Save knowledge base JSON if provided (UUID validated — id is from randomUUID())
     if (knowledge_base) {
@@ -157,25 +174,25 @@ router.post('/clients', async (req, res) => {
       }
     }
 
-    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
+    const client = await db.query(`SELECT ${CLIENT_SAFE_COLS} FROM clients WHERE id = ?`, [id], 'get');
     res.status(201).json({ data: client });
   } catch (err) {
     logger.error('[api] create client error:', err);
-    res.status(500).json({ error: 'Failed to create client' });
+    return next(new AppError('INTERNAL_ERROR', 'Failed to create client', 500));
   }
 });
 
-// PUT /clients/:clientId
-router.put('/clients/:clientId', async (req, res) => {
+// PUT /clients/:clientId — migrated to async db.query() for SQLite + Supabase compatibility
+router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
-    if (!UUID_RE.test(clientId)) return res.status(400).json({ error: 'Invalid client ID format' });
+    if (!UUID_RE.test(clientId)) return next(new AppError('INVALID_INPUT', 'Invalid client ID format', 400));
     const updates = req.body;
 
-    const existing = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    const existing = await db.query(`SELECT ${CLIENT_SAFE_COLS} FROM clients WHERE id = ?`, [clientId], 'get');
     if (!existing) {
-      return res.status(404).json({ error: 'Client not found' });
+      return next(new AppError('NOT_FOUND', 'Client not found', 404));
     }
 
     const setClauses = [];
@@ -190,35 +207,35 @@ router.put('/clients/:clientId', async (req, res) => {
         if (field === 'business_name' && value) {
           const validation = validateLength(value, field, LENGTH_LIMITS.name);
           if (!validation.valid) {
-            return res.status(400).json({ error: validation.error });
+            return next(new AppError('VALIDATION_ERROR', validation.error, 400));
           }
         }
 
         if (field === 'email' && value) {
           const validation = validateEmail(value);
           if (!validation.valid) {
-            return res.status(400).json({ error: validation.error });
+            return next(new AppError('VALIDATION_ERROR', validation.error, 400));
           }
         }
 
         if (field === 'owner_email' && value) {
           const validation = validateEmail(value);
           if (!validation.valid) {
-            return res.status(400).json({ error: validation.error });
+            return next(new AppError('VALIDATION_ERROR', validation.error, 400));
           }
         }
 
         if (['phone', 'owner_phone', 'retell_phone', 'twilio_phone', 'transfer_phone'].includes(field) && value) {
           const validation = validatePhone(value);
           if (!validation.valid) {
-            return res.status(400).json({ error: `Invalid ${field}: ${validation.error}` });
+            return next(new AppError('VALIDATION_ERROR', `Invalid ${field}: ${validation.error}`, 400));
           }
         }
 
         if (['business_address', 'owner_name', 'industry', 'website', 'google_review_link', 'calcom_booking_link', 'booking_link'].includes(field) && value) {
           const validation = validateLength(value, field, LENGTH_LIMITS.text);
           if (!validation.valid) {
-            return res.status(400).json({ error: validation.error });
+            return next(new AppError('VALIDATION_ERROR', validation.error, 400));
           }
         }
 
@@ -228,7 +245,7 @@ router.put('/clients/:clientId', async (req, res) => {
     }
 
     if (setClauses.length === 0 && !updates.knowledge_base) {
-      return res.status(400).json({ error: 'No valid fields to update' });
+      return next(new AppError('VALIDATION_ERROR', 'No valid fields to update', 400));
     }
 
     if (setClauses.length > 0) {
@@ -236,8 +253,35 @@ router.put('/clients/:clientId', async (req, res) => {
       values.push(new Date().toISOString());
       values.push(clientId);
 
-      db.prepare(`UPDATE clients SET ${setClauses.join(', ')} WHERE id = ?`).run(...values);
+      await db.query(`UPDATE clients SET ${setClauses.join(', ')} WHERE id = ?`, values, 'run');
     }
+
+    // Invalidate cache after mutation
+    invalidateCache('client:' + clientId);
+
+    // Fire-and-forget: audit trail for client mutation
+    try {
+      const changedFields = {};
+      const oldFields = {};
+      for (const field of setClauses.map(c => c.split(' = ')[0])) {
+        if (field === 'updated_at') continue;
+        if (existing[field] !== updates[field]) {
+          oldFields[field] = existing[field];
+          changedFields[field] = updates[field];
+        }
+      }
+      if (Object.keys(changedFields).length > 0) {
+        logDataMutation(db, {
+          action: 'client_updated',
+          table: 'clients',
+          recordId: clientId,
+          clientId,
+          oldValues: oldFields,
+          newValues: changedFields,
+          ip: req.ip,
+        });
+      }
+    } catch (_) {}
 
     // Update knowledge base if provided
     if (updates.knowledge_base) {
@@ -250,11 +294,11 @@ router.put('/clients/:clientId', async (req, res) => {
       }
     }
 
-    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    const client = await db.query(`SELECT ${CLIENT_SAFE_COLS} FROM clients WHERE id = ?`, [clientId], 'get');
     res.json({ data: client });
   } catch (err) {
     logger.error('[api] update client error:', err);
-    res.status(500).json({ error: 'Failed to update client' });
+    return next(new AppError('INTERNAL_ERROR', 'Failed to update client', 500));
   }
 });
 

@@ -1,16 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const { logger } = require('../../utils/logger');
+const { AppError } = require('../../utils/AppError');
 const { isValidUUID } = require('../../utils/validate');
+const { clientIsolationParam } = require('../../utils/clientIsolation');
+router.param('clientId', clientIsolationParam);
 
 // GET /scoring/:clientId — Batch predictive scores for all active leads
-router.get('/scoring/:clientId', (req, res) => {
+router.get('/scoring/:clientId', (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
 
     if (!isValidUUID(clientId)) {
-      return res.status(400).json({ error: 'Invalid client ID' });
+      return next(new AppError('INVALID_INPUT', 'Invalid client ID', 400));
     }
 
     const { batchScoreLeads } = require('../../utils/leadScoring');
@@ -18,37 +21,48 @@ router.get('/scoring/:clientId', (req, res) => {
     res.json({ data: scores, meta: { total: scores.length } });
   } catch (err) {
     logger.error('[api] scoring error:', err);
-    res.status(500).json({ error: 'Failed to score leads' });
+    return next(new AppError('INTERNAL_ERROR', 'Failed to score leads', 500));
   }
 });
 
-// GET /scoring/:clientId/:leadId — Individual lead predictive score
-router.get('/scoring/:clientId/:leadId', (req, res) => {
+// GET /scoring/:clientId/:leadId — Individual lead predictive score with factor breakdown
+router.get('/scoring/:clientId/:leadId', (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId, leadId } = req.params;
 
     if (!isValidUUID(clientId) || !isValidUUID(leadId)) {
-      return res.status(400).json({ error: 'Invalid client ID or lead ID' });
+      return next(new AppError('INVALID_INPUT', 'Invalid client ID or lead ID', 400));
     }
 
     const { predictLeadScore } = require('../../utils/leadScoring');
-    const score = predictLeadScore(db, leadId, clientId);
-    res.json({ data: score });
+    const result = predictLeadScore(db, leadId, clientId);
+
+    // Return full factor breakdown + model version so callers can display explainability
+    res.json({
+      data: {
+        score: result.score,
+        factors: result.factors,          // { responsiveness, engagement, intent, recency, channelDiversity }
+        insight: result.insight,
+        recommended_action: result.recommended_action,
+        details: result.details,
+        model_version: result.model_version,
+      },
+    });
   } catch (err) {
     logger.error('[api] lead score error:', err);
-    res.status(500).json({ error: 'Failed to score lead' });
+    return next(new AppError('INTERNAL_ERROR', 'Failed to score lead', 500));
   }
 });
 
 // GET /scoring/:clientId/analytics/conversion — Conversion analytics
-router.get('/scoring/:clientId/analytics/conversion', (req, res) => {
+router.get('/scoring/:clientId/analytics/conversion', (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
 
     if (!isValidUUID(clientId)) {
-      return res.status(400).json({ error: 'Invalid client ID' });
+      return next(new AppError('INVALID_INPUT', 'Invalid client ID', 400));
     }
 
     const { getConversionAnalytics } = require('../../utils/leadScoring');
@@ -56,7 +70,26 @@ router.get('/scoring/:clientId/analytics/conversion', (req, res) => {
     res.json({ data: analytics });
   } catch (err) {
     logger.error('[api] conversion analytics error:', err);
-    res.status(500).json({ error: 'Failed to get conversion analytics' });
+    return next(new AppError('INTERNAL_ERROR', 'Failed to get conversion analytics', 500));
+  }
+});
+
+// GET /scoring/:clientId/:leadId/insights — Feature-derived intelligence for a lead
+router.get('/scoring/:clientId/:leadId/insights', (req, res, next) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId, leadId } = req.params;
+
+    if (!isValidUUID(clientId) || !isValidUUID(leadId)) {
+      return next(new AppError('INVALID_INPUT', 'Invalid client ID or lead ID', 400));
+    }
+
+    const { getLeadInsights } = require('../../utils/leadIntelligence');
+    const insights = getLeadInsights(db, leadId);
+    res.json({ data: insights });
+  } catch (err) {
+    logger.error('[api] lead insights error:', err);
+    return next(new AppError('INTERNAL_ERROR', 'Failed to get lead insights', 500));
   }
 });
 

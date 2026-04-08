@@ -12,7 +12,7 @@ const { logger } = require('./logger');
  * @param {object} appointment - Appointment object {id, client_id, lead_id, phone, name, service, datetime}
  * @returns {boolean} Success
  */
-function scheduleReminders(db, appointment) {
+async function scheduleReminders(db, appointment) {
   if (!db || !appointment || !appointment.id || !appointment.datetime) {
     logger.warn('[appointmentReminders] Missing required fields');
     return false;
@@ -30,9 +30,11 @@ function scheduleReminders(db, appointment) {
     const phone = appointment.phone;
     const name = appointment.name || 'there';
     const service = appointment.service || 'appointment';
-    const businessName = db.prepare(
-      'SELECT business_name FROM clients WHERE id = ?'
-    ).get(clientId)?.business_name || 'our business';
+    const clientRow = await db.query(
+      'SELECT business_name FROM clients WHERE id = ?',
+      [clientId], 'get'
+    );
+    const businessName = clientRow?.business_name || 'our business';
 
     const timeStr = apptTime.toLocaleTimeString('en-US', {
       hour: 'numeric',
@@ -72,26 +74,27 @@ function scheduleReminders(db, appointment) {
       }
 
       // Dedup: skip if already scheduled
-      const existing = db.prepare(
-        "SELECT id FROM followups WHERE lead_id = ? AND touch_number = ? AND type = 'reminder' AND status = 'scheduled'"
-      ).get(leadId, reminder.touchNumber);
+      const existing = await db.query(
+        "SELECT id FROM followups WHERE lead_id = ? AND touch_number = ? AND type = 'reminder' AND status = 'scheduled'",
+        [leadId, reminder.touchNumber], 'get'
+      );
 
       if (existing) {
         logger.info(`[appointmentReminders] Already scheduled touch ${reminder.touchNumber}`);
         continue;
       }
 
-      db.prepare(`
+      await db.query(`
         INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
         VALUES (?, ?, ?, ?, 'reminder', ?, 'appointment_reminder_template', ?, 'scheduled')
-      `).run(
+      `, [
         randomUUID(),
         leadId,
         clientId,
         reminder.touchNumber,
         reminder.content,
         scheduledAt.toISOString()
-      );
+      ], 'run');
 
       scheduled++;
     }
@@ -114,7 +117,7 @@ async function processDueReminders(db, sendSMSFn) {
   if (!db || !sendSMSFn) return 0;
 
   try {
-    const due = db.prepare(`
+    const due = await db.query(`
       SELECT f.*, l.phone, c.telnyx_phone, c.twilio_phone
       FROM followups f
       JOIN leads l ON f.lead_id = l.id
@@ -124,7 +127,7 @@ async function processDueReminders(db, sendSMSFn) {
       AND f.scheduled_at <= datetime('now')
       AND f.touch_number IN (10, 11, 12)
       LIMIT 20
-    `).all();
+    `);
 
     let sent = 0;
     for (const reminder of due) {
@@ -133,9 +136,10 @@ async function processDueReminders(db, sendSMSFn) {
         const result = await sendSMSFn(reminder.phone, reminder.content, fromPhone);
 
         if (result && result.success) {
-          db.prepare(
-            "UPDATE followups SET status = 'sent', sent_at = datetime('now') WHERE id = ?"
-          ).run(reminder.id);
+          await db.query(
+            "UPDATE followups SET status = 'sent', sent_at = datetime('now') WHERE id = ?",
+            [reminder.id], 'run'
+          );
           sent++;
           logger.info(`[appointmentReminders] Sent reminder ${reminder.id} to ${reminder.phone}`);
         } else {
@@ -144,14 +148,16 @@ async function processDueReminders(db, sendSMSFn) {
           const attempts = (reminder.attempts || 0) + 1;
           if (attempts < 3) {
             const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min later
-            db.prepare(
-              "UPDATE followups SET attempts = ?, scheduled_at = ? WHERE id = ?"
-            ).run(attempts, retryAt, reminder.id);
+            await db.query(
+              "UPDATE followups SET attempts = ?, scheduled_at = ? WHERE id = ?",
+              [attempts, retryAt, reminder.id], 'run'
+            );
             logger.info(`[appointmentReminders] Rescheduled reminder ${reminder.id} (attempt ${attempts}/3) for ${retryAt}`);
           } else {
-            db.prepare(
-              "UPDATE followups SET status = 'failed', attempts = ? WHERE id = ?"
-            ).run(attempts, reminder.id);
+            await db.query(
+              "UPDATE followups SET status = 'failed', attempts = ? WHERE id = ?",
+              [attempts, reminder.id], 'run'
+            );
             logger.warn(`[appointmentReminders] Reminder ${reminder.id} permanently failed after ${attempts} attempts`);
           }
         }
@@ -161,14 +167,16 @@ async function processDueReminders(db, sendSMSFn) {
         const attempts = (reminder.attempts || 0) + 1;
         if (attempts < 3) {
           const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-          db.prepare(
-            "UPDATE followups SET attempts = ?, scheduled_at = ? WHERE id = ?"
-          ).run(attempts, retryAt, reminder.id);
+          await db.query(
+            "UPDATE followups SET attempts = ?, scheduled_at = ? WHERE id = ?",
+            [attempts, retryAt, reminder.id], 'run'
+          );
           logger.info(`[appointmentReminders] Rescheduled reminder ${reminder.id} after error (attempt ${attempts}/3)`);
         } else {
-          db.prepare(
-            "UPDATE followups SET status = 'failed', attempts = ? WHERE id = ?"
-          ).run(attempts, reminder.id);
+          await db.query(
+            "UPDATE followups SET status = 'failed', attempts = ? WHERE id = ?",
+            [attempts, reminder.id], 'run'
+          );
         }
       }
 

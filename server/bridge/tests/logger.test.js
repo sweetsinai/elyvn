@@ -7,7 +7,7 @@ const fs = require('fs');
 
 jest.mock('fs');
 
-const { setupLogger, closeLogger } = require('../utils/logger');
+const { setupLogger, closeLogger, redact, redactPII } = require('../utils/logger');
 
 describe('logger', () => {
   beforeEach(() => {
@@ -208,6 +208,112 @@ describe('logger', () => {
         setupLogger();
         closeLogger();
       }).not.toThrow();
+    });
+  });
+
+  describe('PII redaction — redact()', () => {
+    test('redacts standard 10-digit phone number (dashes)', () => {
+      // The separator before the area code is part of the match
+      expect(redact('Call me at 415-555-1234 please')).toBe('Call me at [PHONE] please');
+    });
+
+    test('redacts phone number with parentheses and space', () => {
+      expect(redact('Phone: (415) 555-1234')).toBe('Phone: [PHONE]');
+    });
+
+    test('redacts E.164 phone number (+1 with separator)', () => {
+      // +1 followed by NXX-NXX-XXXX form
+      expect(redact('+1-415-555-1234')).toBe('[PHONE]');
+    });
+
+    test('redacts E.164 phone number (+1 compact)', () => {
+      expect(redact('+14155551234 is the number')).toBe('[PHONE] is the number');
+    });
+
+    test('redacts email address', () => {
+      expect(redact('Contact john.doe@example.com for help')).toBe('Contact [EMAIL] for help');
+    });
+
+    test('redacts email with plus addressing', () => {
+      expect(redact('Sent to user+tag@domain.co.uk')).toBe('Sent to [EMAIL]');
+    });
+
+    test('redacts credit card number with spaces', () => {
+      expect(redact('Card: 4111 1111 1111 1111')).toBe('Card: [CARD]');
+    });
+
+    test('redacts credit card number with dashes', () => {
+      expect(redact('Card: 4111-1111-1111-1111')).toBe('Card: [CARD]');
+    });
+
+    test('redacts bare 16-digit credit card', () => {
+      expect(redact('4111111111111111')).toBe('[CARD]');
+    });
+
+    test('redacts Stripe live secret key', () => {
+      expect(redact('key=sk_live_abcdef1234567890xyz')).toBe('key=[STRIPE_KEY]');
+    });
+
+    test('redacts Stripe test secret key', () => {
+      expect(redact('sk_test_abcdefghijklmnop is exposed')).toBe('[STRIPE_KEY] is exposed');
+    });
+
+    test('redacts JWT token', () => {
+      const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+      expect(redact(`token: ${jwt}`)).toBe('token: [JWT]');
+    });
+
+    test('returns non-string values unchanged', () => {
+      expect(redact(42)).toBe(42);
+      expect(redact(null)).toBe(null);
+      expect(redact(undefined)).toBe(undefined);
+    });
+
+    test('redacts multiple PII items in one string', () => {
+      const result = redact('User john@acme.com called from 415-555-9876');
+      expect(result).toBe('User [EMAIL] called from [PHONE]');
+    });
+  });
+
+  describe('PII redaction — redactPII()', () => {
+    test('redacts string values', () => {
+      expect(redactPII('email: foo@bar.com')).toBe('email: [EMAIL]');
+    });
+
+    test('redacts nested object string values', () => {
+      const input = { user: { email: 'test@example.com', phone: '555-867-5309' } };
+      const result = redactPII(input);
+      expect(result.user.email).toBe('[EMAIL]');
+      expect(result.user.phone).toBe('[PHONE]');
+    });
+
+    test('redacts array string elements', () => {
+      const result = redactPII(['hello@world.com', '415-555-0001', 'safe text']);
+      expect(result[0]).toBe('[EMAIL]');
+      expect(result[1]).toBe('[PHONE]');
+      expect(result[2]).toBe('safe text');
+    });
+
+    test('passes through non-string primitives unchanged', () => {
+      const input = { count: 5, active: true, value: null };
+      expect(redactPII(input)).toEqual({ count: 5, active: true, value: null });
+    });
+
+    test('redacts Stripe key inside nested object', () => {
+      const input = { config: { apiKey: 'sk_live_supersecretkey123' } };
+      expect(redactPII(input).config.apiKey).toBe('[STRIPE_KEY]');
+    });
+
+    test('redacts JWT inside nested object', () => {
+      const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.abc123def456ghi789';
+      const input = { auth: { token: jwt } };
+      expect(redactPII(input).auth.token).toBe('[JWT]');
+    });
+
+    test('does not mutate the original object', () => {
+      const original = { email: 'private@example.com' };
+      redactPII(original);
+      expect(original.email).toBe('private@example.com');
     });
   });
 });

@@ -59,4 +59,19 @@ function resolveClientId(req) {
   return req.params.clientId || req.query.clientId || req.body?.client_id || req.clientId || null;
 }
 
-module.exports = { enforceClientIsolation, requirePermission, resolveClientId };
+/**
+ * router.param() callback for tenant isolation on :clientId URL params.
+ * Add `router.param('clientId', clientIsolationParam)` at the top of any
+ * sub-router that has routes with a :clientId segment. Unlike enforceClientIsolation
+ * (which runs before route matching), this fires after Express captures the param.
+ */
+function clientIsolationParam(req, res, next, clientId) {
+  if (req.isAdmin) return next();
+  if (req.clientId && clientId !== req.clientId) {
+    logger.error(`[SECURITY] Tenant isolation bypass — auth client=${req.clientId} tried to access client=${clientId} IP=${req.ip}`);
+    return res.status(403).json({ error: 'Access denied — you can only access your own client data' });
+  }
+  next();
+}
+
+module.exports = { enforceClientIsolation, requirePermission, resolveClientId, clientIsolationParam };

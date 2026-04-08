@@ -1,11 +1,16 @@
 const express = require('express');
-const { SCRAPER_RETRY_DELAY_MS } = require('../config/timing');
+const { SCRAPER_RETRY_DELAY_MS, FETCH_TIMEOUT } = require('../config/timing');
 const router = express.Router();
 const { randomUUID } = require('crypto');
 const { getTransporter } = require('../utils/mailer');
 const config = require('../utils/config');
 const { normalizePhone } = require('../utils/phone');
 const { logger } = require('../utils/logger');
+const { logDataMutation } = require('../utils/auditLog');
+const { AppError } = require('../utils/AppError');
+const { isAsync } = require('../utils/dbAdapter');
+const { validateBody } = require('../middleware/validateRequest');
+const { ScrapeSchema, BlastSchema } = require('../utils/schemas/scrape');
 
 const GOOGLE_PLACES_API_KEY = config.apis.googleMapsKey;
 const DAILY_SEND_LIMIT = config.outreach.dailySendLimit;
@@ -48,25 +53,22 @@ async function scrapeSingleQuery(industry, city, state, country, maxResults) {
     body: JSON.stringify({
       textQuery: query,
       maxResultCount: Math.min(parseInt(maxResults), 20)
-    })
+    }),
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!placesResp.ok) {
-    throw new Error('Google Places API error: ' + (await placesResp.text()));
+    throw new AppError('INTERNAL_ERROR', 'Google Places API error: ' + (await placesResp.text()), 500);
   }
 
   return await placesResp.json();
 }
 
 // POST /scrape
-router.post('/scrape', async (req, res) => {
+router.post('/scrape', validateBody(ScrapeSchema), async (req, res) => {
   try {
     const db = req.app.locals.db;
     const { industry, city, country, maxResults = 20 } = req.body;
-
-    if (!industry || !city) {
-      return res.status(400).json({ error: 'industry and city are required' });
-    }
 
     const query = `${industry} in ${city}${country ? ', ' + country : ''}`;
     logger.info(`[outreach] Scraping: ${query}`);
@@ -109,7 +111,7 @@ router.post('/scrape', async (req, res) => {
           if (!isSafeURL(pageUrl)) continue;
           try {
             const siteResp = await fetch(pageUrl, {
-              signal: AbortSignal.timeout(5000),
+              signal: AbortSignal.timeout(FETCH_TIMEOUT),
               headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
               redirect: 'follow',
             });
@@ -147,10 +149,10 @@ router.post('/scrape', async (req, res) => {
       const now = new Date().toISOString();
 
       try {
-        db.prepare(`
+        await db.query(`
           INSERT INTO prospects (id, business_name, phone, email, website, address, industry, city, country, rating, review_count, status, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scraped', ?, ?)
-        `).run(id, name, phone, email, website, address, industry, city, country || null, rating, reviewCount, now, now);
+        `, [id, name, phone, email, website, address, industry, city, country || null, rating, reviewCount, now, now], 'run');
       } catch (err) {
         // Duplicate or constraint error — skip
         if (!err.message.includes('UNIQUE')) {
@@ -158,6 +160,8 @@ router.post('/scrape', async (req, res) => {
         }
         continue;
       }
+
+      try { logDataMutation(db, { action: 'client_created', table: 'prospects', recordId: id, newValues: { business_name: name, phone, email, industry, city } }); } catch (_) {}
 
       prospects.push({ id, business_name: name, phone, email, website, address, rating, review_count: reviewCount });
     }
@@ -171,14 +175,10 @@ router.post('/scrape', async (req, res) => {
 });
 
 // POST /blast — scrape → generate → send in one call
-router.post('/blast', async (req, res) => {
+router.post('/blast', validateBody(ScrapeSchema), async (req, res) => {
   try {
     const db = req.app.locals.db;
     const { industry, city, state, maxResults = 20 } = req.body;
-
-    if (!industry || !city) {
-      return res.status(400).json({ error: 'industry and city are required' });
-    }
 
     // ===== STEP 1: SCRAPE =====
     logger.info(`[blast] Scraping ${industry} in ${city}, ${state || 'US'}`);
@@ -218,7 +218,7 @@ router.post('/blast', async (req, res) => {
           if (!isSafeURL(pageUrl)) continue;
           try {
             const siteResp = await fetch(pageUrl, {
-              signal: AbortSignal.timeout(5000),
+              signal: AbortSignal.timeout(FETCH_TIMEOUT),
               headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
               redirect: 'follow',
             });
@@ -255,16 +255,18 @@ router.post('/blast', async (req, res) => {
       const now = new Date().toISOString();
 
       try {
-        db.prepare(`
+        await db.query(`
           INSERT INTO prospects (id, business_name, phone, email, website, address, industry, city, state, country, rating, review_count, status, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'US', ?, ?, 'scraped', ?, ?)
-        `).run(id, name, phone, email, website, address, industry, city, state || null, rating, reviewCount, now, now);
+        `, [id, name, phone, email, website, address, industry, city, state || null, rating, reviewCount, now, now], 'run');
       } catch (err) {
         if (!err.message.includes('UNIQUE')) {
           logger.error('[blast] Insert prospect error:', err.message);
         }
         continue;
       }
+
+      try { logDataMutation(db, { action: 'client_created', table: 'prospects', recordId: id, newValues: { business_name: name, phone, email, industry, city, state } }); } catch (_) {}
 
       prospects.push({ id, business_name: name, phone, email, website, address, rating, review_count: reviewCount, industry, city, state });
     }
@@ -276,24 +278,43 @@ router.post('/blast', async (req, res) => {
     const campaignId = randomUUID();
     const now = new Date().toISOString();
 
-    // Wrap campaign creation and prospect linking in transaction for all-or-nothing semantics
-    const createCampaign = db.transaction((campaignId, campaignName, industryVal, cityVal, timestamp) => {
-      // Insert campaign
-      db.prepare(`
-        INSERT INTO campaigns (id, name, industry, city, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'draft', ?, ?)
-      `).run(campaignId, campaignName, industryVal, cityVal, timestamp, timestamp);
+    if (isAsync(db)) {
+      // Postgres: async transaction
+      await db.query('BEGIN', [], 'run');
+      try {
+        await db.query(`
+          INSERT INTO campaigns (id, name, industry, city, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'draft', ?, ?)
+        `, [campaignId, campaignName, industry || null, city || null, now, now], 'run');
 
-      // Link prospects to campaign
-      const linkStmt = db.prepare(
-        'INSERT INTO campaign_prospects (id, campaign_id, prospect_id, created_at) VALUES (?, ?, ?, ?)'
-      );
-      for (const prospect of prospects) {
-        linkStmt.run(randomUUID(), campaignId, prospect.id, timestamp);
+        for (const prospect of prospects) {
+          await db.query(
+            'INSERT INTO campaign_prospects (id, campaign_id, prospect_id, created_at) VALUES (?, ?, ?, ?)',
+            [randomUUID(), campaignId, prospect.id, now], 'run'
+          );
+        }
+        await db.query('COMMIT', [], 'run');
+      } catch (txErr) {
+        await db.query('ROLLBACK', [], 'run');
+        throw txErr;
       }
-    });
+    } else {
+      // SQLite: sync transaction
+      const createCampaign = db.transaction((cId, cName, industryVal, cityVal, timestamp) => {
+        db.prepare(`
+          INSERT INTO campaigns (id, name, industry, city, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'draft', ?, ?)
+        `).run(cId, cName, industryVal, cityVal, timestamp, timestamp);
 
-    createCampaign(campaignId, campaignName, industry || null, city || null, now);
+        const linkStmt = db.prepare(
+          'INSERT INTO campaign_prospects (id, campaign_id, prospect_id, created_at) VALUES (?, ?, ?, ?)'
+        );
+        for (const prospect of prospects) {
+          linkStmt.run(randomUUID(), cId, prospect.id, timestamp);
+        }
+      });
+      createCampaign(campaignId, campaignName, industry || null, city || null, now);
+    }
 
     logger.info(`[blast] Created campaign ${campaignId}`);
 
@@ -313,10 +334,10 @@ router.post('/blast', async (req, res) => {
         const subject = variant === 'A' ? emailGen.subject_a : emailGen.subject_b;
         const emailId = randomUUID();
 
-        db.prepare(`
+        await db.query(`
           INSERT INTO emails_sent (id, campaign_id, prospect_id, to_email, from_email, subject, body, subject_a, subject_b, variant, status, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
-        `).run(emailId, campaignId, prospect.id, prospect.email, senderEmail, subject, emailGen.body, emailGen.subject_a, emailGen.subject_b, variant, now, now);
+        `, [emailId, campaignId, prospect.id, prospect.email, senderEmail, subject, emailGen.body, emailGen.subject_a, emailGen.subject_b, variant, now, now], 'run');
 
         emails.push({ id: emailId, prospect_id: prospect.id, to_email: prospect.email, subject, variant, status: 'draft' });
       } catch (err) {
@@ -329,9 +350,12 @@ router.post('/blast', async (req, res) => {
 
     // ===== STEP 4: SEND EMAILS =====
     const today = new Date().toISOString().split('T')[0];
-    const sentToday = db.prepare(
-      "SELECT COUNT(*) as count FROM emails_sent WHERE status = 'sent' AND sent_at >= ?"
-    ).get(today + 'T00:00:00.000Z').count;
+    const sentTodayResult = await db.query(
+      "SELECT COUNT(*) as count FROM emails_sent WHERE status = 'sent' AND sent_at >= ?",
+      [today + 'T00:00:00.000Z'],
+      'get'
+    );
+    const sentToday = sentTodayResult.count;
 
     const remaining = DAILY_SEND_LIMIT - sentToday;
     if (remaining <= 0) {
@@ -358,7 +382,7 @@ router.post('/blast', async (req, res) => {
     const emailIds = emails.slice(0, remaining).map(e => e.id);
     const placeholders = emailIds.map(() => '?').join(',');
     const allEmails = emailIds.length > 0
-      ? db.prepare(`SELECT * FROM emails_sent WHERE id IN (${placeholders})`).all(...emailIds)
+      ? await db.query(`SELECT * FROM emails_sent WHERE id IN (${placeholders})`, emailIds, 'all')
       : [];
     const emailsMap = new Map(allEmails.map(e => [e.id, e]));
 
@@ -371,10 +395,10 @@ router.post('/blast', async (req, res) => {
         const verification = await verifyEmail(email.to_email);
         if (!verification.valid) {
           logger.info(`[blast] Skipping invalid email ${email.to_email}: ${verification.reason} (${verification.method})`);
-          db.prepare("UPDATE emails_sent SET status = 'invalid', error = ?, updated_at = ? WHERE id = ?")
-            .run(`verification_failed: ${verification.reason}`, new Date().toISOString(), email.id);
-          db.prepare("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?")
-            .run(new Date().toISOString(), email.prospect_id);
+          await db.query("UPDATE emails_sent SET status = 'invalid', error = ?, updated_at = ? WHERE id = ?",
+            [`verification_failed: ${verification.reason}`, new Date().toISOString(), email.id], 'run');
+          await db.query("UPDATE prospects SET status = 'invalid_email', updated_at = ? WHERE id = ?",
+            [new Date().toISOString(), email.prospect_id], 'run');
           skippedInvalid++;
           continue;
         }
@@ -403,9 +427,11 @@ router.post('/blast', async (req, res) => {
         });
 
         const sentNow = new Date().toISOString();
-        db.prepare(
-          "UPDATE emails_sent SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?"
-        ).run(sentNow, sentNow, email.id);
+        await db.query(
+          "UPDATE emails_sent SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?",
+          [sentNow, sentNow, email.id],
+          'run'
+        );
 
         // Schedule Day 3 follow-up
         try {
@@ -439,12 +465,14 @@ router.post('/blast', async (req, res) => {
         const status = isBounce ? 'bounced' : 'failed';
         const nowTime = new Date().toISOString();
 
-        db.prepare(
-          "UPDATE emails_sent SET status = ?, error = ?, updated_at = ? WHERE id = ?"
-        ).run(status, err.message, nowTime, email.id);
+        await db.query(
+          "UPDATE emails_sent SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+          [status, err.message, nowTime, email.id],
+          'run'
+        );
 
         if (isBounce) {
-          db.prepare("UPDATE prospects SET status = 'bounced', updated_at = ? WHERE id = ?").run(nowTime, email.prospect_id);
+          await db.query("UPDATE prospects SET status = 'bounced', updated_at = ? WHERE id = ?", [nowTime, email.prospect_id], 'run');
         }
 
         failed++;
@@ -452,9 +480,11 @@ router.post('/blast', async (req, res) => {
     }
 
     // Mark campaign as active
-    db.prepare(
-      "UPDATE campaigns SET status = 'active', updated_at = ? WHERE id = ?"
-    ).run(new Date().toISOString(), campaignId);
+    await db.query(
+      "UPDATE campaigns SET status = 'active', updated_at = ? WHERE id = ?",
+      [new Date().toISOString(), campaignId],
+      'run'
+    );
 
     logger.info(`[blast] Campaign ${campaignId}: sent=${sent} failed=${failed} invalid=${skippedInvalid}`);
 
