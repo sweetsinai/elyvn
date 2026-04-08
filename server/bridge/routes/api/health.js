@@ -140,4 +140,15 @@ router.get('/health/startup', async (req, res) => {
   });
 });
 
+// GET /health/version — Git SHA + build info for deployment verification
+router.get('/health/version', (req, res) => {
+  res.json({
+    version: process.env.npm_package_version || '1.0.0',
+    git_sha: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_SHA || 'unknown',
+    node_version: process.version,
+    uptime_seconds: Math.floor(process.uptime()),
+    deployed_at: process.env.RAILWAY_DEPLOY_TIMESTAMP || null,
+  });
+});
+
 module.exports = router;

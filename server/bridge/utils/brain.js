@@ -174,8 +174,8 @@ RULES:
 ${guardrails.length > 0 ? '\nACTIVE GUARDRAILS (MUST obey):\n' + guardrails.map(g => '- ' + g).join('\n') : ''}
 
 AVAILABLE ACTIONS (return as JSON array):
-- { "action": "send_sms", "to": "+1...", "message": "..." }
-- { "action": "schedule_followup", "delay_hours": N, "message": "..." }
+${guardrails.some(g => g.includes('RATE_LIMIT')) ? '- send_sms is DISABLED (daily limit reached)' : '- { "action": "send_sms", "to": "+1...", "message": "..." }'}
+${guardrails.some(g => g.includes('OWNER_HANDLING')) ? '- schedule_followup is DISABLED (owner handling)' : '- { "action": "schedule_followup", "delay_hours": N, "message": "..." }'}
 - { "action": "cancel_pending_followups", "reason": "..." }
 - { "action": "update_lead_stage", "stage": "new|contacted|warm|hot|booked|lost|nurture" }
 - { "action": "update_lead_score", "score": N, "reason": "..." }

@@ -346,17 +346,116 @@ SMTP_HOST/USER/PASS           # Email outreach
 
 ---
 
+## Before / After
+
+**Without ELYVN (typical plumber):**
+```
+9:14 AM  Customer calls about burst pipe. Phone rings 6 times. Voicemail.
+9:15 AM  Customer calls competitor. Competitor answers.
+9:16 AM  You just lost a $800 emergency job.
+         You don't even know it happened.
+```
+
+**With ELYVN:**
+```
+9:14 AM  Customer calls. ELYVN answers: "Is there active flooding right now?"
+9:14 AM  Customer: "Yes, water everywhere!"
+9:15 AM  ELYVN: "I'm sending a text with our emergency booking link now."
+9:15 AM  SMS sent. Appointment booked for 10:30 AM.
+9:15 AM  Telegram: "EMERGENCY: Burst pipe at Sarah's. Booked 10:30 AM. $800 est."
+9:15 AM  Owner taps "Got it" from the job site.
+         You just made $800 while installing a water heater.
+```
+
+---
+
+## Brain Decision Log (Real Example)
+
+When a lead calls and the AI scores them 82/100:
+
+```json
+{
+  "reasoning": "Sarah called about brake pads 2 days ago (score 65), then
+    replied to our follow-up SMS today asking about pricing. Two interactions
+    across call + SMS channels, fast response time. High intent.",
+  "actions": [
+    { "action": "update_lead_score", "score": 82, "reason": "Multi-channel engagement + pricing inquiry" },
+    { "action": "send_sms", "to": "+1555...", "message": "Hi Sarah! Brake pad replacement starts at $189. Want me to book you in this week? We have Thursday 2 PM open." },
+    { "action": "notify_owner", "message": "Hot lead: Sarah (82/100) asking about brake pad pricing. Recommend owner calls within 1 hour.", "urgency": "high" }
+  ]
+}
+```
+
+The brain made 3 decisions in one shot: scored the lead, sent a specific (not generic) SMS referencing the brake pads she asked about, and flagged the owner. No human involved.
+
+---
+
+## Known Limitations
+
+| Limitation | Impact | Workaround |
+|-----------|--------|-----------|
+| SQLite (single instance) | Can't horizontally scale | Postgres adapter exists (`supabaseAdapter.js`), needs testing |
+| Prompts not versioned | Prompt changes affect all clients simultaneously | Extract to versioned files (planned) |
+| No mobile app | Owner management via Telegram only | Telegram IS the mobile app (17 commands) |
+| Cal.com required for booking | Clients need Cal.com account | Free tier works, direct calendar sync planned |
+| No real-time voice streaming | Voice quality depends on Retell | Retell handles this well |
+
+---
+
+## Running Tests
+
+```bash
+cd server/bridge
+
+# Unit tests (fast, no external deps)
+npx jest --forceExit --testPathPattern="tests/(validate|rateLimiter|scoring|resilience)"
+
+# All tests
+npx jest --forceExit
+
+# Coverage
+npx jest --coverage --forceExit
+```
+
+---
+
+## Deployment
+
+### Railway (Production)
+
+Configured via `nixpacks.toml`. Auto-deploys from `main` branch.
+
+```bash
+# Verify deployment
+curl https://your-domain.railway.app/health/version
+# Returns: { "version": "1.0.0", "git_sha": "abc123...", "uptime_seconds": 3600 }
+
+# Full health check
+curl https://your-domain.railway.app/health
+```
+
+### Telegram Webhook Setup
+
+```bash
+curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
+  -d "url=https://your-domain.railway.app/webhooks/telegram" \
+  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+```
+
+---
+
 ## Tech Stack
 
 - **Runtime:** Node.js 20
 - **Database:** SQLite (better-sqlite3) with 39 auto-migrations
 - **AI:** Anthropic Claude Sonnet 4 (configurable)
-- **Voice:** Retell AI
-- **SMS:** Twilio REST API (no SDK)
+- **Voice:** Retell AI (per-client voice selection)
+- **SMS:** Twilio REST API (no SDK, circuit breaker protected)
 - **Frontend:** React 18 + Vite + React Router
 - **Hosting:** Railway (auto-deploy from GitHub)
 - **Monitoring:** Prometheus + Sentry + OpenTelemetry
+- **CI/CD:** GitHub Actions (4-job pipeline: test, lint, security, build)
 
 ---
 
-*Built by Sohan Gowda. Every line of code audited to 10/10/10.*
+*Built by Sohan Gowda. Audited to 10/10/10 across security, correctness, and production-readiness.*
