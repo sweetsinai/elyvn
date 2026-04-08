@@ -188,8 +188,8 @@ async function handleBookingCreated(db, payload) {
     }
 
     // Try 3: Match by attendee name against prospect business_name
-    if (!prospect && name) {
-      // Escape LIKE wildcards to prevent SQL LIKE injection
+    if (!prospect && name && name.length >= 3) {
+      // Escape LIKE wildcards to prevent SQL LIKE injection (min 3 chars to avoid overly broad match)
       const escapedName = name.replace(/[%_\\]/g, '\\$&');
       prospect = await db.query("SELECT * FROM prospects WHERE business_name LIKE ? ESCAPE '\\' LIMIT 1", [`%${escapedName}%`], 'get');
     }

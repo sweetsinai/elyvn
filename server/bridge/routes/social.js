@@ -155,6 +155,16 @@ async function handleSocialMessage(db, { senderId, text, channel, pageId }) {
     [randomUUID(), client.id, socialId, text, channel, now], 'run'
   );
 
+  // Rate limit brain calls per sender (max 3 per 5 min to prevent Claude cost spikes)
+  const recentBrain = await db.query(
+    "SELECT COUNT(*) as c FROM messages WHERE phone = ? AND client_id = ? AND direction = 'inbound' AND created_at >= datetime('now', '-5 minutes')",
+    [socialId, client.id], 'get'
+  );
+  if (recentBrain && recentBrain.c > 3) {
+    logger.info(`[social] Rate limited brain call for ${senderId.slice(0, 6)}*** (${recentBrain.c} msgs in 5 min)`);
+    return;
+  }
+
   // Trigger brain decision (if available)
   try {
     const { getLeadMemory } = require('../utils/leadMemory');
@@ -162,7 +172,7 @@ async function handleSocialMessage(db, { senderId, text, channel, pageId }) {
     const { executeActions } = require('../utils/actionExecutor');
     const memory = getLeadMemory(db, socialId, client.id);
     if (memory) {
-      const decision = await think('sms_received', { from: socialId, body: text, channel }, memory, db);
+      const decision = await think('social_message_received', { from: socialId, body: text, channel }, memory, db);
       if (decision?.actions) {
         await executeActions(db, decision.actions, memory);
       }
