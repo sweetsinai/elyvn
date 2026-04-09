@@ -623,159 +623,147 @@ const migrations = [
     id: '026_foreign_key_rebuild',
     description: 'Rebuild legacy tables with proper foreign key constraints',
     up(db) {
-      // SQLite cannot add FK constraints via ALTER TABLE — must rebuild each table.
-      // Wrap in a transaction so any failure rolls back completely.
-      db.exec('PRAGMA foreign_keys = OFF');
-      try {
+      // NOTE: This migration runs inside runMigrations' outer db.transaction(),
+      // so PRAGMA foreign_keys = OFF is a no-op (cannot change mid-transaction).
+      // Therefore we omit FK REFERENCES clauses here — production data has orphaned
+      // rows (client_id values not in clients table). FK enforcement is handled at
+      // the application layer. A future migration can add FKs after data cleanup.
 
-      const rebuild = db.transaction(() => {
-        // --- calls ---
-        db.exec(`
-          CREATE TABLE calls_new (
-            id TEXT PRIMARY KEY,
-            call_id TEXT UNIQUE,
-            client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-            caller_phone TEXT,
-            direction TEXT DEFAULT 'inbound',
-            status TEXT,
-            duration INTEGER,
-            recording_url TEXT,
-            transcript TEXT,
-            summary TEXT,
-            sentiment TEXT,
-            action_taken TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
-            score INTEGER,
-            outcome TEXT,
-            analysis_data TEXT
-          );
-          INSERT OR IGNORE INTO calls_new SELECT * FROM calls;
-          DROP TABLE calls;
-          ALTER TABLE calls_new RENAME TO calls;
-          CREATE INDEX idx_calls_call_id ON calls(call_id);
-          CREATE INDEX idx_calls_caller_phone ON calls(caller_phone);
-          CREATE INDEX idx_calls_client_id ON calls(client_id);
-          CREATE INDEX idx_calls_created_at ON calls(client_id, created_at);
-          CREATE INDEX idx_calls_client_created_at ON calls(client_id, created_at);
-        `);
+      // --- calls ---
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS calls_new (
+          id TEXT PRIMARY KEY,
+          call_id TEXT UNIQUE,
+          client_id TEXT NOT NULL,
+          caller_phone TEXT,
+          direction TEXT DEFAULT 'inbound',
+          status TEXT,
+          duration INTEGER,
+          recording_url TEXT,
+          transcript TEXT,
+          summary TEXT,
+          sentiment TEXT,
+          action_taken TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          score INTEGER,
+          outcome TEXT,
+          analysis_data TEXT
+        );
+        INSERT OR IGNORE INTO calls_new SELECT * FROM calls;
+        DROP TABLE calls;
+        ALTER TABLE calls_new RENAME TO calls;
+        CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id);
+        CREATE INDEX IF NOT EXISTS idx_calls_caller_phone ON calls(caller_phone);
+        CREATE INDEX IF NOT EXISTS idx_calls_client_id ON calls(client_id);
+        CREATE INDEX IF NOT EXISTS idx_calls_created_at ON calls(client_id, created_at);
+      `);
 
-        // --- leads ---
-        // Use INSERT OR IGNORE to skip duplicate id/phone rows in production data.
-        // UNIQUE index on (client_id, phone) is omitted here — production data may have
-        // duplicates. Migration 027 drops the redundant index; uniqueness is enforced at
-        // the application layer for new rows.
-        db.exec(`
-          CREATE TABLE leads_new (
-            id TEXT PRIMARY KEY,
-            client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-            name TEXT,
-            phone TEXT,
-            email TEXT,
-            source TEXT,
-            score INTEGER DEFAULT 0,
-            stage TEXT DEFAULT 'new',
-            notes TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now')),
-            prospect_id TEXT,
-            last_contact TEXT,
-            calcom_booking_id TEXT
-          );
-          INSERT OR IGNORE INTO leads_new SELECT * FROM leads WHERE client_id IS NOT NULL;
-          DROP TABLE leads;
-          ALTER TABLE leads_new RENAME TO leads;
-          CREATE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone);
-          CREATE INDEX IF NOT EXISTS idx_leads_prospect_id ON leads(prospect_id);
-          CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
-          CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(client_id, stage);
-          CREATE INDEX IF NOT EXISTS idx_leads_score ON leads(client_id, score);
-          CREATE INDEX IF NOT EXISTS idx_leads_client_created_at ON leads(client_id, created_at);
-          CREATE INDEX IF NOT EXISTS idx_leads_calcom_booking ON leads(calcom_booking_id);
-        `);
+      // --- leads ---
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS leads_new (
+          id TEXT PRIMARY KEY,
+          client_id TEXT NOT NULL,
+          name TEXT,
+          phone TEXT,
+          email TEXT,
+          source TEXT,
+          score INTEGER DEFAULT 0,
+          stage TEXT DEFAULT 'new',
+          notes TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now')),
+          prospect_id TEXT,
+          last_contact TEXT,
+          calcom_booking_id TEXT
+        );
+        INSERT OR IGNORE INTO leads_new SELECT * FROM leads WHERE client_id IS NOT NULL;
+        DROP TABLE leads;
+        ALTER TABLE leads_new RENAME TO leads;
+        CREATE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone);
+        CREATE INDEX IF NOT EXISTS idx_leads_prospect_id ON leads(prospect_id);
+        CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
+        CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(client_id, stage);
+        CREATE INDEX IF NOT EXISTS idx_leads_score ON leads(client_id, score);
+        CREATE INDEX IF NOT EXISTS idx_leads_client_created_at ON leads(client_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_leads_calcom_booking ON leads(calcom_booking_id);
+      `);
 
-        // --- messages ---
-        db.exec(`
-          CREATE TABLE messages_new (
-            id TEXT PRIMARY KEY,
-            client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-            phone TEXT,
-            direction TEXT,
-            body TEXT,
-            status TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
-            lead_id TEXT REFERENCES leads(id) ON DELETE SET NULL,
-            channel TEXT DEFAULT 'sms',
-            reply_text TEXT,
-            reply_source TEXT,
-            confidence REAL,
-            updated_at TEXT DEFAULT (datetime('now')),
-            message_sid TEXT
-          );
-          INSERT OR IGNORE INTO messages_new SELECT * FROM messages WHERE client_id IS NOT NULL;
-          DROP TABLE messages;
-          ALTER TABLE messages_new RENAME TO messages;
-          CREATE INDEX IF NOT EXISTS idx_messages_client_phone ON messages(client_id, phone);
-          CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(client_id, created_at);
-          CREATE INDEX IF NOT EXISTS idx_messages_phone_created_at ON messages(phone, created_at);
-          CREATE INDEX IF NOT EXISTS idx_messages_sid ON messages(message_sid);
-          CREATE INDEX IF NOT EXISTS idx_messages_lead_id ON messages(lead_id);
-        `);
+      // --- messages ---
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS messages_new (
+          id TEXT PRIMARY KEY,
+          client_id TEXT NOT NULL,
+          phone TEXT,
+          direction TEXT,
+          body TEXT,
+          status TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          lead_id TEXT,
+          channel TEXT DEFAULT 'sms',
+          reply_text TEXT,
+          reply_source TEXT,
+          confidence REAL,
+          updated_at TEXT DEFAULT (datetime('now')),
+          message_sid TEXT
+        );
+        INSERT OR IGNORE INTO messages_new SELECT * FROM messages WHERE client_id IS NOT NULL;
+        DROP TABLE messages;
+        ALTER TABLE messages_new RENAME TO messages;
+        CREATE INDEX IF NOT EXISTS idx_messages_client_phone ON messages(client_id, phone);
+        CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(client_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_messages_phone_created_at ON messages(phone, created_at);
+        CREATE INDEX IF NOT EXISTS idx_messages_sid ON messages(message_sid);
+        CREATE INDEX IF NOT EXISTS idx_messages_lead_id ON messages(lead_id);
+      `);
 
-        // --- followups ---
-        db.exec(`
-          CREATE TABLE followups_new (
-            id TEXT PRIMARY KEY,
-            lead_id TEXT REFERENCES leads(id) ON DELETE SET NULL,
-            client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-            type TEXT,
-            scheduled_at TEXT,
-            completed_at TEXT,
-            status TEXT DEFAULT 'pending',
-            notes TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
-            touch_number INTEGER,
-            content TEXT,
-            content_source TEXT,
-            sent_at TEXT,
-            updated_at TEXT DEFAULT (datetime('now'))
-          );
-          INSERT OR IGNORE INTO followups_new SELECT * FROM followups WHERE client_id IS NOT NULL;
-          DROP TABLE followups;
-          ALTER TABLE followups_new RENAME TO followups;
-          CREATE INDEX IF NOT EXISTS idx_followups_lead_id ON followups(lead_id);
-          CREATE INDEX IF NOT EXISTS idx_followups_client_id ON followups(client_id);
-          CREATE INDEX IF NOT EXISTS idx_followups_status_scheduled ON followups(status, scheduled_at);
-        `);
+      // --- followups ---
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS followups_new (
+          id TEXT PRIMARY KEY,
+          lead_id TEXT,
+          client_id TEXT NOT NULL,
+          type TEXT,
+          scheduled_at TEXT,
+          completed_at TEXT,
+          status TEXT DEFAULT 'pending',
+          notes TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          touch_number INTEGER,
+          content TEXT,
+          content_source TEXT,
+          sent_at TEXT,
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT OR IGNORE INTO followups_new SELECT * FROM followups WHERE client_id IS NOT NULL;
+        DROP TABLE followups;
+        ALTER TABLE followups_new RENAME TO followups;
+        CREATE INDEX IF NOT EXISTS idx_followups_lead_id ON followups(lead_id);
+        CREATE INDEX IF NOT EXISTS idx_followups_client_id ON followups(client_id);
+        CREATE INDEX IF NOT EXISTS idx_followups_status_scheduled ON followups(status, scheduled_at);
+      `);
 
-        // --- appointments ---
-        db.exec(`
-          CREATE TABLE appointments_new (
-            id TEXT PRIMARY KEY,
-            client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-            lead_id TEXT REFERENCES leads(id) ON DELETE SET NULL,
-            phone TEXT,
-            name TEXT,
-            service TEXT,
-            datetime TEXT,
-            status TEXT DEFAULT 'confirmed',
-            calcom_booking_id TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
-          );
-          INSERT OR IGNORE INTO appointments_new SELECT * FROM appointments WHERE client_id IS NOT NULL;
-          DROP TABLE appointments;
-          ALTER TABLE appointments_new RENAME TO appointments;
-          CREATE INDEX IF NOT EXISTS idx_appointments_client_status ON appointments(client_id, status);
-          CREATE INDEX IF NOT EXISTS idx_appointments_lead_id ON appointments(lead_id);
-          CREATE INDEX IF NOT EXISTS idx_appointments_calcom_booking ON appointments(calcom_booking_id);
-        `);
-      });
-
-      rebuild();
-
-      } finally {
-        db.exec('PRAGMA foreign_keys = ON');
-      }
+      // --- appointments ---
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS appointments_new (
+          id TEXT PRIMARY KEY,
+          client_id TEXT NOT NULL,
+          lead_id TEXT,
+          phone TEXT,
+          name TEXT,
+          service TEXT,
+          datetime TEXT,
+          status TEXT DEFAULT 'confirmed',
+          calcom_booking_id TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT OR IGNORE INTO appointments_new SELECT * FROM appointments WHERE client_id IS NOT NULL;
+        DROP TABLE appointments;
+        ALTER TABLE appointments_new RENAME TO appointments;
+        CREATE INDEX IF NOT EXISTS idx_appointments_client_status ON appointments(client_id, status);
+        CREATE INDEX IF NOT EXISTS idx_appointments_lead_id ON appointments(lead_id);
+        CREATE INDEX IF NOT EXISTS idx_appointments_calcom_booking ON appointments(calcom_booking_id);
+      `);
     },
   },
   {
