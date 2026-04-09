@@ -9,6 +9,7 @@ const { withTimeout } = require('../../utils/resilience');
 const { logger } = require('../../utils/logger');
 const { LENGTH_LIMITS } = require('../../utils/inputValidation');
 const { emailSendLimit } = require('../../middleware/rateLimits');
+const { AppError } = require('../../utils/AppError');
 
 const { ANTHROPIC_TIMEOUT } = require('../../config/timing');
 const anthropic = new Anthropic();
@@ -21,23 +22,23 @@ router.post('/chat', emailSendLimit, async (req, res, next) => {
     const { messages, clientId } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: 'messages array is required' });
+      return next(new AppError('VALIDATION_ERROR', 'messages array is required', 422));
     }
 
     // Validate messages array — check each message has required fields and reasonable sizes
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
       if (!msg.role || !msg.content) {
-        return res.status(400).json({ error: `Message at index ${i} missing role or content` });
+        return next(new AppError('VALIDATION_ERROR', `Message at index ${i} missing role or content`, 422));
       }
       if (typeof msg.role !== 'string' || !['user', 'assistant'].includes(msg.role)) {
-        return res.status(400).json({ error: `Message at index ${i} has invalid role` });
+        return next(new AppError('VALIDATION_ERROR', `Message at index ${i} has invalid role`, 422));
       }
       if (typeof msg.content !== 'string') {
-        return res.status(400).json({ error: `Message at index ${i} content must be a string` });
+        return next(new AppError('VALIDATION_ERROR', `Message at index ${i} content must be a string`, 422));
       }
       if (msg.content.length > LENGTH_LIMITS.text) {
-        return res.status(400).json({ error: `Message at index ${i} exceeds maximum length of ${LENGTH_LIMITS.text} characters` });
+        return next(new AppError('VALIDATION_ERROR', `Message at index ${i} exceeds maximum length of ${LENGTH_LIMITS.text} characters`, 422));
       }
     }
 

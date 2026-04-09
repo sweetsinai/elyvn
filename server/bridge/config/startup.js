@@ -6,6 +6,8 @@
 const { logger } = require('../utils/logger');
 const { captureException } = require('../utils/monitoring');
 const { createDatabase } = require('../utils/dbAdapter');
+const { migrations } = require('../utils/migrations');
+const { backupDatabase } = require('../utils/backup');
 const { JOB_PROCESSOR_INTERVAL, DATA_RETENTION_DAILY_INTERVAL_MS, AUTO_CLASSIFY_INTERVAL_MS } = require('./timing');
 
 /**
@@ -66,11 +68,56 @@ function validateEnv() {
 }
 
 /**
+ * Take a pre-migration backup if there are pending migrations and the DB file
+ * already exists (i.e. not a fresh install). Only runs in production to avoid
+ * unnecessary overhead in dev/test.
+ *
+ * @param {string} dbPath - Resolved path to the SQLite file
+ */
+async function preMigrationBackup(dbPath) {
+  const fs = require('fs');
+  if (!fs.existsSync(dbPath)) return; // Fresh install — nothing to back up
+  if (process.env.NODE_ENV !== 'production') return; // Dev/test — skip
+
+  try {
+    const Database = require('better-sqlite3');
+    const tmp = new Database(dbPath, { readonly: true });
+
+    // Determine how many migrations are pending
+    let appliedIds = [];
+    try {
+      appliedIds = tmp.prepare('SELECT id FROM _migrations').all().map(r => r.id);
+    } catch {
+      // _migrations table doesn't exist yet — all migrations are pending
+    }
+    const pendingCount = migrations.filter(m => !appliedIds.includes(m.id)).length;
+    tmp.close();
+
+    if (pendingCount === 0) return; // Already up to date — no backup needed
+
+    logger.info(`[startup] ${pendingCount} pending migration(s) detected — taking pre-migration backup`);
+    const result = await backupDatabase(dbPath);
+    if (result.success) {
+      logger.info(`[startup] Pre-migration backup created: ${result.backupPath}`);
+    } else {
+      logger.warn(`[startup] Pre-migration backup failed (non-fatal): ${result.error}`);
+    }
+  } catch (err) {
+    logger.warn(`[startup] Pre-migration backup error (non-fatal): ${err.message}`);
+  }
+}
+
+/**
  * Initialize database, cancel stale jobs, recover stalled jobs.
  * @param {import('express').Application} app
  * @returns {object} better-sqlite3 db instance
  */
 async function initializeDatabase(app) {
+  // Resolve DB path the same way dbAdapter does so the backup targets the right file
+  const path = require('path');
+  const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '../../../mcp/elyvn.db');
+  await preMigrationBackup(dbPath);
+
   let db;
   try {
     db = createDatabase();

@@ -52,6 +52,14 @@ COPY package*.json ./
 # Ensure data directory exists for SQLite volume mount
 RUN mkdir -p /data
 
+# NOTE: Running as root intentionally.
+# We previously attempted a non-root "node" user but Railway mounts the /data
+# volume as root after image build, so the node user could not write
+# /data/elyvn.db. The workaround (docker-entrypoint.sh + su-exec) adds
+# complexity and a new binary dependency for marginal security benefit —
+# Railway containers are already fully isolated. Revisit if we move to a
+# platform where volume ownership is configurable at mount time.
+
 EXPOSE 3001
 
 HEALTHCHECK --interval=30s --timeout=15s --retries=5 \

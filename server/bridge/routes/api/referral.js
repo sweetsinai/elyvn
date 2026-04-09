@@ -39,7 +39,7 @@ router.get('/referral/:clientId', async (req, res, next) => {
 
     const totalEarned = referrals.reduce((sum, r) => sum + (r.credit_cents || 0), 0);
 
-    res.json({
+    return res.json({
       referral_code: client.referral_code,
       referral_link: `https://elyvn.ai/signup?ref=${client.referral_code}`,
       credits_available: client.referral_credits || 0,
@@ -99,7 +99,7 @@ router.post('/referral/apply', async (req, res, next) => {
     await db.query("UPDATE clients SET referred_by = ?, updated_at = datetime('now') WHERE id = ?", [referrer.id, new_client_id], 'run');
 
     logger.info(`[referral] Code ${referral_code} applied — referrer ${referrer.id} → new ${new_client_id}`);
-    res.json({ applied: true });
+    return res.json({ applied: true });
   } catch (err) {
     logger.error('[referral] Apply error:', err);
     next(err);
@@ -132,7 +132,7 @@ router.post('/referral/:clientId/activate', async (req, res, next) => {
     );
 
     logger.info(`[referral] Activated — referrer ${referral.referrer_id} earned $${REFERRAL_CREDIT_CENTS / 100}`);
-    res.json({ activated: true, credit_cents: REFERRAL_CREDIT_CENTS });
+    return res.json({ activated: true, credit_cents: REFERRAL_CREDIT_CENTS });
   } catch (err) {
     logger.error('[referral] Activate error:', err);
     next(err);

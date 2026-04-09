@@ -40,6 +40,25 @@ function sanitizeForPrompt(str, maxLen = 200) {
 }
 
 /**
+ * Recursively sanitize all string values in an object/array so that nested
+ * eventData fields cannot carry prompt injection via inner string values.
+ * Non-string primitives are passed through unchanged.
+ */
+function deepSanitizeEventData(value, depth = 0) {
+  if (depth > 10) return '[truncated]'; // guard against deeply nested objects
+  if (typeof value === 'string') return sanitizeForPrompt(value, 500);
+  if (Array.isArray(value)) return value.map(v => deepSanitizeEventData(v, depth + 1));
+  if (value !== null && typeof value === 'object') {
+    const sanitized = {};
+    for (const [k, v] of Object.entries(value)) {
+      sanitized[k] = deepSanitizeEventData(v, depth + 1);
+    }
+    return sanitized;
+  }
+  return value;
+}
+
+/**
  * Rough token estimate: ~4 characters per token (GPT/Claude heuristic).
  */
 function estimateTokens(text) {
@@ -216,7 +235,7 @@ RESPOND WITH ONLY a JSON object (no markdown):
   }
 
   function buildUserMessage(timelineText) {
-    const sanitizedEventData = sanitizeForPrompt(JSON.stringify(eventData, null, 2), 2000);
+    const sanitizedEventData = JSON.stringify(deepSanitizeEventData(eventData), null, 2).substring(0, 2000);
     return `EVENT: ${eventType}
 EVENT DATA: ${sanitizedEventData}
 
