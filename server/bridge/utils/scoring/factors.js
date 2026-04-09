@@ -127,7 +127,8 @@ function calcIntent(lead, calls, messages) {
   if (signalCount > 0) {
     intentFactor = Math.min(100, intentFactor / signalCount);
   } else {
-    intentFactor = lead.score ? Math.min(100, (lead.score / 10) * 100) : 20;
+    const fallbackScore = Math.min(100, Math.max(0, ((Number(lead.score) || 0) / 10) * 100));
+    intentFactor = fallbackScore || 20;
   }
 
   return { intentFactor, qualifiedCalls };

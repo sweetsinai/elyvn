@@ -1,6 +1,8 @@
 const { classifyReply } = require('./replyClassifier');
 const { logger } = require('./logger');
 
+const CONFIDENCE_THRESHOLD = parseFloat(process.env.REPLY_CONFIDENCE_THRESHOLD || '0.7');
+
 // Classification → leads.stage mapping
 const CLASSIFICATION_STAGE_MAP = {
   INTERESTED: 'interested',
@@ -39,8 +41,6 @@ async function autoClassifyReplies(db) {
     const results = [];
     let successCount = 0;
 
-    const CONFIDENCE_THRESHOLD = 0.7;
-
     // Process each unclassified reply
     for (const email of unclassified) {
       try {
@@ -58,24 +58,19 @@ async function autoClassifyReplies(db) {
         const cls = classification.classification;
         const confidence = classification.confidence ?? 0;
 
-        // Update the database with the classification
+        // Confidence gate: determine final classification before writing (single write, no race)
+        const autoUpdateStage = confidence >= CONFIDENCE_THRESHOLD;
+        const finalClassification = autoUpdateStage ? cls : 'needs_review';
+        if (!autoUpdateStage) {
+          logger.warn(`[autoClassify] Low confidence (${confidence.toFixed(2)}) for email ${email.id} classified as ${cls} — marking needs_review, skipping stage update`);
+        }
+
+        // Single write with the final classification
         await db.query(`
           UPDATE emails_sent
           SET reply_classification = ?, updated_at = datetime('now')
           WHERE id = ?
-        `, [cls, email.id], 'run');
-
-        // Confidence gate: only auto-update lead stage if confidence >= threshold
-        const autoUpdateStage = confidence >= CONFIDENCE_THRESHOLD;
-        if (!autoUpdateStage) {
-          logger.warn(`[autoClassify] Low confidence (${confidence.toFixed(2)}) for email ${email.id} classified as ${cls} — marking needs_review, skipping stage update`);
-          try {
-            await db.query(
-              "UPDATE emails_sent SET reply_classification = ?, updated_at = datetime('now') WHERE id = ?",
-              ['needs_review', email.id], 'run'
-            );
-          } catch (_) { /* non-fatal */ }
-        }
+        `, [finalClassification, email.id], 'run');
 
         // Update lead stage based on classification (only if confident)
         const newStage = CLASSIFICATION_STAGE_MAP[cls];

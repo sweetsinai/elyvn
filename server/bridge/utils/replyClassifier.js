@@ -1,10 +1,17 @@
 const Anthropic = require('@anthropic-ai/sdk');
+const { z } = require('zod');
 const config = require('./config');
 const { logger } = require('./logger');
 
+const ClassificationSchema = z.object({
+  classification: z.enum(['INTERESTED', 'QUESTION', 'NOT_INTERESTED', 'UNSUBSCRIBE']),
+  confidence: z.number().min(0).max(1),
+  summary: z.string().max(500).optional(),
+});
+
 const anthropic = new Anthropic();
 
-const VALID_CLASSIFICATIONS = ['INTERESTED', 'QUESTION', 'NOT_INTERESTED', 'UNSUBSCRIBE'];
+const DEFAULT_CLASSIFICATION = { classification: 'QUESTION', confidence: 0, summary: 'Classification failed — needs manual review' };
 
 async function classifyReply(emailBody, originalSubject) {
   // P1: Input sanitization — cap lengths before inserting into prompt
@@ -32,31 +39,18 @@ UNSUBSCRIBE: asks to be removed, stop emailing, etc.`,
 
     const text = resp.content[0]?.text || '';
     const cleaned = text.replace(/```json|```/g, '').trim();
-    const result = JSON.parse(cleaned);
-
-    // P0: Output validation
-    if (!result || typeof result !== 'object') {
-      throw new Error('Invalid response: expected object');
+    const parsed = JSON.parse(cleaned);
+    const validated = ClassificationSchema.safeParse(parsed);
+    if (!validated.success) {
+      logger.warn('[replyClassifier] Invalid Claude response shape:', validated.error.issues[0]?.message);
+      return DEFAULT_CLASSIFICATION;
     }
-    if (!VALID_CLASSIFICATIONS.includes(result.classification)) {
-      logger.warn(`[replyClassifier] Unexpected classification "${result.classification}" — defaulting to QUESTION`);
-      result.classification = 'QUESTION';
-    }
-    if (typeof result.summary !== 'string') {
-      result.summary = '';
-    }
-    result.summary = result.summary.substring(0, 500);
-
-    // Normalize confidence to a number between 0 and 1
-    if (typeof result.confidence !== 'number' || isNaN(result.confidence)) {
-      result.confidence = 0.5; // uncertain if model didn't return it
-    }
-    result.confidence = Math.max(0, Math.min(1, result.confidence));
+    const result = validated.data;
 
     return result;
   } catch (err) {
     logger.error('[ReplyClassifier] Error:', err.message);
-    return { classification: 'QUESTION', confidence: 0, summary: 'Classification failed — needs manual review' };
+    return DEFAULT_CLASSIFICATION;
   }
 }
 

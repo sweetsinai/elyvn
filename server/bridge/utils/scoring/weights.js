@@ -18,6 +18,11 @@ const WEIGHTS = {
   channelDiversity: 0.15,
 };
 
+const weightSum = Object.values(WEIGHTS).reduce((a, b) => a + b, 0);
+if (Math.abs(weightSum - 1.0) > 0.001) {
+  throw new Error(`[scoring] WEIGHTS must sum to 1.0, got ${weightSum.toFixed(4)}`);
+}
+
 /**
  * Score bands for insight / action generation.
  * Bands are inclusive lower bounds, evaluated top-down.

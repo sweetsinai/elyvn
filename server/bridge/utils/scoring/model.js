@@ -80,13 +80,13 @@ async function predictLeadScore(db, leadId, clientId) {
     const { channelFactor } = calcChannelDiversity(calls, messages);
 
     // FINAL SCORE CALCULATION
-    const finalScore = Math.round(
+    const finalScore = Math.max(0, Math.min(100, Math.round(
       (responsiveFactor  * WEIGHTS.responsiveness) +
       (engagementFactor  * WEIGHTS.engagement) +
       (intentFactor      * WEIGHTS.intent) +
       (recencyFactor     * WEIGHTS.recency) +
       (channelFactor     * WEIGHTS.channelDiversity)
-    );
+    )));
 
     // GENERATE INSIGHT
     let insight = '';

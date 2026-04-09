@@ -396,11 +396,11 @@ describe('config.js', () => {
       expect(config.ai.model).toBe('claude-opus-4-20250514');
     });
 
-    test('should default CLAUDE_MODEL to claude-sonnet-4-20250514', () => {
+    test('should default CLAUDE_MODEL to claude-sonnet-4-6', () => {
       delete process.env.CLAUDE_MODEL;
 
       const config = require('../utils/config');
-      expect(config.ai.model).toBe('claude-sonnet-4-20250514');
+      expect(config.ai.model).toBe('claude-sonnet-4-6');
     });
   });
 

@@ -23,7 +23,7 @@ module.exports = {
 
   // Claude/AI Configuration
   ai: {
-    model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+    model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
   },
 
   // Email Tracking Configuration

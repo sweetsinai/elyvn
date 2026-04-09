@@ -184,7 +184,7 @@ async function _think(eventType, eventData, leadMemory, db) {
 YOUR ROLE: After every event, analyze the full lead history and decide what actions to take next. Think across ALL channels.
 
 BUSINESS KNOWLEDGE BASE:
-${knowledgeBase || 'No knowledge base loaded.'}
+${sanitizeForPrompt(knowledgeBase, 2000) || 'No knowledge base loaded.'}
 
 CLIENT: ${safeClientName} | Owner: ${safeOwnerName} | AI active: ${client?.is_active !== 0 ? 'YES' : 'NO — only notify owner'}
 Calendar: ${client?.calcom_booking_link || 'Not configured'}
