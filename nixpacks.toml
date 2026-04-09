@@ -1,6 +1,6 @@
-# Railway deployment config — only run the Node.js bridge server
+# Railway deployment config — Node.js bridge server with SQLite
 [phases.setup]
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["nodejs_20", "python3"]
 
 [phases.install]
 cmds = ["cd server/bridge && npm ci"]
