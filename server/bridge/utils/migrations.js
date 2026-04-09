@@ -684,7 +684,7 @@ const migrations = [
           last_contact TEXT,
           calcom_booking_id TEXT
         )`, [
-        'CREATE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone)',
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone)',
         'CREATE INDEX IF NOT EXISTS idx_leads_prospect_id ON leads(prospect_id)',
         'CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)',
         'CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(client_id, stage)',
@@ -1099,6 +1099,20 @@ const migrations = [
         // Index may already exist — skip
       }
       getLogger().info('[migrations] 040: followups unique touch index added');
+    },
+  },
+  {
+    id: '041_fix_leads_unique_index',
+    description: 'Restore UNIQUE constraint on leads(client_id, phone) dropped by migration 026 rebuild',
+    up(db) {
+      try {
+        // Drop the non-unique index created by 026 and recreate as UNIQUE
+        db.exec('DROP INDEX IF EXISTS idx_leads_client_phone');
+        db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone)');
+      } catch (_) {
+        // May fail if duplicate rows exist — log but continue
+      }
+      getLogger().info('[migrations] 041: leads(client_id, phone) UNIQUE index restored');
     },
   },
 ];

@@ -252,9 +252,9 @@ describe('appointmentReminders', () => {
         datetime: futureDate
       };
 
-      // With FK constraints, inserting a followup for a nonexistent client fails gracefully
+      // No FK constraints in DDL (removed in migration 026), so insert succeeds with default business name
       const result = await scheduleReminders(db, appointment);
-      expect(result).toBe(false);
+      expect(result).toBe(true);
     });
   });
 
