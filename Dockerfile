@@ -52,8 +52,8 @@ COPY --from=builder /app/server/bridge/ ./server/bridge/
 # Copy root package.json for metadata only
 COPY package*.json ./
 
-# Set proper ownership
-RUN chown -R app:app /app
+# Create data dir for SQLite volume mount & set ownership
+RUN mkdir -p /data && chown -R app:app /app /data
 
 USER app
 
