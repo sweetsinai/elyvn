@@ -623,19 +623,25 @@ const migrations = [
     id: '026_foreign_key_rebuild',
     description: 'Rebuild legacy tables with proper foreign key constraints',
     up(db) {
-      // Clean up any leftover _new tables from previous failed migration attempts.
-      // Previous deploys may have created these with FK REFERENCES that now cause
-      // constraint failures on INSERT.
-      db.exec(`
-        DROP TABLE IF EXISTS calls_new;
-        DROP TABLE IF EXISTS leads_new;
-        DROP TABLE IF EXISTS messages_new;
-        DROP TABLE IF EXISTS followups_new;
-        DROP TABLE IF EXISTS appointments_new;
-      `);
+      // Helper: rebuild a table with a new schema, copying only columns that exist
+      // in both old and new tables. Handles column mismatches between environments.
+      function rebuildTable(tableName, createSQL, indexes, filter) {
+        const newName = tableName + '_new';
+        db.exec(`DROP TABLE IF EXISTS ${newName}`);
+        db.exec(createSQL);
+        const oldCols = db.prepare(`PRAGMA table_info('${tableName}')`).all().map(c => c.name);
+        const newCols = db.prepare(`PRAGMA table_info('${newName}')`).all().map(c => c.name);
+        const common = newCols.filter(c => oldCols.includes(c));
+        const colList = common.join(', ');
+        const where = filter ? ` WHERE ${filter}` : '';
+        db.exec(`INSERT OR IGNORE INTO ${newName} (${colList}) SELECT ${colList} FROM ${tableName}${where}`);
+        db.exec(`DROP TABLE ${tableName}`);
+        db.exec(`ALTER TABLE ${newName} RENAME TO ${tableName}`);
+        for (const idx of indexes) db.exec(idx);
+      }
 
       // --- calls ---
-      db.exec(`
+      rebuildTable('calls', `
         CREATE TABLE calls_new (
           id TEXT PRIMARY KEY,
           call_id TEXT UNIQUE,
@@ -653,18 +659,15 @@ const migrations = [
           score INTEGER,
           outcome TEXT,
           analysis_data TEXT
-        );
-        INSERT OR IGNORE INTO calls_new SELECT * FROM calls;
-        DROP TABLE calls;
-        ALTER TABLE calls_new RENAME TO calls;
-        CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id);
-        CREATE INDEX IF NOT EXISTS idx_calls_caller_phone ON calls(caller_phone);
-        CREATE INDEX IF NOT EXISTS idx_calls_client_id ON calls(client_id);
-        CREATE INDEX IF NOT EXISTS idx_calls_created_at ON calls(client_id, created_at);
-      `);
+        )`, [
+        'CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id)',
+        'CREATE INDEX IF NOT EXISTS idx_calls_caller_phone ON calls(caller_phone)',
+        'CREATE INDEX IF NOT EXISTS idx_calls_client_id ON calls(client_id)',
+        'CREATE INDEX IF NOT EXISTS idx_calls_created_at ON calls(client_id, created_at)',
+      ], null);
 
       // --- leads ---
-      db.exec(`
+      rebuildTable('leads', `
         CREATE TABLE leads_new (
           id TEXT PRIMARY KEY,
           client_id TEXT NOT NULL,
@@ -680,21 +683,18 @@ const migrations = [
           prospect_id TEXT,
           last_contact TEXT,
           calcom_booking_id TEXT
-        );
-        INSERT OR IGNORE INTO leads_new SELECT * FROM leads WHERE client_id IS NOT NULL;
-        DROP TABLE leads;
-        ALTER TABLE leads_new RENAME TO leads;
-        CREATE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone);
-        CREATE INDEX IF NOT EXISTS idx_leads_prospect_id ON leads(prospect_id);
-        CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
-        CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(client_id, stage);
-        CREATE INDEX IF NOT EXISTS idx_leads_score ON leads(client_id, score);
-        CREATE INDEX IF NOT EXISTS idx_leads_client_created_at ON leads(client_id, created_at);
-        CREATE INDEX IF NOT EXISTS idx_leads_calcom_booking ON leads(calcom_booking_id);
-      `);
+        )`, [
+        'CREATE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_prospect_id ON leads(prospect_id)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(client_id, stage)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_score ON leads(client_id, score)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_client_created_at ON leads(client_id, created_at)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_calcom_booking ON leads(calcom_booking_id)',
+      ], 'client_id IS NOT NULL');
 
       // --- messages ---
-      db.exec(`
+      rebuildTable('messages', `
         CREATE TABLE messages_new (
           id TEXT PRIMARY KEY,
           client_id TEXT NOT NULL,
@@ -710,19 +710,16 @@ const migrations = [
           confidence REAL,
           updated_at TEXT DEFAULT (datetime('now')),
           message_sid TEXT
-        );
-        INSERT OR IGNORE INTO messages_new SELECT * FROM messages WHERE client_id IS NOT NULL;
-        DROP TABLE messages;
-        ALTER TABLE messages_new RENAME TO messages;
-        CREATE INDEX IF NOT EXISTS idx_messages_client_phone ON messages(client_id, phone);
-        CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(client_id, created_at);
-        CREATE INDEX IF NOT EXISTS idx_messages_phone_created_at ON messages(phone, created_at);
-        CREATE INDEX IF NOT EXISTS idx_messages_sid ON messages(message_sid);
-        CREATE INDEX IF NOT EXISTS idx_messages_lead_id ON messages(lead_id);
-      `);
+        )`, [
+        'CREATE INDEX IF NOT EXISTS idx_messages_client_phone ON messages(client_id, phone)',
+        'CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(client_id, created_at)',
+        'CREATE INDEX IF NOT EXISTS idx_messages_phone_created_at ON messages(phone, created_at)',
+        'CREATE INDEX IF NOT EXISTS idx_messages_sid ON messages(message_sid)',
+        'CREATE INDEX IF NOT EXISTS idx_messages_lead_id ON messages(lead_id)',
+      ], 'client_id IS NOT NULL');
 
       // --- followups ---
-      db.exec(`
+      rebuildTable('followups', `
         CREATE TABLE followups_new (
           id TEXT PRIMARY KEY,
           lead_id TEXT,
@@ -738,17 +735,14 @@ const migrations = [
           content_source TEXT,
           sent_at TEXT,
           updated_at TEXT DEFAULT (datetime('now'))
-        );
-        INSERT OR IGNORE INTO followups_new SELECT * FROM followups WHERE client_id IS NOT NULL;
-        DROP TABLE followups;
-        ALTER TABLE followups_new RENAME TO followups;
-        CREATE INDEX IF NOT EXISTS idx_followups_lead_id ON followups(lead_id);
-        CREATE INDEX IF NOT EXISTS idx_followups_client_id ON followups(client_id);
-        CREATE INDEX IF NOT EXISTS idx_followups_status_scheduled ON followups(status, scheduled_at);
-      `);
+        )`, [
+        'CREATE INDEX IF NOT EXISTS idx_followups_lead_id ON followups(lead_id)',
+        'CREATE INDEX IF NOT EXISTS idx_followups_client_id ON followups(client_id)',
+        'CREATE INDEX IF NOT EXISTS idx_followups_status_scheduled ON followups(status, scheduled_at)',
+      ], 'client_id IS NOT NULL');
 
       // --- appointments ---
-      db.exec(`
+      rebuildTable('appointments', `
         CREATE TABLE appointments_new (
           id TEXT PRIMARY KEY,
           client_id TEXT NOT NULL,
@@ -761,14 +755,11 @@ const migrations = [
           calcom_booking_id TEXT,
           created_at TEXT DEFAULT (datetime('now')),
           updated_at TEXT DEFAULT (datetime('now'))
-        );
-        INSERT OR IGNORE INTO appointments_new SELECT * FROM appointments WHERE client_id IS NOT NULL;
-        DROP TABLE appointments;
-        ALTER TABLE appointments_new RENAME TO appointments;
-        CREATE INDEX IF NOT EXISTS idx_appointments_client_status ON appointments(client_id, status);
-        CREATE INDEX IF NOT EXISTS idx_appointments_lead_id ON appointments(lead_id);
-        CREATE INDEX IF NOT EXISTS idx_appointments_calcom_booking ON appointments(calcom_booking_id);
-      `);
+        )`, [
+        'CREATE INDEX IF NOT EXISTS idx_appointments_client_status ON appointments(client_id, status)',
+        'CREATE INDEX IF NOT EXISTS idx_appointments_lead_id ON appointments(lead_id)',
+        'CREATE INDEX IF NOT EXISTS idx_appointments_calcom_booking ON appointments(calcom_booking_id)',
+      ], 'client_id IS NOT NULL');
     },
   },
   {
