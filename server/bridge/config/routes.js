@@ -475,15 +475,15 @@ function mountRoutes(app) {
     try {
       if (err.type === 'entity.parse.failed' || (err instanceof SyntaxError && err.status === 400)) {
         logger.warn('[server] JSON parse error:', err.message);
-        return res.status(400).json({ error: 'Invalid JSON in request body' });
+        return res.status(400).json({ code: 'PARSE_ERROR', message: 'Invalid JSON in request body', requestId: req.id || undefined });
       }
       if (err.message && err.message.includes('validation')) {
         logger.warn('[server] Validation error:', err.message);
-        return res.status(400).json({ error: 'Request validation failed' });
+        return res.status(422).json({ code: 'VALIDATION_ERROR', message: 'Request validation failed', requestId: req.id || undefined });
       }
       if (err.message && err.message.includes('database')) {
         logger.error('[server] Database error:', err.message);
-        return res.status(500).json({ error: 'Database error' });
+        return res.status(500).json({ code: 'DATABASE_ERROR', message: 'Database error', requestId: req.id || undefined });
       }
       logger.error('[server] Unhandled error:', {
         message: err.message,
@@ -493,7 +493,7 @@ function mountRoutes(app) {
       });
       const { alertCriticalError } = require('./startup');
       alertCriticalError(`${req.method} ${req.path}`, err);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Internal server error', requestId: req.id || undefined });
     } catch (handlerErr) {
       logger.error('[server] Error handler crashed:', handlerErr.message);
       res.status(500).json({ error: 'Internal server error' });

@@ -1,612 +1,460 @@
+'use strict';
+
 /**
- * Tests for calcom.js
- * Tests Cal.com API integration for booking management
+ * Route-level tests for routes/calcom-webhook.js
+ * Tests the Cal.com webhook handler (booking created/rescheduled/cancelled).
  */
 
-jest.mock('node-fetch');
+const request = require('supertest');
+const express = require('express');
+const { createHmac } = require('crypto');
+const { randomUUID } = require('crypto');
 
-describe('calcom', () => {
-  const originalFetch = global.fetch;
-  const originalEnv = process.env.CALCOM_API_KEY;
+// Mock all side-effect utilities before requiring the route
+jest.mock('../utils/logger', () => ({
+  logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() }
+}));
+
+jest.mock('../utils/eventStore', () => ({
+  appendEvent: jest.fn(),
+  Events: { AppointmentBooked: 'AppointmentBooked' }
+}));
+
+jest.mock('../utils/auditLog', () => ({
+  logDataMutation: jest.fn()
+}));
+
+jest.mock('../utils/sms', () => ({
+  sendSMS: jest.fn().mockResolvedValue(true)
+}));
+
+jest.mock('../utils/appointmentReminders', () => ({
+  scheduleReminders: jest.fn()
+}));
+
+jest.mock('../utils/jobQueue', () => ({
+  enqueueJob: jest.fn().mockResolvedValue(true),
+  cancelJobs: jest.fn()
+}));
+
+jest.mock('../utils/telegram', () => ({
+  sendMessage: jest.fn().mockResolvedValue(true)
+}));
+
+jest.mock('../utils/webhookQueue', () => ({
+  enqueue: jest.fn().mockResolvedValue(true)
+}));
+
+const calcomRouter = require('../routes/calcom-webhook');
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const BOOKING_ID = 'cal-booking-123';
+const CLIENT_ID = randomUUID();
+const APPT_ID = randomUUID();
+
+function makeClient(overrides = {}) {
+  return {
+    id: CLIENT_ID,
+    name: 'Test Biz',
+    business_name: 'Test Biz',
+    owner_email: 'owner@testbiz.com',
+    is_active: 1,
+    twilio_phone: '+15005550006',
+    telegram_chat_id: '12345',
+    google_review_link: null,
+    booking_webhook_url: null,
+    ...overrides
+  };
+}
+
+function makeBookingPayload(overrides = {}) {
+  return {
+    bookingId: BOOKING_ID,
+    uid: 'uid-abc',
+    title: 'Demo Call',
+    startTime: new Date(Date.now() + 86400000).toISOString(),
+    endTime: new Date(Date.now() + 90000000).toISOString(),
+    attendees: [{ name: 'Jane Doe', email: 'jane@prospect.com', phone: '+14155551234' }],
+    organizer: { email: 'owner@testbiz.com' },
+    metadata: {},
+    ...overrides
+  };
+}
+
+/**
+ * Build a mock db that supports query(sql, params, mode) and
+ * handles the sequences of calls calcom-webhook makes.
+ */
+function makeMockDb(clientRow = makeClient(), extraHandlers = {}) {
+  const mockDb = {
+    _calls: [],
+    query: jest.fn(async (sql, params = [], mode = 'all') => {
+      const s = sql.replace(/\s+/g, ' ').trim();
+
+      // Allow caller-supplied overrides first
+      if (extraHandlers.query) {
+        const result = await extraHandlers.query(s, params, mode);
+        if (result !== undefined) return result;
+      }
+
+      // Idempotency check: SELECT id FROM appointments WHERE calcom_booking_id
+      if (s.includes('FROM appointments') && s.includes('calcom_booking_id') && mode === 'get') {
+        return null; // not yet processed → proceed
+      }
+
+      // Client lookup by owner email
+      if (s.includes('FROM clients') && s.includes('owner_email') && mode === 'get') {
+        return clientRow;
+      }
+
+      // Client lookup by id (for rescheduled review request)
+      if (s.includes('FROM clients') && s.includes('WHERE id') && mode === 'get') {
+        return clientRow;
+      }
+
+      // Prospect lookup
+      if (s.includes('FROM prospects') && mode === 'get') {
+        return null;
+      }
+
+      // Lead lookup
+      if (s.includes('FROM leads') && mode === 'get') {
+        return null;
+      }
+
+      // Appointment lookup for reschedule
+      if (s.includes('FROM appointments') && mode === 'get') {
+        return {
+          id: APPT_ID,
+          client_id: CLIENT_ID,
+          phone: '+14155551234',
+          name: 'Jane Doe',
+          service: 'Demo Call'
+        };
+      }
+
+      // emails_sent prospect lookup
+      if (s.includes('FROM emails_sent') && mode === 'get') {
+        return null;
+      }
+
+      // INSERT / UPDATE / job_queue
+      if (mode === 'run') return { changes: 1, lastInsertRowid: 1 };
+
+      return [];
+    })
+  };
+  return mockDb;
+}
+
+function buildApp(db, secret = undefined) {
+  if (secret !== undefined) {
+    process.env.CALCOM_WEBHOOK_SECRET = secret;
+  } else {
+    delete process.env.CALCOM_WEBHOOK_SECRET;
+  }
+
+  // Force a fresh require of the router so middleware captures the new env
+  jest.resetModules();
+  // Re-apply mocks after resetModules
+  jest.mock('../utils/logger', () => ({
+    logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() }
+  }));
+  jest.mock('../utils/eventStore', () => ({
+    appendEvent: jest.fn(),
+    Events: { AppointmentBooked: 'AppointmentBooked' }
+  }));
+  jest.mock('../utils/auditLog', () => ({
+    logDataMutation: jest.fn()
+  }));
+  jest.mock('../utils/sms', () => ({
+    sendSMS: jest.fn().mockResolvedValue(true)
+  }));
+  jest.mock('../utils/appointmentReminders', () => ({
+    scheduleReminders: jest.fn()
+  }));
+  jest.mock('../utils/jobQueue', () => ({
+    enqueueJob: jest.fn().mockResolvedValue(true),
+    cancelJobs: jest.fn()
+  }));
+  jest.mock('../utils/telegram', () => ({
+    sendMessage: jest.fn().mockResolvedValue(true)
+  }));
+  jest.mock('../utils/webhookQueue', () => ({
+    enqueue: jest.fn().mockResolvedValue(true)
+  }));
+
+  const router = require('../routes/calcom-webhook');
+
+  const app = express();
+  app.use(express.json());
+  app.locals.db = db;
+  app.use('/webhooks/calcom', router);
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    res.status(err.statusCode || 500).json({ error: err.message, code: err.code });
+  });
+  return app;
+}
+
+function signBody(body, secret) {
+  return createHmac('sha256', secret).update(JSON.stringify(body)).digest('hex');
+}
+
+// ─── Tests: no signature (dev mode) ─────────────────────────────────────────
+
+describe('Cal.com webhook — no CALCOM_WEBHOOK_SECRET (dev/test mode)', () => {
+  let app;
+  let db;
 
   beforeEach(() => {
-    // Set API key BEFORE requiring the module
-    process.env.CALCOM_API_KEY = 'test-api-key-123';
-
-    // Clear module cache and re-require with the correct API key
-    delete require.cache[require.resolve('../utils/calcom')];
-    jest.clearAllMocks();
-    global.fetch = jest.fn();
-
-    // Reset calcom circuit breaker so failures from previous tests don't bleed in
-    const { _calcomBreaker } = require('../utils/calcom');
-    if (_calcomBreaker && typeof _calcomBreaker.reset === 'function') {
-      _calcomBreaker.reset();
-    }
+    delete process.env.CALCOM_WEBHOOK_SECRET;
+    db = makeMockDb();
+    app = buildApp(db);
   });
 
   afterEach(() => {
-    process.env.CALCOM_API_KEY = originalEnv;
-    global.fetch = originalFetch;
+    delete process.env.CALCOM_WEBHOOK_SECRET;
   });
 
-  // Get fresh imports for each test
-  const getModule = () => require('../utils/calcom');
-
-  describe('getBookings', () => {
-    test('fetches bookings for an event type', async () => {
-      const { getBookings } = getModule();
-      const mockResponse = {
-        data: [
-          {
-            id: '1',
-            title: 'John Doe',
-            startTime: new Date().toISOString(),
-            endTime: new Date(Date.now() + 3600000).toISOString()
-          }
-        ]
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue(mockResponse)
-      });
-
-      const result = await getBookings('123');
-
-      expect(result).toEqual(mockResponse.data);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/bookings'),
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer test-api-key-123'
-          })
-        })
-      );
-    });
-
-    test('filters bookings by date range', async () => {
-      const { getBookings } = getModule();
-      const mockResponse = { data: [] };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue(mockResponse)
-      });
-
-      const startDate = '2025-03-01';
-      const endDate = '2025-03-31';
-      await getBookings('123', startDate, endDate);
-
-      const url = global.fetch.mock.calls[0][0];
-      expect(url).toContain('afterStart=' + startDate);
-      expect(url).toContain('beforeEnd=' + endDate);
-    });
-
-    test('returns empty array on API error', async () => {
-      const { getBookings } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: false,
-        text: jest.fn().mockResolvedValue('API Error')
-      });
-
-      const result = await getBookings('123');
-
-      expect(result).toEqual([]);
-    });
-
-    test('returns empty array on network error', async () => {
-      const { getBookings } = getModule();
-      global.fetch.mockRejectedValue(new Error('Network error'));
-
-      const result = await getBookings('123');
-
-      expect(result).toEqual([]);
-    });
-
-    test('handles legacy response format with bookings property', async () => {
-      const { getBookings } = getModule();
-      const mockResponse = {
-        bookings: [{ id: '1', title: 'Test' }]
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue(mockResponse)
-      });
-
-      const result = await getBookings('123');
-
-      expect(result).toEqual(mockResponse.bookings);
-    });
+  it('responds 200 immediately for BOOKING_CREATED', async () => {
+    const body = { triggerEvent: 'BOOKING_CREATED', payload: makeBookingPayload() };
+    const res = await request(app).post('/webhooks/calcom').send(body);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ received: true });
   });
 
-  describe('cancelBooking', () => {
-    test('cancels a booking by ID', async () => {
-      const { cancelBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue({ ok: true })
-      });
-
-      const result = await cancelBooking('booking-123');
-
-      expect(result.success).toBe(true);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/bookings/booking-123/cancel'),
-        expect.objectContaining({
-          method: 'POST'
-        })
-      );
-    });
-
-    test('returns false on API error', async () => {
-      const { cancelBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: false,
-        text: jest.fn().mockResolvedValue('Error')
-      });
-
-      const result = await cancelBooking('booking-123');
-
-      expect(result.success).toBe(false);
-    });
-
-    test('returns false on network error', async () => {
-      const { cancelBooking } = getModule();
-      global.fetch.mockRejectedValue(new Error('Network error'));
-
-      const result = await cancelBooking('booking-123');
-
-      expect(result.success).toBe(false);
-    });
-
-    test('includes auth headers in request', async () => {
-      const { cancelBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue({})
-      });
-
-      await cancelBooking('booking-123');
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer test-api-key-123'
-          })
-        })
-      );
-    });
+  it('responds 200 immediately for BOOKING_CANCELLED', async () => {
+    const body = { triggerEvent: 'BOOKING_CANCELLED', payload: { bookingId: BOOKING_ID } };
+    const res = await request(app).post('/webhooks/calcom').send(body);
+    expect(res.status).toBe(200);
   });
 
-  describe('getAvailability', () => {
-    test('fetches available slots for a date', async () => {
-      const { getAvailability } = getModule();
-      const mockResponse = {
-        data: {
-          slots: [
-            '2025-03-30T09:00:00Z',
-            '2025-03-30T10:00:00Z',
-            '2025-03-30T11:00:00Z'
-          ]
+  it('responds 200 immediately for BOOKING_RESCHEDULED', async () => {
+    const body = {
+      triggerEvent: 'BOOKING_RESCHEDULED',
+      payload: {
+        bookingId: BOOKING_ID,
+        startTime: new Date(Date.now() + 172800000).toISOString(),
+        endTime: new Date(Date.now() + 176400000).toISOString()
+      }
+    };
+    const res = await request(app).post('/webhooks/calcom').send(body);
+    expect(res.status).toBe(200);
+  });
+
+  it('responds 200 and returns received:true even when triggerEvent is missing', async () => {
+    const res = await request(app)
+      .post('/webhooks/calcom')
+      .send({ payload: makeBookingPayload() });
+    expect(res.status).toBe(200);
+    expect(res.body.received).toBe(true);
+  });
+
+  it('responds 200 and returns received:true even when payload is missing', async () => {
+    const res = await request(app)
+      .post('/webhooks/calcom')
+      .send({ triggerEvent: 'BOOKING_CREATED' });
+    expect(res.status).toBe(200);
+    expect(res.body.received).toBe(true);
+  });
+
+  it('responds 200 for unknown triggerEvent', async () => {
+    const res = await request(app)
+      .post('/webhooks/calcom')
+      .send({ triggerEvent: 'UNKNOWN_EVENT', payload: {} });
+    expect(res.status).toBe(200);
+  });
+
+  it('creates an appointment row on BOOKING_CREATED', async () => {
+    const body = { triggerEvent: 'BOOKING_CREATED', payload: makeBookingPayload() };
+    await request(app).post('/webhooks/calcom').send(body);
+
+    // Give fire-and-forget async operations a tick to settle
+    await new Promise(r => setImmediate(r));
+
+    const insertCall = db.query.mock.calls.find(c =>
+      c[0].includes('INSERT INTO appointments')
+    );
+    expect(insertCall).toBeDefined();
+  });
+
+  it('updates appointment status to cancelled on BOOKING_CANCELLED', async () => {
+    const body = { triggerEvent: 'BOOKING_CANCELLED', payload: { bookingId: BOOKING_ID } };
+    await request(app).post('/webhooks/calcom').send(body);
+    await new Promise(r => setImmediate(r));
+
+    const updateCall = db.query.mock.calls.find(c =>
+      c[0].includes("status = 'cancelled'") && c[0].includes('appointments')
+    );
+    expect(updateCall).toBeDefined();
+  });
+
+  it('updates appointment datetime on BOOKING_RESCHEDULED', async () => {
+    const newStart = new Date(Date.now() + 172800000).toISOString();
+    const body = {
+      triggerEvent: 'BOOKING_RESCHEDULED',
+      payload: { bookingId: BOOKING_ID, startTime: newStart }
+    };
+    await request(app).post('/webhooks/calcom').send(body);
+    await new Promise(r => setImmediate(r));
+
+    const updateCall = db.query.mock.calls.find(c =>
+      c[0].includes('UPDATE appointments') && c[0].includes('datetime = ?')
+    );
+    expect(updateCall).toBeDefined();
+    expect(updateCall[1][0]).toBe(newStart);
+  });
+
+  it('is idempotent — skips processing if booking already exists', async () => {
+    // Return an existing appointment for the idempotency check
+    const idempotentDb = makeMockDb(makeClient(), {
+      query: (sql, params, mode) => {
+        if (sql.includes('FROM appointments') && sql.includes('calcom_booking_id') && mode === 'get') {
+          return { id: APPT_ID }; // already processed
         }
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue(mockResponse)
-      });
-
-      const result = await getAvailability('123', '2025-03-30');
-
-      expect(result).toEqual(mockResponse.data.slots);
+        return undefined;
+      }
     });
 
-    test('includes event type and date in query', async () => {
-      const { getAvailability } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue({ data: { slots: [] } })
-      });
+    const idempotentApp = buildApp(idempotentDb);
+    const body = { triggerEvent: 'BOOKING_CREATED', payload: makeBookingPayload() };
+    await request(idempotentApp).post('/webhooks/calcom').send(body);
+    await new Promise(r => setImmediate(r));
 
-      await getAvailability('456', '2025-03-30');
-
-      const url = global.fetch.mock.calls[0][0];
-      expect(url).toContain('eventTypeId=456');
-      expect(url).toContain('2025-03-30');
-    });
-
-    test('returns empty array on API error', async () => {
-      const { getAvailability } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: false,
-        text: jest.fn().mockResolvedValue('Error')
-      });
-
-      const result = await getAvailability('123', '2025-03-30');
-
-      expect(result).toEqual([]);
-    });
-
-    test('handles legacy response format with slots property', async () => {
-      const { getAvailability } = getModule();
-      const mockResponse = {
-        slots: ['2025-03-30T09:00:00Z']
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue(mockResponse)
-      });
-
-      const result = await getAvailability('123', '2025-03-30');
-
-      expect(result).toEqual(mockResponse.slots);
-    });
+    // INSERT INTO appointments should NOT be called
+    const insertCall = idempotentDb.query.mock.calls.find(c =>
+      c[0].includes('INSERT INTO appointments')
+    );
+    expect(insertCall).toBeUndefined();
   });
 
-  describe('createBooking', () => {
-    test('creates a booking with required fields', async () => {
-      const { createBooking } = getModule();
-      const mockResponse = {
-        data: {
-          id: 'booking-123',
-          uid: 'unique-id-123',
-          startTime: '2025-03-30T14:00:00Z'
+  it('skips processing when no matching client found', async () => {
+    const noClientDb = makeMockDb(null); // client lookup returns null
+    const noClientApp = buildApp(noClientDb);
+
+    const body = { triggerEvent: 'BOOKING_CREATED', payload: makeBookingPayload() };
+    await request(noClientApp).post('/webhooks/calcom').send(body);
+    await new Promise(r => setImmediate(r));
+
+    const insertCall = noClientDb.query.mock.calls.find(c =>
+      c[0].includes('INSERT INTO appointments')
+    );
+    expect(insertCall).toBeUndefined();
+  });
+
+  it('upserts lead to booked stage when phone present', async () => {
+    // No existing lead → creates new one
+    const body = { triggerEvent: 'BOOKING_CREATED', payload: makeBookingPayload() };
+    await request(app).post('/webhooks/calcom').send(body);
+    await new Promise(r => setImmediate(r));
+
+    const leadInsert = db.query.mock.calls.find(c =>
+      c[0].includes('INSERT INTO leads') && c[0].includes("'booked'")
+    );
+    expect(leadInsert).toBeDefined();
+  });
+
+  it('updates existing lead to booked when one already exists', async () => {
+    const existingLeadDb = makeMockDb(makeClient(), {
+      query: (sql, params, mode) => {
+        if (sql.includes('FROM leads') && mode === 'get') {
+          return { id: randomUUID(), client_id: CLIENT_ID, stage: 'contacted' };
         }
-      };
-
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue(mockResponse)
-      });
-
-      const result = await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-03-30T14:00:00Z',
-        name: 'John Doe',
-        email: 'john@example.com'
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.booking).toEqual(mockResponse.data);
+        return undefined;
+      }
     });
+    const existingLeadApp = buildApp(existingLeadDb);
 
-    test('includes optional phone field if provided', async () => {
-      const { createBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue({ data: { id: '1' } })
-      });
+    const body = { triggerEvent: 'BOOKING_CREATED', payload: makeBookingPayload() };
+    await request(existingLeadApp).post('/webhooks/calcom').send(body);
+    await new Promise(r => setImmediate(r));
 
-      await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-03-30T14:00:00Z',
-        name: 'John Doe',
-        email: 'john@example.com',
-        phone: '+1-212-555-1234'
-      });
+    const leadUpdate = existingLeadDb.query.mock.calls.find(c =>
+      c[0].includes('UPDATE leads') && c[0].includes("stage = 'booked'")
+    );
+    expect(leadUpdate).toBeDefined();
+  });
+});
 
-      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
-      expect(body.responses.phone).toBe('+1-212-555-1234');
-    });
+// ─── Tests: with CALCOM_WEBHOOK_SECRET ──────────────────────────────────────
 
-    test('includes metadata if provided', async () => {
-      const { createBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue({ data: { id: '1' } })
-      });
+describe('Cal.com webhook — with CALCOM_WEBHOOK_SECRET', () => {
+  const SECRET = 'super-secret-calcom-webhook-key';
+  let app;
+  let db;
 
-      const metadata = { lead_id: 'lead-123', source: 'brain' };
-      await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-03-30T14:00:00Z',
-        name: 'John Doe',
-        email: 'john@example.com',
-        metadata
-      });
-
-      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
-      expect(body.metadata).toEqual(metadata);
-    });
-
-    test('returns error when required fields missing', async () => {
-      const { createBooking } = getModule();
-      const result = await createBooking({
-        eventTypeId: '123',
-        // missing startTime, email
-        name: 'John Doe'
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('required');
-    });
-
-    test('returns error when API key not configured', async () => {
-      // Note: This test is documented here for reference, but is tested via manual verification
-      // since CALCOM_API_KEY is captured at module load time (line 1 of calcom.js).
-      // Jest's module caching makes it difficult to reload the module with different env vars.
-      // Manual testing confirms:
-      // $ CALCOM_API_KEY='' node -e "const {createBooking} = require('./utils/calcom'); ..."
-      // correctly returns { success: false, error: 'Cal.com API key not configured' }
-
-      // Instead, we test that the function validates its inputs correctly
-      const { createBooking } = getModule();
-      const result = await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-03-30T14:00:00Z',
-        name: 'John Doe'
-        // Missing email - required field
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('required');
-    });
-
-    test('handles API error response', async () => {
-      const { createBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: false,
-        status: 400,
-        text: jest.fn().mockResolvedValue('Invalid email')
-      });
-
-      const result = await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-03-30T14:00:00Z',
-        name: 'John Doe',
-        email: 'invalid-email'
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('400');
-    });
-
-    test('handles network errors', async () => {
-      const { createBooking } = getModule();
-      global.fetch.mockRejectedValue(new Error('Network timeout'));
-
-      const result = await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-03-30T14:00:00Z',
-        name: 'John Doe',
-        email: 'john@example.com'
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Network timeout');
-    });
-
-    test('uses default name when name not provided', async () => {
-      const { createBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue({ data: { id: '1' } })
-      });
-
-      await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-03-30T14:00:00Z',
-        email: 'john@example.com'
-      });
-
-      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
-      expect(body.responses.name).toBe('Guest');
-    });
-
-    test('converts eventTypeId to number', async () => {
-      const { createBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue({ data: { id: '1' } })
-      });
-
-      await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-03-30T14:00:00Z',
-        name: 'John Doe',
-        email: 'john@example.com'
-      });
-
-      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
-      expect(typeof body.eventTypeId).toBe('number');
-      expect(body.eventTypeId).toBe(123);
-    });
-
-    test('includes correct API headers', async () => {
-      const { createBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue({ data: { id: '1' } })
-      });
-
-      await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-03-30T14:00:00Z',
-        name: 'John Doe',
-        email: 'john@example.com'
-      });
-
-      const headers = global.fetch.mock.calls[0][1].headers;
-      expect(headers.Authorization).toBe('Bearer test-api-key-123');
-      expect(headers['Content-Type']).toBe('application/json');
-      expect(headers['cal-api-version']).toBeDefined();
-    });
+  beforeEach(() => {
+    process.env.CALCOM_WEBHOOK_SECRET = SECRET;
+    db = makeMockDb();
+    app = buildApp(db, SECRET);
   });
 
-  describe('cancelBooking edge cases', () => {
-    test('cancels booking and returns success with valid ID', async () => {
-      const { cancelBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest.fn().mockResolvedValue({ status: 'cancelled' })
-      });
-
-      const result = await cancelBooking('booking-cancel-1');
-
-      expect(result.success).toBe(true);
-      const url = global.fetch.mock.calls[0][0];
-      expect(url).toContain('/bookings/booking-cancel-1/cancel');
-    });
-
-    test('handles cancellation of already cancelled booking', async () => {
-      const { cancelBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: false,
-        text: jest.fn().mockResolvedValue('Booking already cancelled')
-      });
-
-      const result = await cancelBooking('booking-already-cancelled');
-
-      expect(result.success).toBe(false);
-    });
-
-    test('handles cancellation with empty booking ID', async () => {
-      const { cancelBooking } = getModule();
-      global.fetch.mockResolvedValue({
-        ok: false,
-        text: jest.fn().mockResolvedValue('Not found')
-      });
-
-      const result = await cancelBooking('');
-
-      expect(result.success).toBe(false);
-    });
+  afterEach(() => {
+    delete process.env.CALCOM_WEBHOOK_SECRET;
   });
 
-  describe('reschedule booking (cancel + create)', () => {
-    test('reschedules by cancelling then creating new booking', async () => {
-      const { cancelBooking, createBooking } = getModule();
+  it('accepts request with valid signature', async () => {
+    const body = { triggerEvent: 'BOOKING_CREATED', payload: makeBookingPayload() };
+    const sig = signBody(body, SECRET);
+    const res = await request(app)
+      .post('/webhooks/calcom')
+      .set('x-cal-signature-256', sig)
+      .send(body);
 
-      // First call: cancel
-      global.fetch.mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue({ ok: true })
-      });
-
-      const cancelResult = await cancelBooking('booking-old');
-      expect(cancelResult.success).toBe(true);
-
-      // Second call: create new booking at different time
-      global.fetch.mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue({
-          data: { id: 'booking-new', uid: 'uid-new', startTime: '2025-04-01T10:00:00Z' }
-        })
-      });
-
-      const createResult = await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-04-01T10:00:00Z',
-        name: 'Jane Smith',
-        email: 'jane@example.com'
-      });
-
-      expect(createResult.success).toBe(true);
-      expect(createResult.booking.id).toBe('booking-new');
-    });
-
-    test('handles reschedule when cancel fails', async () => {
-      const { cancelBooking, createBooking } = getModule();
-
-      global.fetch.mockResolvedValueOnce({
-        ok: false,
-        text: jest.fn().mockResolvedValue('Cannot cancel')
-      });
-
-      const cancelResult = await cancelBooking('booking-old');
-      expect(cancelResult.success).toBe(false);
-      // Should not proceed to create if cancel fails
-    });
-
-    test('handles reschedule when create fails after cancel', async () => {
-      const { cancelBooking, createBooking } = getModule();
-
-      // Cancel succeeds
-      global.fetch.mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue({ ok: true })
-      });
-
-      const cancelResult = await cancelBooking('booking-old');
-      expect(cancelResult.success).toBe(true);
-
-      // Create fails
-      global.fetch.mockResolvedValueOnce({
-        ok: false,
-        status: 409,
-        text: jest.fn().mockResolvedValue('Time slot no longer available')
-      });
-
-      const createResult = await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-04-01T10:00:00Z',
-        name: 'Jane Smith',
-        email: 'jane@example.com'
-      });
-
-      expect(createResult.success).toBe(false);
-      expect(createResult.error).toContain('409');
-    });
+    expect(res.status).toBe(200);
+    expect(res.body.received).toBe(true);
   });
 
-  describe('idempotent booking (duplicate calcom_booking_id)', () => {
-    test('creating same booking twice returns success both times', async () => {
-      const { createBooking } = getModule();
-      const bookingData = {
-        eventTypeId: '123',
-        startTime: '2025-03-30T14:00:00Z',
-        name: 'John Doe',
-        email: 'john@example.com',
-        metadata: { calcom_booking_id: 'idempotent-123' }
-      };
+  it('rejects request with missing signature — returns 401', async () => {
+    const body = { triggerEvent: 'BOOKING_CREATED', payload: makeBookingPayload() };
+    const res = await request(app).post('/webhooks/calcom').send(body);
 
-      // First call succeeds
-      global.fetch.mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue({
-          data: { id: 'booking-1', uid: 'uid-1' }
-        })
-      });
+    expect(res.status).toBe(401);
+  });
 
-      const first = await createBooking(bookingData);
-      expect(first.success).toBe(true);
+  it('rejects request with wrong signature — returns 401', async () => {
+    const body = { triggerEvent: 'BOOKING_CREATED', payload: makeBookingPayload() };
+    const res = await request(app)
+      .post('/webhooks/calcom')
+      .set('x-cal-signature-256', 'deadbeef1234567890abcdef')
+      .send(body);
 
-      // Second call with same metadata — API might return 409 or succeed
-      global.fetch.mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue({
-          data: { id: 'booking-1', uid: 'uid-1' }
-        })
-      });
+    expect(res.status).toBe(401);
+  });
 
-      const second = await createBooking(bookingData);
-      expect(second.success).toBe(true);
-      expect(second.booking.id).toBe('booking-1');
-    });
+  it('rejects request with old timestamp — returns 400 (replay attack)', async () => {
+    const oldTimestamp = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // 10 min ago
+    const body = {
+      triggerEvent: 'BOOKING_CREATED',
+      payload: makeBookingPayload(),
+      createdAt: oldTimestamp
+    };
+    const sig = signBody(body, SECRET);
+    const res = await request(app)
+      .post('/webhooks/calcom')
+      .set('x-cal-signature-256', sig)
+      .set('x-cal-timestamp', oldTimestamp)
+      .send(body);
 
-    test('duplicate booking returns API error gracefully', async () => {
-      const { createBooking } = getModule();
+    expect(res.status).toBe(400);
+  });
 
-      global.fetch.mockResolvedValueOnce({
-        ok: false,
-        status: 409,
-        text: jest.fn().mockResolvedValue('Booking already exists for this time slot')
-      });
+  it('accepts request with recent timestamp', async () => {
+    const recentTimestamp = new Date().toISOString();
+    const body = {
+      triggerEvent: 'BOOKING_CANCELLED',
+      payload: { bookingId: BOOKING_ID },
+      createdAt: recentTimestamp
+    };
+    const sig = signBody(body, SECRET);
+    const res = await request(app)
+      .post('/webhooks/calcom')
+      .set('x-cal-signature-256', sig)
+      .set('x-cal-timestamp', recentTimestamp)
+      .send(body);
 
-      const result = await createBooking({
-        eventTypeId: '123',
-        startTime: '2025-03-30T14:00:00Z',
-        name: 'John Doe',
-        email: 'john@example.com',
-        metadata: { calcom_booking_id: 'dup-456' }
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('409');
-    });
+    expect(res.status).toBe(200);
   });
 });

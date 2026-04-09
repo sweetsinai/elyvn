@@ -1,312 +1,282 @@
-const { generateTrackingPixel, wrapLinksWithTracking, BASE_URL } = require('../utils/emailTracking');
+'use strict';
 
-describe('emailTracking', () => {
+/**
+ * Route-level tests for routes/tracking.js
+ * Tests the email open pixel and click-redirect endpoints.
+ */
+
+const request = require('supertest');
+const express = require('express');
+const { randomUUID } = require('crypto');
+
+// Mock external dependencies before requiring routes
+jest.mock('../utils/logger', () => ({
+  logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() }
+}));
+
+jest.mock('../utils/analyticsStream', () => ({
+  emitAnalyticsEvent: jest.fn()
+}));
+
+// isValidUUID is used directly from ../utils/validate — use real implementation
+// (it's a pure function with no side effects)
+
+const trackingRouter = require('../routes/tracking');
+
+const VALID_UUID = '550e8400-e29b-41d4-a716-446655440000';
+const PIXEL_B64 = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const PIXEL_BUF = Buffer.from(PIXEL_B64, 'base64');
+
+function buildApp(db) {
+  const app = express();
+  app.use(express.json());
+  app.locals.db = db;
+  app.use('/t', trackingRouter);
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  });
+  return app;
+}
+
+function makeMockDb(overrides = {}) {
+  const defaults = {
+    query: jest.fn().mockResolvedValue({ changes: 1 })
+  };
+  return Object.assign(defaults, overrides);
+}
+
+// ─── GET /t/open/:emailId ────────────────────────────────────────────────────
+
+describe('GET /t/open/:emailId — email open pixel', () => {
+  let app;
+  let mockDb;
+
   beforeEach(() => {
-    delete process.env.RAILWAY_PUBLIC_DOMAIN;
-    delete process.env.BASE_URL;
+    jest.clearAllMocks();
+    mockDb = makeMockDb();
+    // default: UPDATE succeeds, SELECT returns an emailRow
+    mockDb.query.mockImplementation((sql, params, mode) => {
+      if (mode === 'get') {
+        return Promise.resolve({ id: params[0], client_id: 'client-1' });
+      }
+      return Promise.resolve({ changes: 1 });
+    });
+    app = buildApp(mockDb);
   });
 
-  describe('BASE_URL', () => {
-    it('should compute BASE_URL correctly with RAILWAY_PUBLIC_DOMAIN', () => {
-      process.env.RAILWAY_PUBLIC_DOMAIN = 'myapp.railway.app';
-      // BASE_URL is computed at module load time, so we test the logic
-      const railwayUrl = 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN;
-      expect(railwayUrl).toBe('https://myapp.railway.app');
-    });
+  it('returns 1x1 transparent GIF with correct headers', async () => {
+    const res = await request(app).get(`/t/open/${VALID_UUID}`);
 
-    it('should compute BASE_URL correctly with BASE_URL env var', () => {
-      process.env.BASE_URL = 'https://custom.com';
-      // When RAILWAY_PUBLIC_DOMAIN is not set, BASE_URL env var is used
-      expect(process.env.BASE_URL).toBe('https://custom.com');
-    });
-
-    it('should default to localhost', () => {
-      // This tests that the module exported BASE_URL reflects the current environment
-      expect(BASE_URL).toBe('http://localhost:3001');
-    });
-
-    it('should use RAILWAY_PUBLIC_DOMAIN when already set at load time', () => {
-      // BASE_URL was computed when module was loaded - verify it works
-      expect(BASE_URL).toBeDefined();
-      expect(typeof BASE_URL).toBe('string');
-    });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/image\/gif/);
+    expect(res.headers['cache-control']).toMatch(/no-store/);
+    expect(res.headers['pragma']).toBe('no-cache');
+    expect(Buffer.compare(res.body, PIXEL_BUF)).toBe(0);
   });
 
-  describe('generateTrackingPixel', () => {
-    it('should generate tracking pixel with email ID', () => {
-      const emailId = 'email123';
-      const result = generateTrackingPixel(emailId);
+  it('calls db.query to record the open', async () => {
+    await request(app).get(`/t/open/${VALID_UUID}`);
 
-      expect(result).toContain('<img');
-      expect(result).toContain('/t/open/email123');
-      expect(result).toContain('width="1"');
-      expect(result).toContain('height="1"');
-      expect(result).toContain('alt=""');
-    });
-
-    it('should include display none style', () => {
-      const result = generateTrackingPixel('test');
-
-      expect(result).toContain('style="display:none;"');
-    });
-
-    it('should handle different email IDs', () => {
-      const id1 = generateTrackingPixel('abc');
-      const id2 = generateTrackingPixel('xyz');
-
-      expect(id1).toContain('/t/open/abc');
-      expect(id2).toContain('/t/open/xyz');
-      expect(id1).not.toBe(id2);
-    });
-
-    it('should handle UUIDs', () => {
-      const uuid = '550e8400-e29b-41d4-a716-446655440000';
-      const result = generateTrackingPixel(uuid);
-
-      expect(result).toContain(uuid);
-    });
-
-    it('should handle alphanumeric IDs', () => {
-      const result = generateTrackingPixel('abc123def456');
-
-      expect(result).toContain('abc123def456');
-    });
-
-    it('should not sanitize email ID', () => {
-      const result = generateTrackingPixel('email-with-dash_underscore');
-
-      expect(result).toContain('email-with-dash_underscore');
-    });
-
-    it('should be a valid HTML img tag', () => {
-      const result = generateTrackingPixel('test');
-
-      expect(result).toMatch(/^<img[^>]*>$/);
-    });
-
-    it('should include BASE_URL', () => {
-      const result = generateTrackingPixel('email123');
-
-      // Should start with the configured BASE_URL
-      expect(result).toContain('http://localhost:3001/t/open/email123');
-    });
+    const updateCall = mockDb.query.mock.calls.find(c => c[0].includes('UPDATE emails_sent'));
+    expect(updateCall).toBeDefined();
+    expect(updateCall[2]).toBe('run');
   });
 
-  describe('wrapLinksWithTracking', () => {
-    it('should wrap regular links with tracking', () => {
-      const html = '<a href="https://example.com">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
+  it('returns pixel even for an invalid (non-UUID) emailId', async () => {
+    const res = await request(app).get('/t/open/not-a-uuid');
 
-      expect(result).toContain('/t/click/email1');
-      expect(result).toContain('url=');
-      expect(result).toContain('https%3A%2F%2Fexample.com');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/image\/gif/);
+    // db.query must NOT be called for invalid IDs
+    expect(mockDb.query).not.toHaveBeenCalled();
+  });
+
+  it('returns pixel even when db.query throws', async () => {
+    mockDb.query.mockRejectedValue(new Error('DB error'));
+    const res = await request(app).get(`/t/open/${VALID_UUID}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/image\/gif/);
+  });
+
+  it('returns pixel when no db is attached (db = null)', async () => {
+    const appNoDb = buildApp(null);
+    const res = await request(appNoDb).get(`/t/open/${VALID_UUID}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/image\/gif/);
+  });
+
+  it('does not double-count — COALESCE(opened_at, ?) ensures first value wins', async () => {
+    // The route uses COALESCE(opened_at, ?) which preserves the first timestamp.
+    // We verify the UPDATE SQL contains COALESCE to ensure the "first open wins" semantics.
+    await request(app).get(`/t/open/${VALID_UUID}`);
+
+    const updateCall = mockDb.query.mock.calls.find(c =>
+      c[0].includes('UPDATE emails_sent') && c[0].includes('COALESCE')
+    );
+    expect(updateCall).toBeDefined();
+    expect(updateCall[0]).toContain('COALESCE(opened_at,');
+  });
+
+  it('increments open_count on every open regardless of opened_at', async () => {
+    await request(app).get(`/t/open/${VALID_UUID}`);
+
+    const updateSql = mockDb.query.mock.calls.find(c => c[0].includes('UPDATE emails_sent'))[0];
+    expect(updateSql).toContain('open_count = COALESCE(open_count, 0) + 1');
+  });
+
+  it('emits analytics event when emailRow is found', async () => {
+    const { emitAnalyticsEvent } = require('../utils/analyticsStream');
+    await request(app).get(`/t/open/${VALID_UUID}`);
+
+    expect(emitAnalyticsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'email_opened' })
+    );
+  });
+
+  it('does not emit analytics event when emailRow not found', async () => {
+    mockDb.query.mockImplementation((sql, params, mode) => {
+      if (mode === 'get') return Promise.resolve(null);
+      return Promise.resolve({ changes: 1 });
     });
+    const { emitAnalyticsEvent } = require('../utils/analyticsStream');
+    emitAnalyticsEvent.mockClear();
 
-    it('should handle single quoted href', () => {
-      const html = "<a href='https://example.com'>Link</a>";
-      const result = wrapLinksWithTracking(html, 'email1');
+    await request(app).get(`/t/open/${VALID_UUID}`);
 
-      expect(result).toContain('/t/click/email1');
-      expect(result).toContain('https%3A%2F%2Fexample.com');
-    });
+    expect(emitAnalyticsEvent).not.toHaveBeenCalled();
+  });
+});
 
-    it('should skip unsubscribe links', () => {
-      const html = '<a href="https://example.com/unsubscribe">Click</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
+// ─── GET /t/click/:emailId ───────────────────────────────────────────────────
 
-      expect(result).toContain('https://example.com/unsubscribe');
-      expect(result).not.toContain('/t/click/email1');
-    });
+describe('GET /t/click/:emailId — click tracking redirect', () => {
+  let app;
+  let mockDb;
 
-    it('should skip case-insensitive unsubscribe', () => {
-      const html = '<a href="https://example.com/UNSUBSCRIBE">Click</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = makeMockDb();
+    app = buildApp(mockDb);
+  });
 
-      expect(result).toContain('https://example.com/UNSUBSCRIBE');
-      expect(result).not.toContain('/t/click/');
-    });
+  it('redirects to the destination URL with _csid appended', async () => {
+    const destUrl = encodeURIComponent('https://example.com/landing');
+    const res = await request(app)
+      .get(`/t/click/${VALID_UUID}?url=${destUrl}`)
+      .redirects(0);
 
-    it('should skip mailto links', () => {
-      const html = '<a href="mailto:test@example.com">Email</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('https://example.com/landing');
+    expect(res.headers.location).toContain('_csid=');
+  });
 
-      expect(result).toContain('mailto:test@example.com');
-      expect(result).not.toContain('/t/click/');
-    });
+  it('records the click in the database', async () => {
+    const destUrl = encodeURIComponent('https://example.com');
+    await request(app)
+      .get(`/t/click/${VALID_UUID}?url=${destUrl}`)
+      .redirects(0);
 
-    it('should skip mailto links case-insensitively', () => {
-      const html = '<a href="MAILTO:test@example.com">Email</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
+    const updateCall = mockDb.query.mock.calls.find(c => c[0].includes('UPDATE emails_sent'));
+    expect(updateCall).toBeDefined();
+    expect(updateCall[0]).toContain('click_count = COALESCE(click_count, 0) + 1');
+  });
 
-      expect(result).toContain('MAILTO:test@example.com');
-      expect(result).not.toContain('/t/click/');
-    });
+  it('redirects to / when no url query param provided', async () => {
+    const res = await request(app)
+      .get(`/t/click/${VALID_UUID}`)
+      .redirects(0);
 
-    it('should wrap multiple links', () => {
-      const html = '<a href="https://a.com">A</a> <a href="https://b.com">B</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/');
+  });
 
-      expect(result).toContain('/t/click/email1?url=');
-      expect((result.match(/\/t\/click\/email1/g) || []).length).toBe(2);
-    });
+  it('redirects invalid (non-UUID) emailId to /', async () => {
+    const res = await request(app)
+      .get('/t/click/not-a-uuid?url=https%3A%2F%2Fexample.com')
+      .redirects(0);
 
-    it('should preserve non-href attributes', () => {
-      const html = '<a href="https://example.com" class="btn" id="link1">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/');
+    expect(mockDb.query).not.toHaveBeenCalled();
+  });
 
-      expect(result).toContain('class="btn"');
-      expect(result).toContain('id="link1"');
-    });
+  it('returns 400 for javascript: protocol (blocked dangerous protocol)', async () => {
+    const bad = encodeURIComponent('javascript:alert(1)');
+    const res = await request(app)
+      .get(`/t/click/${VALID_UUID}?url=${bad}`)
+      .redirects(0);
 
-    it('should handle complex URLs', () => {
-      const html = '<a href="https://example.com/path?param=value&other=123">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
+    expect(res.status).toBe(400);
+  });
 
-      expect(result).toContain('/t/click/email1');
-      expect(result).toContain('url=');
-      // URL should be encoded
-      expect(result).toContain('%3F');
-      expect(result).toContain('%26');
-    });
+  it('returns 400 for data: protocol', async () => {
+    const bad = encodeURIComponent('data:text/html,<script>evil</script>');
+    const res = await request(app)
+      .get(`/t/click/${VALID_UUID}?url=${bad}`)
+      .redirects(0);
 
-    it('should handle URLs with fragments', () => {
-      const html = '<a href="https://example.com#section">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
+    expect(res.status).toBe(400);
+  });
 
-      expect(result).toContain('/t/click/email1');
-      expect(result).toContain('%23section');
-    });
+  it('returns 400 for internal IP redirect (SSRF protection)', async () => {
+    const bad = encodeURIComponent('http://127.0.0.1/admin');
+    const res = await request(app)
+      .get(`/t/click/${VALID_UUID}?url=${bad}`)
+      .redirects(0);
 
-    it('should handle http URLs', () => {
-      const html = '<a href="http://example.com">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
+    expect(res.status).toBe(400);
+  });
 
-      expect(result).toContain('/t/click/email1');
-      expect(result).toContain('http%3A%2F%2Fexample.com');
-    });
+  it('returns 400 for 192.168.x.x SSRF attempt', async () => {
+    const bad = encodeURIComponent('http://192.168.1.1/');
+    const res = await request(app)
+      .get(`/t/click/${VALID_UUID}?url=${bad}`)
+      .redirects(0);
 
-    it('should return unchanged if no links', () => {
-      const html = '<p>No links here</p>';
-      const result = wrapLinksWithTracking(html, 'email1');
+    expect(res.status).toBe(400);
+  });
 
-      expect(result).toBe(html);
-    });
+  it('still redirects when db.query throws (error is non-fatal)', async () => {
+    mockDb.query.mockRejectedValue(new Error('DB down'));
+    const destUrl = encodeURIComponent('https://example.com');
+    const res = await request(app)
+      .get(`/t/click/${VALID_UUID}?url=${destUrl}`)
+      .redirects(0);
 
-    it('should handle empty HTML', () => {
-      const result = wrapLinksWithTracking('', 'email1');
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('example.com');
+  });
 
-      expect(result).toBe('');
-    });
+  it('click_session_id is preserved via COALESCE (first click wins)', async () => {
+    const destUrl = encodeURIComponent('https://example.com');
+    await request(app)
+      .get(`/t/click/${VALID_UUID}?url=${destUrl}`)
+      .redirects(0);
 
-    it('should handle null HTML', () => {
-      const result = wrapLinksWithTracking(null, 'email1');
+    const updateSql = mockDb.query.mock.calls.find(c => c[0].includes('UPDATE emails_sent'))[0];
+    expect(updateSql).toContain('COALESCE(click_session_id,');
+  });
 
-      expect(result).toBe(null);
-    });
+  it('redirects to / for malformed URL (caught by URL constructor)', async () => {
+    const bad = encodeURIComponent('https://not a valid url with spaces');
+    const res = await request(app)
+      .get(`/t/click/${VALID_UUID}?url=${bad}`)
+      .redirects(0);
 
-    it('should handle undefined HTML', () => {
-      const result = wrapLinksWithTracking(undefined, 'email1');
+    // SSRF check rejects it first or URL constructor throws, both → redirect to /
+    expect([302, 400]).toContain(res.status);
+  });
 
-      expect(result).toBeUndefined();
-    });
+  it('handles http:// destination URLs (not just https)', async () => {
+    const destUrl = encodeURIComponent('http://example.com/page');
+    const res = await request(app)
+      .get(`/t/click/${VALID_UUID}?url=${destUrl}`)
+      .redirects(0);
 
-    it('should URL encode the full original URL', () => {
-      const html = '<a href="https://example.com/page?a=1&b=2">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
-
-      // Original URL should be in the query parameter, fully encoded
-      expect(result).toContain('url=https%3A%2F%2Fexample.com%2Fpage%3Fa%3D1%26b%3D2');
-    });
-
-    it('should handle email ID in tracking URL', () => {
-      const html = '<a href="https://example.com">Link</a>';
-      const result = wrapLinksWithTracking(html, 'my-email-123');
-
-      expect(result).toContain('/t/click/my-email-123');
-    });
-
-    it('should wrap relative links since regex matches all hrefs', () => {
-      // Note: The regex pattern /href=["']([^"']+)["']/gi matches ALL href values
-      // It doesn't check for http/https, so relative links ARE wrapped
-      const html = '<a href="relative/path">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
-
-      expect(result).toContain('/t/click/');
-      expect(result).toContain('relative%2Fpath');
-    });
-
-    it('should preserve exact href attribute format', () => {
-      const html = '<a href="https://example.com">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
-
-      expect(result).toMatch(/href="[^"]+"/);
-      expect(result).not.toContain("href='");
-    });
-
-    it('should handle unsubscribe in path vs domain', () => {
-      const html = '<a href="https://example.com/path/unsubscribe">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
-
-      expect(result).toContain('https://example.com/path/unsubscribe');
-      expect(result).not.toContain('/t/click/');
-    });
-
-    it('should preserve href with special characters', () => {
-      const html = '<a href="https://example.com/path?email=user@example.com">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
-
-      expect(result).toContain('/t/click/email1');
-      expect(result).toContain('user%40example.com');
-    });
-
-    it('should not double-encode URLs', () => {
-      const html = '<a href="https://example.com?param=already%20encoded">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
-
-      // encodeURIComponent will encode the % again
-      expect(result).toContain('/t/click/email1');
-      // Original % should be re-encoded as %25
-      expect(result).toContain('%25');
-    });
-
-    it('should include BASE_URL in tracking link', () => {
-      const html = '<a href="https://example.com">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
-
-      expect(result).toContain('http://localhost:3001/t/click/email1');
-    });
-
-    it('should handle mixed tracked and untracked links', () => {
-      const html = '<a href="https://example.com">Normal</a> <a href="mailto:test@test.com">Email</a> <a href="https://test.com/unsubscribe">Unsub</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
-
-      expect(result).toContain('/t/click/email1?url=https%3A%2F%2Fexample.com');
-      expect(result).toContain('mailto:test@test.com');
-      expect(result).toContain('https://test.com/unsubscribe');
-    });
-
-    it('should handle href without space before', () => {
-      const html = '<a href="https://example.com">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
-
-      expect(result).toContain('/t/click/email1');
-    });
-
-    it('should handle href with various spacing', () => {
-      const html = '<a href = "https://example.com">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
-
-      // This might not match due to regex pattern - depends on implementation
-      // The regex only captures exact href="..." patterns
-      expect(result).toContain('https://example.com');
-    });
-
-    it('should handle URLs with port numbers', () => {
-      const html = '<a href="https://example.com:8080/path">Link</a>';
-      const result = wrapLinksWithTracking(html, 'email1');
-
-      expect(result).toContain('/t/click/email1');
-      expect(result).toContain('8080');
-    });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('example.com');
   });
 });

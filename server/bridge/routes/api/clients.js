@@ -83,14 +83,14 @@ router.post('/clients', validateBody(ClientCreateSchema), async (req, res, next)
     // Validate input lengths
     const nameValidation = validateLength(business_name, 'business_name', LENGTH_LIMITS.name);
     if (!nameValidation.valid) {
-      return next(new AppError('VALIDATION_ERROR', nameValidation.error, 400));
+      return next(new AppError('VALIDATION_ERROR',nameValidation.error, 422));
     }
 
     // Validate owner_email if provided
     if (owner_email) {
       const emailValidation = validateEmail(owner_email);
       if (!emailValidation.valid) {
-        return next(new AppError('VALIDATION_ERROR', emailValidation.error, 400));
+        return next(new AppError('VALIDATION_ERROR',emailValidation.error, 422));
       }
     }
 
@@ -98,7 +98,7 @@ router.post('/clients', validateBody(ClientCreateSchema), async (req, res, next)
     if (owner_phone) {
       const phoneValidation = validatePhone(owner_phone);
       if (!phoneValidation.valid) {
-        return next(new AppError('VALIDATION_ERROR', phoneValidation.error, 400));
+        return next(new AppError('VALIDATION_ERROR',phoneValidation.error, 422));
       }
     }
 
@@ -106,21 +106,21 @@ router.post('/clients', validateBody(ClientCreateSchema), async (req, res, next)
     if (retell_phone) {
       const phoneValidation = validatePhone(retell_phone);
       if (!phoneValidation.valid) {
-        return next(new AppError('VALIDATION_ERROR', `Invalid retell_phone: ${phoneValidation.error}`, 400));
+        return next(new AppError('VALIDATION_ERROR',`Invalid retell_phone: ${phoneValidation.error}`, 422));
       }
     }
 
     if (twilio_phone) {
       const phoneValidation = validatePhone(twilio_phone);
       if (!phoneValidation.valid) {
-        return next(new AppError('VALIDATION_ERROR', `Invalid twilio_phone: ${phoneValidation.error}`, 400));
+        return next(new AppError('VALIDATION_ERROR',`Invalid twilio_phone: ${phoneValidation.error}`, 422));
       }
     }
 
     if (transfer_phone) {
       const phoneValidation = validatePhone(transfer_phone);
       if (!phoneValidation.valid) {
-        return next(new AppError('VALIDATION_ERROR', `Invalid transfer_phone: ${phoneValidation.error}`, 400));
+        return next(new AppError('VALIDATION_ERROR',`Invalid transfer_phone: ${phoneValidation.error}`, 422));
       }
     }
 
@@ -128,21 +128,21 @@ router.post('/clients', validateBody(ClientCreateSchema), async (req, res, next)
     if (owner_name) {
       const validation = validateLength(owner_name, 'owner_name', LENGTH_LIMITS.name);
       if (!validation.valid) {
-        return next(new AppError('VALIDATION_ERROR', validation.error, 400));
+        return next(new AppError('VALIDATION_ERROR',validation.error, 422));
       }
     }
 
     if (industry) {
       const validation = validateLength(industry, 'industry', LENGTH_LIMITS.name);
       if (!validation.valid) {
-        return next(new AppError('VALIDATION_ERROR', validation.error, 400));
+        return next(new AppError('VALIDATION_ERROR',validation.error, 422));
       }
     }
 
     if (calcom_booking_link) {
       const validation = validateLength(calcom_booking_link, 'calcom_booking_link', LENGTH_LIMITS.url);
       if (!validation.valid) {
-        return next(new AppError('VALIDATION_ERROR', validation.error, 400));
+        return next(new AppError('VALIDATION_ERROR',validation.error, 422));
       }
     }
 
@@ -207,35 +207,35 @@ router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req,
         if (field === 'business_name' && value) {
           const validation = validateLength(value, field, LENGTH_LIMITS.name);
           if (!validation.valid) {
-            return next(new AppError('VALIDATION_ERROR', validation.error, 400));
+            return next(new AppError('VALIDATION_ERROR',validation.error, 422));
           }
         }
 
         if (field === 'email' && value) {
           const validation = validateEmail(value);
           if (!validation.valid) {
-            return next(new AppError('VALIDATION_ERROR', validation.error, 400));
+            return next(new AppError('VALIDATION_ERROR',validation.error, 422));
           }
         }
 
         if (field === 'owner_email' && value) {
           const validation = validateEmail(value);
           if (!validation.valid) {
-            return next(new AppError('VALIDATION_ERROR', validation.error, 400));
+            return next(new AppError('VALIDATION_ERROR',validation.error, 422));
           }
         }
 
         if (['phone', 'owner_phone', 'retell_phone', 'twilio_phone', 'transfer_phone'].includes(field) && value) {
           const validation = validatePhone(value);
           if (!validation.valid) {
-            return next(new AppError('VALIDATION_ERROR', `Invalid ${field}: ${validation.error}`, 400));
+            return next(new AppError('VALIDATION_ERROR',`Invalid ${field}: ${validation.error}`, 422));
           }
         }
 
         if (['business_address', 'owner_name', 'industry', 'website', 'google_review_link', 'calcom_booking_link', 'booking_link'].includes(field) && value) {
           const validation = validateLength(value, field, LENGTH_LIMITS.text);
           if (!validation.valid) {
-            return next(new AppError('VALIDATION_ERROR', validation.error, 400));
+            return next(new AppError('VALIDATION_ERROR',validation.error, 422));
           }
         }
 
@@ -245,15 +245,42 @@ router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req,
     }
 
     if (setClauses.length === 0 && !updates.knowledge_base) {
-      return next(new AppError('VALIDATION_ERROR', 'No valid fields to update', 400));
+      return next(new AppError('VALIDATION_ERROR','No valid fields to update', 422));
     }
 
-    if (setClauses.length > 0) {
-      setClauses.push('updated_at = ?');
-      values.push(new Date().toISOString());
-      values.push(clientId);
+    // Wrap the SELECT + UPDATE + final SELECT in a transaction so the read
+    // and write are atomic. The KB file write stays outside — it's a filesystem op.
+    let client;
+    if (db._async) {
+      // PostgreSQL path — supabase adapter's transaction() returns an async function
+      client = await db.transaction(async function(txDb) {
+        const current = await txDb.query(`SELECT ${CLIENT_SAFE_COLS} FROM clients WHERE id = ?`, [clientId], 'get');
+        if (!current) throw new AppError('NOT_FOUND', 'Client not found', 404);
 
-      await db.query(`UPDATE clients SET ${setClauses.join(', ')} WHERE id = ?`, values, 'run');
+        if (setClauses.length > 0) {
+          const txSetClauses = [...setClauses, 'updated_at = ?'];
+          const txValues = [...values, new Date().toISOString(), clientId];
+          await txDb.query(`UPDATE clients SET ${txSetClauses.join(', ')} WHERE id = ?`, txValues, 'run');
+        }
+
+        return txDb.query(`SELECT ${CLIENT_SAFE_COLS} FROM clients WHERE id = ?`, [clientId], 'get');
+      })();
+    } else {
+      // SQLite path — better-sqlite3 transaction() is synchronous; use prepare() directly
+      const updatedAt = new Date().toISOString();
+      const txResult = db.transaction(() => {
+        const current = db.prepare(`SELECT ${CLIENT_SAFE_COLS} FROM clients WHERE id = ?`).get(clientId);
+        if (!current) throw new AppError('NOT_FOUND', 'Client not found', 404);
+
+        if (setClauses.length > 0) {
+          const txSetClauses = [...setClauses, 'updated_at = ?'];
+          const txValues = [...values, updatedAt, clientId];
+          db.prepare(`UPDATE clients SET ${txSetClauses.join(', ')} WHERE id = ?`).run(...txValues);
+        }
+
+        return db.prepare(`SELECT ${CLIENT_SAFE_COLS} FROM clients WHERE id = ?`).get(clientId);
+      })();
+      client = txResult;
     }
 
     // Invalidate cache after mutation
@@ -283,7 +310,7 @@ router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req,
       }
     } catch (_) {}
 
-    // Update knowledge base if provided
+    // Update knowledge base if provided (filesystem op — outside transaction intentionally)
     if (updates.knowledge_base) {
       const kbDir = path.join(__dirname, '../../../mcp/knowledge_bases');
       try {
@@ -294,7 +321,6 @@ router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req,
       }
     }
 
-    const client = await db.query(`SELECT ${CLIENT_SAFE_COLS} FROM clients WHERE id = ?`, [clientId], 'get');
     res.json({ data: client });
   } catch (err) {
     logger.error('[api] update client error:', err);

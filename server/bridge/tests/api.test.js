@@ -153,12 +153,19 @@ describe('API Routes - Comprehensive Coverage', () => {
   function createMockDb() {
     // Returns a mock db object that handles prepare().get/all/run and db.query()
     const mockDb = {
+      _async: false,
       prepare: jest.fn((sql) => {
         const normalizedSql = sql.replace(/\s+/g, ' ').trim();
         return {
           get: jest.fn((...params) => handleGet(normalizedSql, params)),
           all: jest.fn((...params) => handleAll(normalizedSql, params)),
           run: jest.fn((...params) => handleRun(normalizedSql, params))
+        };
+      }),
+      // Mimic better-sqlite3's synchronous transaction: wraps fn and returns a callable
+      transaction: jest.fn((fn) => {
+        return function(...args) {
+          return fn.call(mockDb, ...args);
         };
       })
     };
@@ -755,12 +762,12 @@ describe('API Routes - Comprehensive Coverage', () => {
       expect(res.body.data.business_name).toBe('Safe Update');
     });
 
-    test('should return 400 with no valid fields', async () => {
+    test('should return 422 with no valid fields', async () => {
       const res = await request(app)
         .put(`/api/clients/${testClientId}`)
         .set('x-api-key', 'test-api-key-12345')
         .send({ invalid_field: 'value' });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toBe('No valid fields to update');
     });
   });
