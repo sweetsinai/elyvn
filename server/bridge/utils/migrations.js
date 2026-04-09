@@ -623,15 +623,20 @@ const migrations = [
     id: '026_foreign_key_rebuild',
     description: 'Rebuild legacy tables with proper foreign key constraints',
     up(db) {
-      // NOTE: This migration runs inside runMigrations' outer db.transaction(),
-      // so PRAGMA foreign_keys = OFF is a no-op (cannot change mid-transaction).
-      // Therefore we omit FK REFERENCES clauses here — production data has orphaned
-      // rows (client_id values not in clients table). FK enforcement is handled at
-      // the application layer. A future migration can add FKs after data cleanup.
+      // Clean up any leftover _new tables from previous failed migration attempts.
+      // Previous deploys may have created these with FK REFERENCES that now cause
+      // constraint failures on INSERT.
+      db.exec(`
+        DROP TABLE IF EXISTS calls_new;
+        DROP TABLE IF EXISTS leads_new;
+        DROP TABLE IF EXISTS messages_new;
+        DROP TABLE IF EXISTS followups_new;
+        DROP TABLE IF EXISTS appointments_new;
+      `);
 
       // --- calls ---
       db.exec(`
-        CREATE TABLE IF NOT EXISTS calls_new (
+        CREATE TABLE calls_new (
           id TEXT PRIMARY KEY,
           call_id TEXT UNIQUE,
           client_id TEXT NOT NULL,
@@ -660,7 +665,7 @@ const migrations = [
 
       // --- leads ---
       db.exec(`
-        CREATE TABLE IF NOT EXISTS leads_new (
+        CREATE TABLE leads_new (
           id TEXT PRIMARY KEY,
           client_id TEXT NOT NULL,
           name TEXT,
@@ -690,7 +695,7 @@ const migrations = [
 
       // --- messages ---
       db.exec(`
-        CREATE TABLE IF NOT EXISTS messages_new (
+        CREATE TABLE messages_new (
           id TEXT PRIMARY KEY,
           client_id TEXT NOT NULL,
           phone TEXT,
@@ -718,7 +723,7 @@ const migrations = [
 
       // --- followups ---
       db.exec(`
-        CREATE TABLE IF NOT EXISTS followups_new (
+        CREATE TABLE followups_new (
           id TEXT PRIMARY KEY,
           lead_id TEXT,
           client_id TEXT NOT NULL,
@@ -744,7 +749,7 @@ const migrations = [
 
       // --- appointments ---
       db.exec(`
-        CREATE TABLE IF NOT EXISTS appointments_new (
+        CREATE TABLE appointments_new (
           id TEXT PRIMARY KEY,
           client_id TEXT NOT NULL,
           lead_id TEXT,

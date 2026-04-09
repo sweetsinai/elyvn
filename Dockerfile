@@ -18,7 +18,7 @@ RUN cd server/bridge && npm ci
 COPY dashboard/package*.json dashboard/
 RUN cd dashboard && npm ci
 
-# Copy source
+# Copy source — bust cache: 20260409v3
 COPY server/ ./server/
 COPY dashboard/ ./dashboard/
 

@@ -127,14 +127,15 @@ function createDatabase(options = {}) {
   // Performance pragmas
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 10000'); // Increased from 5000 for concurrent load
-  db.pragma('foreign_keys = ON');
   db.pragma('synchronous = NORMAL'); // Faster writes, still crash-safe with WAL
   db.pragma('cache_size = -64000'); // 64MB cache (default is 2MB)
   db.pragma('temp_store = MEMORY'); // Temp tables in memory
 
-  // Run migrations
+  // Run migrations with FK checks disabled (production data has orphaned rows)
+  db.pragma('foreign_keys = OFF');
   const { runMigrations } = require('./migrations');
   runMigrations(db);
+  db.pragma('foreign_keys = ON');
 
   // Slow query logging — wrap prepare to add timing to all statement methods
   const originalPrepare = db.prepare.bind(db);
