@@ -216,8 +216,9 @@ RESPOND WITH ONLY a JSON object (no markdown):
   }
 
   function buildUserMessage(timelineText) {
+    const sanitizedEventData = sanitizeForPrompt(JSON.stringify(eventData, null, 2), 2000);
     return `EVENT: ${eventType}
-EVENT DATA: ${JSON.stringify(eventData, null, 2)}
+EVENT DATA: ${sanitizedEventData}
 
 LEAD: ${lead ? `${safeLeadName} (${safeLeadPhone}) — Score: ${lead.score || 0}/10 — Stage: ${lead.stage}` : 'New lead'}
 
