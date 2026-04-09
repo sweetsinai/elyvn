@@ -33,13 +33,10 @@ RUN cd server/bridge && npm prune --production
 # =============================================================================
 FROM node:20-slim AS runtime
 
-# Install dumb-init for proper signal handling and process reaping
+# Install dumb-init for proper signal handling
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends dumb-init python3 && \
+    apt-get install -y --no-install-recommends dumb-init && \
     rm -rf /var/lib/apt/lists/*
-
-# Create non-root user
-RUN addgroup --system app && adduser --system --ingroup app app
 
 WORKDIR /app
 
@@ -52,10 +49,8 @@ COPY --from=builder /app/server/bridge/ ./server/bridge/
 # Copy root package.json for metadata only
 COPY package*.json ./
 
-# Create data dir for SQLite volume mount & set ownership
-RUN mkdir -p /data && chown -R app:app /app /data
-
-USER app
+# Ensure data directory exists for SQLite volume mount
+RUN mkdir -p /data
 
 EXPOSE 3001
 
