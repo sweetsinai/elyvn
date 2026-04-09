@@ -660,6 +660,10 @@ const migrations = [
         `);
 
         // --- leads ---
+        // Use INSERT OR IGNORE to skip duplicate id/phone rows in production data.
+        // UNIQUE index on (client_id, phone) is omitted here — production data may have
+        // duplicates. Migration 027 drops the redundant index; uniqueness is enforced at
+        // the application layer for new rows.
         db.exec(`
           CREATE TABLE leads_new (
             id TEXT PRIMARY KEY,
@@ -677,17 +681,16 @@ const migrations = [
             last_contact TEXT,
             calcom_booking_id TEXT
           );
-          INSERT INTO leads_new SELECT * FROM leads;
+          INSERT OR IGNORE INTO leads_new SELECT * FROM leads WHERE client_id IS NOT NULL;
           DROP TABLE leads;
           ALTER TABLE leads_new RENAME TO leads;
-          CREATE UNIQUE INDEX idx_leads_client_phone ON leads(client_id, phone);
-          CREATE UNIQUE INDEX idx_leads_client_phone_unique ON leads(client_id, phone);
-          CREATE INDEX idx_leads_prospect_id ON leads(prospect_id);
-          CREATE INDEX idx_leads_email ON leads(email);
-          CREATE INDEX idx_leads_stage ON leads(client_id, stage);
-          CREATE INDEX idx_leads_score ON leads(client_id, score);
-          CREATE INDEX idx_leads_client_created_at ON leads(client_id, created_at);
-          CREATE INDEX idx_leads_calcom_booking ON leads(calcom_booking_id);
+          CREATE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone);
+          CREATE INDEX IF NOT EXISTS idx_leads_prospect_id ON leads(prospect_id);
+          CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
+          CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(client_id, stage);
+          CREATE INDEX IF NOT EXISTS idx_leads_score ON leads(client_id, score);
+          CREATE INDEX IF NOT EXISTS idx_leads_client_created_at ON leads(client_id, created_at);
+          CREATE INDEX IF NOT EXISTS idx_leads_calcom_booking ON leads(calcom_booking_id);
         `);
 
         // --- messages ---
@@ -708,14 +711,14 @@ const migrations = [
             updated_at TEXT DEFAULT (datetime('now')),
             message_sid TEXT
           );
-          INSERT INTO messages_new SELECT * FROM messages;
+          INSERT OR IGNORE INTO messages_new SELECT * FROM messages WHERE client_id IS NOT NULL;
           DROP TABLE messages;
           ALTER TABLE messages_new RENAME TO messages;
-          CREATE INDEX idx_messages_client_phone ON messages(client_id, phone);
-          CREATE INDEX idx_messages_created_at ON messages(client_id, created_at);
-          CREATE INDEX idx_messages_phone_created_at ON messages(phone, created_at);
-          CREATE INDEX idx_messages_sid ON messages(message_sid);
-          CREATE INDEX idx_messages_lead_id ON messages(lead_id);
+          CREATE INDEX IF NOT EXISTS idx_messages_client_phone ON messages(client_id, phone);
+          CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(client_id, created_at);
+          CREATE INDEX IF NOT EXISTS idx_messages_phone_created_at ON messages(phone, created_at);
+          CREATE INDEX IF NOT EXISTS idx_messages_sid ON messages(message_sid);
+          CREATE INDEX IF NOT EXISTS idx_messages_lead_id ON messages(lead_id);
         `);
 
         // --- followups ---
@@ -736,12 +739,12 @@ const migrations = [
             sent_at TEXT,
             updated_at TEXT DEFAULT (datetime('now'))
           );
-          INSERT INTO followups_new SELECT * FROM followups;
+          INSERT OR IGNORE INTO followups_new SELECT * FROM followups WHERE client_id IS NOT NULL;
           DROP TABLE followups;
           ALTER TABLE followups_new RENAME TO followups;
-          CREATE INDEX idx_followups_lead_id ON followups(lead_id);
-          CREATE INDEX idx_followups_client_id ON followups(client_id);
-          CREATE INDEX idx_followups_status_scheduled ON followups(status, scheduled_at);
+          CREATE INDEX IF NOT EXISTS idx_followups_lead_id ON followups(lead_id);
+          CREATE INDEX IF NOT EXISTS idx_followups_client_id ON followups(client_id);
+          CREATE INDEX IF NOT EXISTS idx_followups_status_scheduled ON followups(status, scheduled_at);
         `);
 
         // --- appointments ---
@@ -759,12 +762,12 @@ const migrations = [
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now'))
           );
-          INSERT INTO appointments_new SELECT * FROM appointments;
+          INSERT OR IGNORE INTO appointments_new SELECT * FROM appointments WHERE client_id IS NOT NULL;
           DROP TABLE appointments;
           ALTER TABLE appointments_new RENAME TO appointments;
-          CREATE INDEX idx_appointments_client_status ON appointments(client_id, status);
-          CREATE INDEX idx_appointments_lead_id ON appointments(lead_id);
-          CREATE INDEX idx_appointments_calcom_booking ON appointments(calcom_booking_id);
+          CREATE INDEX IF NOT EXISTS idx_appointments_client_status ON appointments(client_id, status);
+          CREATE INDEX IF NOT EXISTS idx_appointments_lead_id ON appointments(lead_id);
+          CREATE INDEX IF NOT EXISTS idx_appointments_calcom_booking ON appointments(calcom_booking_id);
         `);
       });
 
