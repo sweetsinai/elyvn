@@ -19,6 +19,7 @@ const migrations = [
   {
     id: '001_base_tables',
     description: 'Ensure core tables exist (clients, calls, leads, messages, followups)',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       // These tables should already exist from initial setup.
       // This migration ensures the schema is correct on fresh installs.
@@ -93,6 +94,7 @@ const migrations = [
   {
     id: '002_appointments',
     description: 'Create appointments table',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       db.exec(`
         CREATE TABLE IF NOT EXISTS appointments (
@@ -114,6 +116,7 @@ const migrations = [
   {
     id: '003_sms_opt_outs',
     description: 'Create SMS opt-out tracking table',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       db.exec(`
         CREATE TABLE IF NOT EXISTS sms_opt_outs (
@@ -131,6 +134,7 @@ const migrations = [
   {
     id: '004_job_queue',
     description: 'Create persistent job queue table',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       db.exec(`
         CREATE TABLE IF NOT EXISTS job_queue (
@@ -156,6 +160,7 @@ const migrations = [
   {
     id: '005_outreach_tables',
     description: 'Create prospects, campaigns, campaign_prospects, emails_sent tables',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       db.exec(`
         CREATE TABLE IF NOT EXISTS prospects (
@@ -220,6 +225,7 @@ const migrations = [
   {
     id: '006_indexes',
     description: 'Add performance indexes',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       db.exec(`
         CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id);
@@ -237,6 +243,7 @@ const migrations = [
   {
     id: '007_client_columns',
     description: 'Add google_review_link and business_hours columns to clients',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
       if (!cols.includes('google_review_link')) {
@@ -250,6 +257,7 @@ const migrations = [
   {
     id: '008_leads_prospect_id',
     description: 'Add prospect_id and last_contact columns to leads for outreach→lead linkage',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       const cols = db.prepare("PRAGMA table_info('leads')").all().map(c => c.name);
       if (!cols.includes('prospect_id')) {
@@ -269,6 +277,7 @@ const migrations = [
   {
     id: '009_emails_sent_indexes',
     description: 'Add indexes on emails_sent for reply matching',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       db.exec('CREATE INDEX IF NOT EXISTS idx_emails_sent_to_email ON emails_sent(to_email)');
       db.exec('CREATE INDEX IF NOT EXISTS idx_emails_sent_reply ON emails_sent(reply_text, reply_classification)');
@@ -277,6 +286,7 @@ const migrations = [
   {
     id: '010_email_tracking_columns',
     description: 'Add email tracking columns (opens, clicks, variants)',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       const cols = db.prepare("PRAGMA table_info('emails_sent')").all().map(c => c.name);
       if (!cols.includes('opened_at')) {
@@ -306,6 +316,7 @@ const migrations = [
   {
     id: '011_unique_leads_client_phone',
     description: 'Add unique index on leads(client_id, phone) to prevent duplicate leads',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       // Use IF NOT EXISTS to be idempotent
       db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_client_phone_unique ON leads(client_id, phone)');
@@ -314,6 +325,7 @@ const migrations = [
   {
     id: '012_client_api_keys',
     description: 'Create per-client API key authentication table',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       db.exec(`
         CREATE TABLE IF NOT EXISTS client_api_keys (
@@ -337,6 +349,7 @@ const migrations = [
   {
     id: '013_audit_log',
     description: 'Create audit logging table for security events',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       db.exec(`
         CREATE TABLE IF NOT EXISTS audit_log (
@@ -359,6 +372,7 @@ const migrations = [
   {
     id: '014_schema_completion',
     description: 'Add missing columns used by codebase but not in original schema',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       // calls table: missing score, outcome
       const callCols = db.prepare("PRAGMA table_info('calls')").all().map(c => c.name);
@@ -396,6 +410,7 @@ const migrations = [
   {
     id: '015_performance_indexes_retention',
     description: 'Add missing performance indexes and data retention policy',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       // Missing indexes on high-query columns
       db.exec('CREATE INDEX IF NOT EXISTS idx_calls_created_at ON calls(client_id, created_at)');
@@ -420,6 +435,7 @@ const migrations = [
   {
     id: '016_weekly_reports_table',
     description: 'Create weekly_reports table for storing aggregated weekly statistics',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       db.exec(`
         CREATE TABLE IF NOT EXISTS weekly_reports (
@@ -442,6 +458,7 @@ const migrations = [
   {
     id: '017_emails_sent_unique_constraint',
     description: 'Add UNIQUE index on emails_sent(prospect_id, campaign_id) to prevent duplicate sends',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       db.exec(`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_emails_sent_prospect_campaign_unique
@@ -452,6 +469,7 @@ const migrations = [
   {
     id: '018_data_integrity_indexes_and_retention',
     description: 'Add foreign key enforcement, performance indexes, and data retention policy table',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       // Enable foreign key constraints
       db.exec('PRAGMA foreign_keys = ON');
@@ -523,6 +541,7 @@ const migrations = [
   {
     id: '019_transfer_phone_column',
     description: 'Add transfer_phone to clients for call forwarding destination',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       const clientCols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
       if (!clientCols.includes('transfer_phone')) {
@@ -533,6 +552,7 @@ const migrations = [
   {
     id: '020_telnyx_phone_column',
     description: 'Add telnyx_phone to clients for Telnyx SMS provider migration',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       const clientCols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
       if (!clientCols.includes('telnyx_phone')) {
@@ -543,6 +563,7 @@ const migrations = [
   {
     id: '021_message_sid_and_integrity',
     description: 'Add message_sid column and enforce data integrity constraints',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       // Add missing message_sid column used by SMS routes
       const msgCols = db.prepare("PRAGMA table_info('messages')").all().map(c => c.name);
@@ -566,6 +587,7 @@ const migrations = [
   {
     id: '022_auth_and_billing',
     description: 'Add password_hash and billing columns to clients for JWT auth + Stripe',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
       const addCol = (name, type) => {
@@ -591,6 +613,7 @@ const migrations = [
   {
     id: '023_notification_mode',
     description: 'Add notification_mode to clients (all or digest)',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
       if (!cols.includes('notification_mode')) {
@@ -601,6 +624,7 @@ const migrations = [
   {
     id: '024_calls_analysis_data',
     description: 'Add analysis_data column to calls table for storing call analysis JSON',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       const cols = db.prepare("PRAGMA table_info('calls')").all().map(c => c.name);
       if (!cols.includes('analysis_data')) {
@@ -611,6 +635,7 @@ const migrations = [
   {
     id: '025_missing_indexes',
     description: 'Add indexes for frequently queried columns',
+    down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       db.exec("CREATE INDEX IF NOT EXISTS idx_appointments_calcom_booking ON appointments(calcom_booking_id)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_leads_calcom_booking ON leads(calcom_booking_id)");
@@ -622,6 +647,138 @@ const migrations = [
   {
     id: '026_foreign_key_rebuild',
     description: 'Rebuild legacy tables with proper foreign key constraints',
+    down(db) {
+      // Restore tables to pre-026 schema (without FK constraints, nullable client_id)
+      function rebuildTable(tableName, createSQL, indexes) {
+        const newName = tableName + '_rollback';
+        db.exec(`DROP TABLE IF EXISTS ${newName}`);
+        db.exec(createSQL);
+        const oldCols = db.prepare(`PRAGMA table_info('${tableName}')`).all().map(c => c.name);
+        const newCols = db.prepare(`PRAGMA table_info('${newName}')`).all().map(c => c.name);
+        const common = newCols.filter(c => oldCols.includes(c));
+        const colList = common.join(', ');
+        db.exec(`INSERT OR IGNORE INTO ${newName} (${colList}) SELECT ${colList} FROM ${tableName}`);
+        db.exec(`DROP TABLE ${tableName}`);
+        db.exec(`ALTER TABLE ${newName} RENAME TO ${tableName}`);
+        for (const idx of indexes) db.exec(idx);
+      }
+
+      rebuildTable('calls', `
+        CREATE TABLE calls_rollback (
+          id TEXT PRIMARY KEY,
+          call_id TEXT UNIQUE,
+          client_id TEXT,
+          caller_phone TEXT,
+          direction TEXT DEFAULT 'inbound',
+          status TEXT,
+          duration INTEGER,
+          recording_url TEXT,
+          transcript TEXT,
+          summary TEXT,
+          sentiment TEXT,
+          action_taken TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          score INTEGER,
+          outcome TEXT,
+          analysis_data TEXT
+        )`, [
+        'CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id)',
+        'CREATE INDEX IF NOT EXISTS idx_calls_caller_phone ON calls(caller_phone)',
+        'CREATE INDEX IF NOT EXISTS idx_calls_client_id ON calls(client_id)',
+        'CREATE INDEX IF NOT EXISTS idx_calls_created_at ON calls(client_id, created_at)',
+      ]);
+
+      rebuildTable('leads', `
+        CREATE TABLE leads_rollback (
+          id TEXT PRIMARY KEY,
+          client_id TEXT,
+          name TEXT,
+          phone TEXT,
+          email TEXT,
+          source TEXT,
+          score INTEGER DEFAULT 0,
+          stage TEXT DEFAULT 'new',
+          notes TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now')),
+          prospect_id TEXT,
+          last_contact TEXT,
+          calcom_booking_id TEXT
+        )`, [
+        'CREATE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_prospect_id ON leads(prospect_id)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(client_id, stage)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_score ON leads(client_id, score)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_client_created_at ON leads(client_id, created_at)',
+        'CREATE INDEX IF NOT EXISTS idx_leads_calcom_booking ON leads(calcom_booking_id)',
+      ]);
+
+      rebuildTable('messages', `
+        CREATE TABLE messages_rollback (
+          id TEXT PRIMARY KEY,
+          client_id TEXT,
+          phone TEXT,
+          direction TEXT,
+          body TEXT,
+          status TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          lead_id TEXT,
+          channel TEXT DEFAULT 'sms',
+          reply_text TEXT,
+          reply_source TEXT,
+          confidence REAL,
+          updated_at TEXT DEFAULT (datetime('now')),
+          message_sid TEXT
+        )`, [
+        'CREATE INDEX IF NOT EXISTS idx_messages_client_phone ON messages(client_id, phone)',
+        'CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(client_id, created_at)',
+        'CREATE INDEX IF NOT EXISTS idx_messages_phone_created_at ON messages(phone, created_at)',
+        'CREATE INDEX IF NOT EXISTS idx_messages_sid ON messages(message_sid)',
+        'CREATE INDEX IF NOT EXISTS idx_messages_lead_id ON messages(lead_id)',
+      ]);
+
+      rebuildTable('followups', `
+        CREATE TABLE followups_rollback (
+          id TEXT PRIMARY KEY,
+          lead_id TEXT,
+          client_id TEXT,
+          type TEXT,
+          scheduled_at TEXT,
+          completed_at TEXT,
+          status TEXT DEFAULT 'pending',
+          notes TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          touch_number INTEGER,
+          content TEXT,
+          content_source TEXT,
+          sent_at TEXT,
+          updated_at TEXT DEFAULT (datetime('now'))
+        )`, [
+        'CREATE INDEX IF NOT EXISTS idx_followups_lead_id ON followups(lead_id)',
+        'CREATE INDEX IF NOT EXISTS idx_followups_client_id ON followups(client_id)',
+        'CREATE INDEX IF NOT EXISTS idx_followups_status_scheduled ON followups(status, scheduled_at)',
+      ]);
+
+      rebuildTable('appointments', `
+        CREATE TABLE appointments_rollback (
+          id TEXT PRIMARY KEY,
+          client_id TEXT,
+          lead_id TEXT,
+          phone TEXT,
+          name TEXT,
+          service TEXT,
+          datetime TEXT,
+          status TEXT DEFAULT 'confirmed',
+          calcom_booking_id TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        )`, [
+        'CREATE INDEX IF NOT EXISTS idx_appointments_client_status ON appointments(client_id, status)',
+        'CREATE INDEX IF NOT EXISTS idx_appointments_lead_id ON appointments(lead_id)',
+        'CREATE INDEX IF NOT EXISTS idx_appointments_calcom_booking ON appointments(calcom_booking_id)',
+      ]);
+    },
     up(db) {
       // Helper: rebuild a table with a new schema, copying only columns that exist
       // in both old and new tables. Handles column mismatches between environments.
@@ -765,6 +922,10 @@ const migrations = [
   {
     id: '027_drop_duplicate_leads_index',
     description: 'Remove duplicate unique index idx_leads_client_phone_unique (identical to idx_leads_client_phone)',
+    down(db) {
+      // Restore the duplicate unique index that was dropped
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_client_phone_unique ON leads(client_id, phone)');
+    },
     up(db) {
       db.exec('DROP INDEX IF EXISTS idx_leads_client_phone_unique');
     },
@@ -772,6 +933,12 @@ const migrations = [
   {
     id: '028_reliability_fixes',
     description: 'Add attempts tracking to followups, ensure job_queue index exists',
+    down(db) {
+      // SQLite cannot drop columns — attempts column stays; drop the partial index
+      db.exec('DROP INDEX IF EXISTS idx_job_queue_status_scheduled');
+      // Restore the non-partial index from migration 004
+      db.exec('CREATE INDEX IF NOT EXISTS idx_job_queue_status_scheduled ON job_queue(status, scheduled_at)');
+    },
     up(db) {
       // Add attempts tracking to followups (used by appointmentReminders retry logic)
       // NOTE: FK cascade inconsistency exists across legacy tables — to be fixed in a future full schema rebuild.
@@ -791,6 +958,10 @@ const migrations = [
   {
     id: '029_email_verification',
     description: 'Add email verification columns to clients table',
+    down(db) {
+      // SQLite cannot drop columns — drop the index; columns remain harmlessly
+      db.exec('DROP INDEX IF EXISTS idx_clients_verification_token');
+    },
     up(db) {
       const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
       if (!cols.includes('email_verified')) {
@@ -808,6 +979,11 @@ const migrations = [
   {
     id: '030_composite_indexes',
     description: 'Add composite indexes for hot query paths: messages(lead_id,created_at), emails_sent(status,sent_at), jobs(status,job_type), leads(prospect_id)',
+    down(db) {
+      db.exec('DROP INDEX IF EXISTS idx_messages_lead_created');
+      db.exec('DROP INDEX IF EXISTS idx_jobs_status_type');
+      db.exec('DROP INDEX IF EXISTS idx_emails_sent_status_sent_at');
+    },
     up(db) {
       // Composite index for messages queried by lead with date range ordering
       db.exec('CREATE INDEX IF NOT EXISTS idx_messages_lead_created ON messages(lead_id, created_at)');
@@ -830,6 +1006,12 @@ const migrations = [
   {
     id: '031_event_store',
     description: 'Create event_store table for event sourcing / audit trail of domain events',
+    down(db) {
+      db.exec('DROP INDEX IF EXISTS idx_events_aggregate');
+      db.exec('DROP INDEX IF EXISTS idx_events_client');
+      db.exec('DROP INDEX IF EXISTS idx_events_type');
+      db.exec('DROP TABLE IF EXISTS event_store');
+    },
     up(db) {
       db.exec(`
         CREATE TABLE IF NOT EXISTS event_store (
@@ -852,6 +1034,9 @@ const migrations = [
   {
     id: '032_audit_log_mutation_columns',
     description: 'Add old_values and new_values columns to audit_log for data mutation tracking',
+    down(db) {
+      // SQLite cannot drop columns — old_values and new_values remain harmlessly
+    },
     up(db) {
       const cols = db.prepare("PRAGMA table_info('audit_log')").all().map(c => c.name);
       if (!cols.includes('old_values')) {
@@ -866,6 +1051,9 @@ const migrations = [
   {
     id: '033_pii_encrypted_columns',
     description: 'Add encrypted PII columns for leads (phone, email) and messages (body)',
+    down(db) {
+      // SQLite cannot drop columns — encrypted columns remain harmlessly
+    },
     up(db) {
       const leadCols = db.prepare("PRAGMA table_info('leads')").all().map(c => c.name);
       if (!leadCols.includes('phone_encrypted')) {
@@ -884,6 +1072,10 @@ const migrations = [
   {
     id: '034_feature_store',
     description: 'Create feature_store table for ML feature pipeline',
+    down(db) {
+      db.exec('DROP INDEX IF EXISTS idx_features_lead');
+      db.exec('DROP TABLE IF EXISTS feature_store');
+    },
     up(db) {
       db.exec(`
         CREATE TABLE IF NOT EXISTS feature_store (
@@ -903,6 +1095,11 @@ const migrations = [
   {
     id: '035_experiments',
     description: 'Create experiments, experiment_assignments, and experiment_outcomes tables for A/B testing',
+    down(db) {
+      db.exec('DROP TABLE IF EXISTS experiment_outcomes');
+      db.exec('DROP TABLE IF EXISTS experiment_assignments');
+      db.exec('DROP TABLE IF EXISTS experiments');
+    },
     up(db) {
       db.exec(`
         CREATE TABLE IF NOT EXISTS experiments (
@@ -935,6 +1132,17 @@ const migrations = [
   {
     id: '036',
     description: 'performance indexes for leads, messages, calls ordering and lookup',
+    down(db) {
+      db.exec('DROP INDEX IF EXISTS idx_leads_client_updated_at');
+      db.exec('DROP INDEX IF EXISTS idx_leads_client_score');
+      db.exec('DROP INDEX IF EXISTS idx_messages_sid');
+      // idx_calls_call_id existed pre-036 — leave it
+      db.exec('DROP INDEX IF EXISTS idx_job_queue_status_scheduled');
+      db.exec('DROP INDEX IF EXISTS idx_event_store_aggregate');
+      db.exec('DROP INDEX IF EXISTS idx_feature_store_lead');
+      // Restore the plain non-partial job_queue index from 004
+      db.exec('CREATE INDEX IF NOT EXISTS idx_job_queue_status_scheduled ON job_queue(status, scheduled_at)');
+    },
     up(db) {
       db.exec(`
         -- Leads: ORDER BY updated_at DESC (primary leads list API)
@@ -958,6 +1166,10 @@ const migrations = [
   {
     id: '037',
     description: 'job_queue priority column for speed-to-lead fast path',
+    down(db) {
+      // SQLite cannot drop columns — drop the priority index; priority column stays harmlessly
+      db.exec('DROP INDEX IF EXISTS idx_job_queue_priority');
+    },
     up(db) {
       db.exec(`
         ALTER TABLE job_queue ADD COLUMN priority INTEGER DEFAULT 5;
@@ -969,6 +1181,10 @@ const migrations = [
   {
     id: '038_revenue_tracking',
     description: 'Add revenue_closed and job_value columns to leads; add booking_webhook_url and whatsapp_phone to clients',
+    down(db) {
+      // SQLite cannot drop columns — drop the partial index; columns stay harmlessly
+      db.exec('DROP INDEX IF EXISTS idx_leads_revenue');
+    },
     up(db) {
       const leadCols = db.prepare("PRAGMA table_info('leads')").all().map(c => c.name);
       if (!leadCols.includes('revenue_closed')) {
@@ -995,6 +1211,18 @@ const migrations = [
   {
     id: '039_product_completeness',
     description: 'Add columns for voice selection, usage metering, white-label, referrals, onboarding, social channels',
+    down(db) {
+      // Drop new tables created in this migration (in dependency order)
+      db.exec('DROP TABLE IF EXISTS referrals');
+      db.exec('DROP TABLE IF EXISTS usage_records');
+      db.exec('DROP INDEX IF EXISTS idx_resellers_email');
+      db.exec('DROP TABLE IF EXISTS resellers');
+      // Drop indexes added in this migration
+      db.exec('DROP INDEX IF EXISTS idx_clients_reseller');
+      db.exec('DROP INDEX IF EXISTS idx_clients_referral_code');
+      db.exec('DROP INDEX IF EXISTS idx_usage_client_month');
+      // SQLite cannot drop columns added to clients — they stay harmlessly
+    },
     up(db) {
       const clientCols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
       const addCol = (name, type) => {
@@ -1088,6 +1316,9 @@ const migrations = [
   {
     id: '040_followups_touch_unique',
     description: 'Add unique constraint on followups(lead_id, touch_number) to prevent duplicate touch inserts',
+    down(db) {
+      db.exec('DROP INDEX IF EXISTS idx_followups_lead_touch_unique');
+    },
     up(db) {
       try {
         db.exec(`
@@ -1104,6 +1335,11 @@ const migrations = [
   {
     id: '041_fix_leads_unique_index',
     description: 'Restore UNIQUE constraint on leads(client_id, phone) dropped by migration 026 rebuild',
+    down(db) {
+      // Restore non-unique index (pre-041 state — 026 had created a non-unique version)
+      db.exec('DROP INDEX IF EXISTS idx_leads_client_phone');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_leads_client_phone ON leads(client_id, phone)');
+    },
     up(db) {
       try {
         // Drop the non-unique index created by 026 and recreate as UNIQUE
@@ -1168,4 +1404,42 @@ function runMigrations(db) {
   return { applied: newlyApplied, skipped };
 }
 
-module.exports = { runMigrations, migrations };
+/**
+ * Roll back a specific migration by its id.
+ * Runs the migration's down() function and removes it from _migrations so it
+ * can be re-applied. Wraps everything in a transaction.
+ *
+ * @param {object} db - better-sqlite3 instance
+ * @param {string} migrationId - the migration id string (e.g. '041_fix_leads_unique_index')
+ * @returns {{ success: boolean, id: string, error?: string }}
+ */
+function rollbackMigration(db, migrationId) {
+  const migration = migrations.find(m => m.id === migrationId);
+  if (!migration) {
+    return { success: false, id: migrationId, error: `Migration '${migrationId}' not found` };
+  }
+  if (typeof migration.down !== 'function') {
+    return { success: false, id: migrationId, error: `Migration '${migrationId}' has no down() function` };
+  }
+
+  const applied = db.prepare('SELECT id FROM _migrations WHERE id = ?').get(migrationId);
+  if (!applied) {
+    return { success: false, id: migrationId, error: `Migration '${migrationId}' is not currently applied` };
+  }
+
+  const rollback = db.transaction(() => {
+    migration.down(db);
+    db.prepare('DELETE FROM _migrations WHERE id = ?').run(migrationId);
+  });
+
+  try {
+    rollback();
+    getLogger().info(`[migrations] Rolled back: ${migrationId}`);
+    return { success: true, id: migrationId };
+  } catch (err) {
+    getLogger().error(`[migrations] Rollback failed: ${migrationId} — ${err.message}`);
+    return { success: false, id: migrationId, error: err.message };
+  }
+}
+
+module.exports = { runMigrations, rollbackMigration, migrations };

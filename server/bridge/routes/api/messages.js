@@ -7,6 +7,7 @@ const { decrypt } = require('../../utils/encryption');
 const { parsePagination } = require('../../utils/dbHelpers');
 const { validateQuery, validateParams } = require('../../middleware/validateRequest');
 const { MessageQuerySchema, MessageParamsSchema } = require('../../utils/schemas/message');
+const { paginated } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -65,8 +66,7 @@ router.get('/messages/:clientId', validateParams(MessageParamsSchema), validateQ
       }
     }
 
-    const totalPages = Math.ceil(total / limitNum);
-    res.json({ data: messages, meta: { page: pageNum, limit: limitNum, total, total_pages: totalPages } });
+    return paginated(res, { data: messages, total, limit: limitNum, offset });
   } catch (err) {
     logger.error('[api] messages error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to fetch messages', 500));

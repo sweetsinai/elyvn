@@ -14,6 +14,7 @@ const { logDataMutation } = require('../../utils/auditLog');
 const { validateParams, validateBody, validateQuery } = require('../../middleware/validateRequest');
 const { ClientParamsSchema, ClientCreateSchema } = require('../../utils/schemas/client');
 const { PaginationSchema } = require('../../utils/schemas/common');
+const { paginated } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -56,7 +57,7 @@ router.get('/clients', validateQuery(PaginationSchema), async (req, res, next) =
     } else {
       return next(new AppError('FORBIDDEN', 'Forbidden', 403));
     }
-    res.json({ data: clients, meta: { page, limit, total, total_pages: Math.ceil(total / limit) } });
+    return paginated(res, { data: clients, total, limit, offset });
   } catch (err) {
     logger.error('[api] clients error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to fetch clients', 500));

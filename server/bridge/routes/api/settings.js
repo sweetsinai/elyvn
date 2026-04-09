@@ -8,6 +8,7 @@ const { isValidUUID } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { logDataMutation } = require('../../utils/auditLog');
+const { success } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -130,7 +131,7 @@ router.put('/settings/:clientId', async (req, res, next) => {
     for (const k of Object.keys(body)) { if (ALLOWED.has(k)) acceptedValues[k] = body[k]; }
     try { logDataMutation(db, { action: 'settings_updated', table: 'clients', recordId: clientId, newValues: acceptedValues }); } catch (_) {}
 
-    res.json({ updated: true, fields: Object.keys(body).filter(k => ALLOWED.has(k)) });
+    return success(res, { fields: Object.keys(body).filter(k => ALLOWED.has(k)) });
   } catch (err) {
     logger.error('[settings] Update error:', err);
     next(err);

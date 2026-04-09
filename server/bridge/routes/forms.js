@@ -7,6 +7,7 @@ const { normalizePhone } = require('../utils/phone');
 const { isValidUUID } = require('../utils/validate');
 const { logger } = require('../utils/logger');
 const { validateEmail: validateEmailFormat, validatePhone: validatePhoneFormat, validateLength, LENGTH_LIMITS, sanitizeString: sanitizeInput } = require('../utils/inputValidation');
+const { encrypt } = require('../utils/encryption');
 const { validateBody, validateParams } = require('../middleware/validateRequest');
 const { FormSubmissionSchema, FormParamsSchema } = require('../utils/schemas/form');
 const { AppError } = require('../utils/AppError');
@@ -161,15 +162,16 @@ async function processFormSubmission(db, body, clientId, req) {
   // Atomic upsert using INSERT ... ON CONFLICT (no race conditions)
   const leadId = randomUUID();
   await db.query(`
-    INSERT INTO leads (id, client_id, phone, name, email, source, score, stage, last_contact, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'), datetime('now'))
+    INSERT INTO leads (id, client_id, phone, phone_encrypted, name, email, email_encrypted, source, score, stage, last_contact, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'), datetime('now'))
     ON CONFLICT(client_id, phone) DO UPDATE SET
       name = COALESCE(excluded.name, leads.name),
       email = COALESCE(excluded.email, leads.email),
+      email_encrypted = COALESCE(excluded.email_encrypted, leads.email_encrypted),
       source = COALESCE(excluded.source, leads.source),
       last_contact = datetime('now'),
       updated_at = datetime('now')
-  `, [leadId, clientId, phone, name || null, email || null, source], 'run');
+  `, [leadId, clientId, phone, encrypt(phone), name || null, email || null, email ? encrypt(email) : null, source], 'run');
 
   // Log inbound message
   await db.query(`

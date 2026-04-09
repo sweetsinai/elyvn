@@ -1,9 +1,15 @@
-# Railway deployment config — Node.js bridge server with SQLite
+# Railway deployment config — Node.js bridge server with SQLite + dashboard build
 [phases.setup]
 nixPkgs = ["nodejs_20", "python3"]
 
 [phases.install]
-cmds = ["cd server/bridge && npm ci"]
+cmds = [
+  "cd server/bridge && npm ci",
+  "cd dashboard && npm ci"
+]
+
+[phases.build]
+cmds = ["cd dashboard && npx vite build"]
 
 [start]
 cmd = "cd server/bridge && node index.js"
