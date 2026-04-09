@@ -36,7 +36,8 @@ function createRateLimiterMiddleware(limiter) {
           logRateLimit(req.app.locals.db, { action: 'rate_limited', ip: req.ip, details: { path: req.path, method: req.method } });
         }
       } catch (_) {}
-      return res.status(429).json({ error: 'Too many requests, please try again later' });
+      const requestId = req.id || req.headers['x-request-id'] || 'unknown';
+      return res.status(429).json({ code: 'RATE_LIMIT_EXCEEDED', message: 'Too many requests', requestId });
     }
     next();
   };
@@ -143,7 +144,8 @@ async function apiAuth(req, res, next) {
         apiKeyUsage.set(keyId, usage);
         if (usage.count > limit) {
           logger.warn(`[auth] Per-key rate limit exceeded for key ${keyId} (client ${keyRecord.client_id})`);
-          return res.status(429).json({ error: 'Rate limit exceeded', limit, window: '1m' });
+          const requestId = req.id || req.headers['x-request-id'] || 'unknown';
+          return res.status(429).json({ code: 'RATE_LIMIT_EXCEEDED', message: 'Too many requests', requestId });
         }
 
         return next();

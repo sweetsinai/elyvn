@@ -78,20 +78,19 @@ router.use((req, res, next) => {
     if (!secret) {
       return res.sendStatus(403);
     }
-    // Use timing-safe comparison to prevent timing attacks
+    // Use fixed-length buffers to prevent length leaking
     try {
       const crypto = require('crypto');
-      if (secret.length === expectedSecret.length) {
-        if (!crypto.timingSafeEqual(Buffer.from(secret), Buffer.from(expectedSecret))) {
-          return res.sendStatus(403);
-        }
-      } else {
-        // Different lengths — fail securely
-        return res.sendStatus(403);
+      const actualBuf = Buffer.alloc(256, 0);
+      const expectedBuf = Buffer.alloc(256, 0);
+      Buffer.from(secret).copy(actualBuf);
+      Buffer.from(expectedSecret).copy(expectedBuf);
+      if (!crypto.timingSafeEqual(actualBuf, expectedBuf)) {
+        return res.status(403).json({ code: 'FORBIDDEN', message: 'Invalid webhook token' });
       }
     } catch (err) {
       // Comparison error — fail closed
-      return res.sendStatus(403);
+      return res.status(403).json({ code: 'FORBIDDEN', message: 'Invalid webhook token' });
     }
   }
   next();

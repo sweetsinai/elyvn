@@ -36,7 +36,8 @@ function makeMiddleware(limiter, label) {
     if (!result.allowed) {
       logger.warn(`[rateLimit] ${label} exceeded for ${key}`);
       res.set('Retry-After', String(result.retryAfter || 60));
-      return res.status(429).json({ error: 'Too many requests, please try again later' });
+      const requestId = req.id || req.headers['x-request-id'] || 'unknown';
+      return res.status(429).json({ code: 'RATE_LIMIT_EXCEEDED', message: 'Too many requests', requestId });
     }
     next();
   };
