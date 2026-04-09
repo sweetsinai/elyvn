@@ -257,6 +257,15 @@ describe('Integration Tests - Webhook → DB Flows', () => {
   // Test 2: Telegram webhook → Command processing
   // ─────────────────────────────────────────────────────────────
   describe('Telegram webhook → Command processing', () => {
+    // Include secret header when TELEGRAM_WEBHOOK_SECRET is set (CI env)
+    const telegramHeaders = () => {
+      const h = {};
+      if (process.env.TELEGRAM_WEBHOOK_SECRET) {
+        h['x-telegram-bot-api-secret-token'] = process.env.TELEGRAM_WEBHOOK_SECRET;
+      }
+      return h;
+    };
+
     test('POST /webhooks/telegram with /help command → returns 200', async () => {
       const payload = {
         update_id: Math.floor(Math.random() * 1000000),
@@ -271,10 +280,10 @@ describe('Integration Tests - Webhook → DB Flows', () => {
 
       const response = await request(app)
         .post('/webhooks/telegram')
+        .set(telegramHeaders())
         .send(payload)
         .expect(200);
 
-      // Telegram handler returns 200 immediately, processes async
       expect(response.status).toBe(200);
     });
 
@@ -292,6 +301,7 @@ describe('Integration Tests - Webhook → DB Flows', () => {
 
       const response = await request(app)
         .post('/webhooks/telegram')
+        .set(telegramHeaders())
         .send(payload)
         .expect(200);
 
@@ -312,17 +322,17 @@ describe('Integration Tests - Webhook → DB Flows', () => {
 
       await request(app)
         .post('/webhooks/telegram')
+        .set(telegramHeaders())
         .send(payload)
         .expect(200);
     });
 
     test('POST /webhooks/telegram with malformed data → returns 200 (silent fail)', async () => {
-      const payload = {
-        invalid: 'data'
-      };
+      const payload = { invalid: 'data' };
 
       await request(app)
         .post('/webhooks/telegram')
+        .set(telegramHeaders())
         .send(payload)
         .expect(200);
     });
@@ -340,6 +350,7 @@ describe('Integration Tests - Webhook → DB Flows', () => {
 
       await request(app)
         .post('/webhooks/telegram')
+        .set(telegramHeaders())
         .send(payload)
         .expect(200);
     });
