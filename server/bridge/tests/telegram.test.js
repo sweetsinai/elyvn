@@ -28,6 +28,12 @@ describe('Telegram Route Handler', () => {
         run: jest.fn().mockReturnValue({ changes: 1 }),
         all: jest.fn().mockReturnValue([]),
       })),
+      query: jest.fn(function(sql, params = [], mode = 'all') {
+        const stmt = mockDb.prepare(sql);
+        if (mode === 'get') return Promise.resolve(stmt.get(...(params || [])));
+        if (mode === 'run') return Promise.resolve(stmt.run(...(params || [])));
+        return Promise.resolve(stmt.all(...(params || [])));
+      }),
       transaction: jest.fn((fn) => fn),
     };
 

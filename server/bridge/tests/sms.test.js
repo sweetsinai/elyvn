@@ -35,18 +35,18 @@ describe('sms.js', () => {
 
       const { sendSMSToOwner } = require('../utils/sms');
 
-      const mockPrepare = jest.fn(() => ({
-        get: jest.fn().mockReturnValue({
-          owner_phone: '+1555555555',
-          twilio_phone: '+1666666666'
-        })
-      }));
+      const mockQuery = jest.fn().mockResolvedValue({
+        owner_phone: '+1555555555',
+        twilio_phone: '+1666666666'
+      });
 
-      const db = { prepare: mockPrepare };
+      const db = { query: mockQuery };
       await sendSMSToOwner(db, 'client-456', 'Test');
 
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT owner_phone, twilio_phone FROM clients')
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT owner_phone, twilio_phone FROM clients'),
+        expect.anything(),
+        'get'
       );
     }, 10000);
 
@@ -59,11 +59,9 @@ describe('sms.js', () => {
       const { sendSMSToOwner } = require('../utils/sms');
 
       const db = {
-        prepare: jest.fn(() => ({
-          get: jest.fn().mockReturnValue({
-            twilio_phone: '+1666666666'
-          })
-        }))
+        query: jest.fn().mockResolvedValue({
+          twilio_phone: '+1666666666'
+        })
       };
 
       const result = await sendSMSToOwner(db, 'client-123', 'Alert message');
@@ -81,12 +79,10 @@ describe('sms.js', () => {
       const { sendSMSToOwner } = require('../utils/sms');
 
       const db = {
-        prepare: jest.fn(() => ({
-          get: jest.fn().mockReturnValue({
-            owner_phone: '+1555555555',
-            twilio_phone: null
-          })
-        }))
+        query: jest.fn().mockResolvedValue({
+          owner_phone: '+1555555555',
+          twilio_phone: null
+        })
       };
 
       const result = await sendSMSToOwner(db, 'client-123', 'Alert message');

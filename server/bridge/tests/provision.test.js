@@ -33,11 +33,21 @@ describe('Provision Route', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Create mock database
+    // Create mock database with query support
     mockDb = {
       prepare: jest.fn(),
       exec: jest.fn(),
     };
+    mockDb.query = jest.fn((sql, params = [], mode = 'all') => {
+      try {
+        const stmt = mockDb.prepare(sql);
+        if (mode === 'get') return Promise.resolve(stmt.get(...(params || [])));
+        if (mode === 'run') return Promise.resolve(stmt.run(...(params || [])));
+        return Promise.resolve(stmt.all(...(params || [])));
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    });
 
     // Mock Database constructor
     jest.resetModules();
@@ -46,7 +56,16 @@ describe('Provision Route', () => {
     app = express();
     app.locals.db = mockDb;
     app.use(express.json());
+    // Set req.isAdmin = true so admin-required routes pass
+    app.use((req, res, next) => { req.isAdmin = true; next(); });
     app.use('/provision', provisionRouter);
+
+    // Error handler to produce JSON responses from AppError
+    // eslint-disable-next-line no-unused-vars
+    app.use((err, req, res, next) => {
+      const status = err.statusCode || err.status || 500;
+      res.status(status).json({ error: err.message, code: err.code });
+    });
 
     // Clear env vars
     delete process.env.TELNYX_API_KEY;

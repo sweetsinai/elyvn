@@ -10,12 +10,25 @@ const {
 } = require('../utils/conversationIntelligence');
 const { runMigrations } = require('../utils/migrations');
 
+/**
+ * Add db.query() to a better-sqlite3 instance so async source code works.
+ */
+function addQueryMethod(db) {
+  db.query = function(sql, params = [], mode = 'all') {
+    const stmt = db.prepare(sql);
+    if (mode === 'get') return Promise.resolve(stmt.get(...(params || [])));
+    if (mode === 'run') return Promise.resolve(stmt.run(...(params || [])));
+    return Promise.resolve(stmt.all(...(params || [])));
+  };
+}
+
 describe('Conversation Intelligence Module', () => {
   let db;
 
   beforeAll(() => {
     db = new Database(':memory:');
     runMigrations(db);
+    addQueryMethod(db);
 
     // Insert test client
     db.prepare(`
@@ -35,7 +48,7 @@ describe('Conversation Intelligence Module', () => {
   });
 
   describe('getConversationIntelligence', () => {
-    it('should return full conversation intelligence report', () => {
+    it('should return full conversation intelligence report', async () => {
       const now = new Date().toISOString();
 
       // Insert calls
@@ -55,7 +68,7 @@ describe('Conversation Intelligence Module', () => {
         VALUES (?, 'client1', '+12125551234', 'outbound', 'Hello', 'sent', ?)
       `).run('msg1', now);
 
-      const result = getConversationIntelligence(db, 'client1', 30);
+      const result = await getConversationIntelligence(db, 'client1', 30);
 
       expect(result).toBeDefined();
       expect(result.summary).toBeDefined();
@@ -74,18 +87,18 @@ describe('Conversation Intelligence Module', () => {
       expect(Array.isArray(result.coaching_tips)).toBe(true);
     });
 
-    it('should require db and clientId parameters', () => {
-      expect(() => {
-        getConversationIntelligence(null, 'client1');
-      }).toThrow();
+    it('should require db and clientId parameters', async () => {
+      await expect(async () => {
+        await getConversationIntelligence(null, 'client1');
+      }).rejects.toThrow();
 
-      expect(() => {
-        getConversationIntelligence(db, null);
-      }).toThrow();
+      await expect(async () => {
+        await getConversationIntelligence(db, null);
+      }).rejects.toThrow();
     });
 
-    it('should handle empty data gracefully', () => {
-      const result = getConversationIntelligence(db, 'nonexistent_client', 30);
+    it('should handle empty data gracefully', async () => {
+      const result = await getConversationIntelligence(db, 'nonexistent_client', 30);
 
       expect(result.summary.total_calls).toBe(0);
       expect(result.summary.total_messages).toBe(0);
@@ -93,7 +106,7 @@ describe('Conversation Intelligence Module', () => {
       expect(result.coaching_tips).toBeDefined();
     });
 
-    it('should calculate sentiment distribution correctly', () => {
+    it('should calculate sentiment distribution correctly', async () => {
       const now = new Date().toISOString();
       db.prepare(`DELETE FROM calls WHERE client_id = 'client_sentiment'`).run();
 
@@ -120,22 +133,22 @@ describe('Conversation Intelligence Module', () => {
         VALUES (?, ?, 'client_sentiment', '+12125551300', 'inbound', 100, 'not_interested', 'negative', ?)
       `).run('sentiment_call_neg', 'sentiment_call_neg_id', now);
 
-      const result = getConversationIntelligence(db, 'client_sentiment', 30);
+      const result = await getConversationIntelligence(db, 'client_sentiment', 30);
 
       expect(result.sentiment_distribution.positive).toBe(60);
       expect(result.sentiment_distribution.neutral).toBe(20);
       expect(result.sentiment_distribution.negative).toBe(20);
     });
 
-    it('should include coaching tips in response', () => {
-      const result = getConversationIntelligence(db, 'client1', 30);
+    it('should include coaching tips in response', async () => {
+      const result = await getConversationIntelligence(db, 'client1', 30);
 
       expect(Array.isArray(result.coaching_tips)).toBe(true);
     });
   });
 
   describe('getPeakHours', () => {
-    it('should return array of peak hours with call counts', () => {
+    it('should return array of peak hours with call counts', async () => {
       const now = new Date().toISOString();
       db.prepare(`DELETE FROM calls WHERE client_id = 'client_peaks'`).run();
 
@@ -156,7 +169,7 @@ describe('Conversation Intelligence Module', () => {
         }
       }
 
-      const result = getPeakHours(db, 'client_peaks');
+      const result = await getPeakHours(db, 'client_peaks');
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBeGreaterThan(0);
@@ -171,18 +184,18 @@ describe('Conversation Intelligence Module', () => {
       }
     });
 
-    it('should require db and clientId parameters', () => {
-      expect(() => {
-        getPeakHours(null, 'client1');
-      }).toThrow();
+    it('should require db and clientId parameters', async () => {
+      await expect(async () => {
+        await getPeakHours(null, 'client1');
+      }).rejects.toThrow();
 
-      expect(() => {
-        getPeakHours(db, null);
-      }).toThrow();
+      await expect(async () => {
+        await getPeakHours(db, null);
+      }).rejects.toThrow();
     });
 
-    it('should return empty array for client with no calls', () => {
-      const result = getPeakHours(db, 'nonexistent_client');
+    it('should return empty array for client with no calls', async () => {
+      const result = await getPeakHours(db, 'nonexistent_client');
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(0);
@@ -190,7 +203,7 @@ describe('Conversation Intelligence Module', () => {
   });
 
   describe('analyzeResponseTimeImpact', () => {
-    it('should return buckets and optimal window', () => {
+    it('should return buckets and optimal window', async () => {
       const now = new Date().toISOString();
       db.prepare(`DELETE FROM messages WHERE client_id = 'client_response'`).run();
       db.prepare(`DELETE FROM leads WHERE client_id = 'client_response'`).run();
@@ -219,7 +232,7 @@ describe('Conversation Intelligence Module', () => {
         VALUES (?, 'client_response', '+12125551350', 'inbound', 'Hi back', 'received', ?)
       `).run('response_in1', inboundTime.toISOString());
 
-      const result = analyzeResponseTimeImpact(db, 'client_response');
+      const result = await analyzeResponseTimeImpact(db, 'client_response');
 
       expect(result).toBeDefined();
       expect(Array.isArray(result.buckets)).toBe(true);
@@ -235,18 +248,18 @@ describe('Conversation Intelligence Module', () => {
       }
     });
 
-    it('should require db and clientId parameters', () => {
-      expect(() => {
-        analyzeResponseTimeImpact(null, 'client1');
-      }).toThrow();
+    it('should require db and clientId parameters', async () => {
+      await expect(async () => {
+        await analyzeResponseTimeImpact(null, 'client1');
+      }).rejects.toThrow();
 
-      expect(() => {
-        analyzeResponseTimeImpact(db, null);
-      }).toThrow();
+      await expect(async () => {
+        await analyzeResponseTimeImpact(db, null);
+      }).rejects.toThrow();
     });
 
-    it('should return valid buckets for empty client', () => {
-      const result = analyzeResponseTimeImpact(db, 'empty_response_client');
+    it('should return valid buckets for empty client', async () => {
+      const result = await analyzeResponseTimeImpact(db, 'empty_response_client');
 
       expect(Array.isArray(result.buckets)).toBe(true);
       expect(result.buckets.length).toBeGreaterThan(0);
@@ -255,7 +268,7 @@ describe('Conversation Intelligence Module', () => {
   });
 
   describe('getCallDurationTrend', () => {
-    it('should return weekly trend data', () => {
+    it('should return weekly trend data', async () => {
       const now = new Date().toISOString();
       db.prepare(`DELETE FROM calls WHERE client_id = 'client_trend'`).run();
 
@@ -272,7 +285,7 @@ describe('Conversation Intelligence Module', () => {
         `).run(`trend_call_${i}`, `trend_call_${i}_id`, now);
       }
 
-      const result = getCallDurationTrend(db, 'client_trend', 30);
+      const result = await getCallDurationTrend(db, 'client_trend', 30);
 
       expect(Array.isArray(result)).toBe(true);
 
@@ -286,21 +299,21 @@ describe('Conversation Intelligence Module', () => {
       }
     });
 
-    it('should return empty array for client with no calls', () => {
-      const result = getCallDurationTrend(db, 'nonexistent_trend', 30);
+    it('should return empty array for client with no calls', async () => {
+      const result = await getCallDurationTrend(db, 'nonexistent_trend', 30);
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(0);
     });
 
-    it('should require db and clientId parameters', () => {
-      expect(() => {
-        getCallDurationTrend(null, 'client1', 30);
-      }).toThrow();
+    it('should require db and clientId parameters', async () => {
+      await expect(async () => {
+        await getCallDurationTrend(null, 'client1', 30);
+      }).rejects.toThrow();
 
-      expect(() => {
-        getCallDurationTrend(db, null, 30);
-      }).toThrow();
+      await expect(async () => {
+        await getCallDurationTrend(db, null, 30);
+      }).rejects.toThrow();
     });
   });
 
@@ -309,7 +322,7 @@ describe('Conversation Intelligence Module', () => {
       db.prepare(`DELETE FROM calls WHERE client_id = 'topic_client'`).run();
     });
 
-    it('should extract keywords from call transcripts', () => {
+    it('should extract keywords from call transcripts', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('topic_client', 'Topic Client', 'Owner')
@@ -328,7 +341,7 @@ describe('Conversation Intelligence Module', () => {
         VALUES (?, ?, 'topic_client', '+12125551201', 'inbound', 200, 'qualified', 'Booking availability', ?)
       `).run('topic_call2', 'topic_call2_id', now);
 
-      const result = extractCommonTopics(db, 'topic_client', now);
+      const result = await extractCommonTopics(db, 'topic_client', now);
 
       expect(Array.isArray(result)).toBe(true);
       if (result.length > 0) {
@@ -337,7 +350,7 @@ describe('Conversation Intelligence Module', () => {
       }
     });
 
-    it('should count keyword frequency correctly', () => {
+    it('should count keyword frequency correctly', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('freq_client', 'Freq Client', 'Owner')
@@ -353,31 +366,31 @@ describe('Conversation Intelligence Module', () => {
         `).run(`freq_call${i}`, `freq_call${i}_id`, `+1212555${1400 + i}`, now);
       }
 
-      const result = extractCommonTopics(db, 'freq_client', now);
+      const result = await extractCommonTopics(db, 'freq_client', now);
 
       const pricingTopic = result.find(t => t.topic.toLowerCase() === 'pricing');
       expect(pricingTopic).toBeDefined();
       expect(pricingTopic.frequency).toBe(5);
     });
 
-    it('should require db and clientId parameters', () => {
-      expect(() => {
-        extractCommonTopics(null, 'client1', new Date().toISOString());
-      }).toThrow();
+    it('should require db and clientId parameters', async () => {
+      await expect(async () => {
+        await extractCommonTopics(null, 'client1', new Date().toISOString());
+      }).rejects.toThrow();
 
-      expect(() => {
-        extractCommonTopics(db, null, new Date().toISOString());
-      }).toThrow();
+      await expect(async () => {
+        await extractCommonTopics(db, null, new Date().toISOString());
+      }).rejects.toThrow();
     });
 
-    it('should return empty array for empty client', () => {
-      const result = extractCommonTopics(db, 'nonexistent', new Date().toISOString());
+    it('should return empty array for empty client', async () => {
+      const result = await extractCommonTopics(db, 'nonexistent', new Date().toISOString());
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(0);
     });
 
-    it('should extract multiple unique topics', () => {
+    it('should extract multiple unique topics', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('multi_topic', 'Multi Topic', 'Owner')
@@ -398,7 +411,7 @@ describe('Conversation Intelligence Module', () => {
         `).run(`mt_call${i}`, `mt_call${i}_id`, `+1212555${1500 + i}`, keywords[i], now);
       }
 
-      const result = extractCommonTopics(db, 'multi_topic', now);
+      const result = await extractCommonTopics(db, 'multi_topic', now);
 
       expect(result.length).toBeGreaterThan(0);
       expect(result.length).toBeLessThanOrEqual(8); // Limited to top 8
@@ -410,7 +423,7 @@ describe('Conversation Intelligence Module', () => {
       db.prepare(`DELETE FROM calls WHERE client_id = 'coaching_client'`).run();
     });
 
-    it('should generate tips based on call statistics', () => {
+    it('should generate tips based on call statistics', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('coaching_client', 'Coaching Client', 'Owner')
@@ -426,12 +439,12 @@ describe('Conversation Intelligence Module', () => {
         `).run(`coach_call${i}`, `coach_call${i}_id`, `+1212555${1600 + i}`, i < 5 ? 'booked' : 'not_interested', now);
       }
 
-      const result = getConversationIntelligence(db, 'coaching_client', 30);
+      const result = await getConversationIntelligence(db, 'coaching_client', 30);
 
       expect(Array.isArray(result.coaching_tips)).toBe(true);
     });
 
-    it('should provide tips for low booking rate', () => {
+    it('should provide tips for low booking rate', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('low_booking', 'Low Booking', 'Owner')
@@ -447,12 +460,12 @@ describe('Conversation Intelligence Module', () => {
         `).run(`low_call${i}`, `low_call${i}_id`, `+1212555${1700 + i}`, i === 0 ? 'booked' : 'not_interested', now);
       }
 
-      const result = getConversationIntelligence(db, 'low_booking', 30);
+      const result = await getConversationIntelligence(db, 'low_booking', 30);
 
       expect(result.coaching_tips.length).toBeGreaterThan(0);
     });
 
-    it('should provide tips for excellent booking rate', () => {
+    it('should provide tips for excellent booking rate', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('high_booking', 'High Booking', 'Owner')
@@ -468,12 +481,12 @@ describe('Conversation Intelligence Module', () => {
         `).run(`high_call${i}`, `high_call${i}_id`, `+1212555${1800 + i}`, i % 2 === 0 ? 'booked' : 'not_interested', now);
       }
 
-      const result = getConversationIntelligence(db, 'high_booking', 30);
+      const result = await getConversationIntelligence(db, 'high_booking', 30);
 
       expect(result.coaching_tips.length).toBeGreaterThan(0);
     });
 
-    it('should provide tips for short call duration', () => {
+    it('should provide tips for short call duration', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('short_calls', 'Short Calls', 'Owner')
@@ -489,7 +502,7 @@ describe('Conversation Intelligence Module', () => {
         `).run(`short_call${i}`, `short_call${i}_id`, `+1212555${1900 + i}`, 'not_interested', now);
       }
 
-      const result = getConversationIntelligence(db, 'short_calls', 30);
+      const result = await getConversationIntelligence(db, 'short_calls', 30);
 
       expect(result.coaching_tips.length).toBeGreaterThan(0);
     });
@@ -500,13 +513,13 @@ describe('Conversation Intelligence Module', () => {
       db.prepare(`DELETE FROM calls WHERE client_id = 'wow_client'`).run();
     });
 
-    it('should return week comparison structure', () => {
+    it('should return week comparison structure', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('wow_client', 'WoW Client', 'Owner')
       `).run();
 
-      const result = getWeekOverWeekComparison(db, 'wow_client');
+      const result = await getWeekOverWeekComparison(db, 'wow_client');
 
       expect(result).toBeDefined();
       expect(result.this_week).toBeDefined();
@@ -514,7 +527,7 @@ describe('Conversation Intelligence Module', () => {
       expect(result.change).toBeDefined();
     });
 
-    it('should calculate this week stats correctly', () => {
+    it('should calculate this week stats correctly', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('wow_this_week', 'WoW This Week', 'Owner')
@@ -532,12 +545,12 @@ describe('Conversation Intelligence Module', () => {
         VALUES (?, ?, 'wow_this_week', '+12125552000', 'inbound', 300, 'booked', ?)
       `).run('wow_call1', 'wow_call1_id', callTime.toISOString());
 
-      const result = getWeekOverWeekComparison(db, 'wow_this_week');
+      const result = await getWeekOverWeekComparison(db, 'wow_this_week');
 
       expect(result.this_week.total_calls).toBe(1);
     });
 
-    it('should calculate call difference between weeks', () => {
+    it('should calculate call difference between weeks', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('wow_diff', 'WoW Diff', 'Owner')
@@ -572,7 +585,7 @@ describe('Conversation Intelligence Module', () => {
         `).run(`wow_diff_last${i}`, `wow_diff_last${i}_id`, `+1212555${2010 + i}`, callTime.toISOString());
       }
 
-      const result = getWeekOverWeekComparison(db, 'wow_diff');
+      const result = await getWeekOverWeekComparison(db, 'wow_diff');
 
       // Just verify structure is correct - timing can vary
       expect(result.change).toBeDefined();
@@ -580,7 +593,7 @@ describe('Conversation Intelligence Module', () => {
       expect(['increasing', 'decreasing', 'stable']).toContain(result.change.trend);
     });
 
-    it('should calculate booking rate difference', () => {
+    it('should calculate booking rate difference', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('wow_booking', 'WoW Booking', 'Owner')
@@ -601,7 +614,7 @@ describe('Conversation Intelligence Module', () => {
         `).run(`wow_book_${i}`, `wow_book_${i}_id`, `+1212555${2020 + i}`, i === 0 ? 'booked' : 'not_interested', callTime.toISOString());
       }
 
-      const result = getWeekOverWeekComparison(db, 'wow_booking');
+      const result = await getWeekOverWeekComparison(db, 'wow_booking');
 
       expect(result.this_week).toBeDefined();
       expect(result.this_week.booking_rate).toBeDefined();
@@ -610,18 +623,18 @@ describe('Conversation Intelligence Module', () => {
       expect(result.this_week.booking_rate).toMatch(/\d+%/);
     });
 
-    it('should require db and clientId parameters', () => {
-      expect(() => {
-        getWeekOverWeekComparison(null, 'client1');
-      }).toThrow();
+    it('should require db and clientId parameters', async () => {
+      await expect(async () => {
+        await getWeekOverWeekComparison(null, 'client1');
+      }).rejects.toThrow();
 
-      expect(() => {
-        getWeekOverWeekComparison(db, null);
-      }).toThrow();
+      await expect(async () => {
+        await getWeekOverWeekComparison(db, null);
+      }).rejects.toThrow();
     });
 
-    it('should handle empty client gracefully', () => {
-      const result = getWeekOverWeekComparison(db, 'nonexistent_wow');
+    it('should handle empty client gracefully', async () => {
+      const result = await getWeekOverWeekComparison(db, 'nonexistent_wow');
 
       expect(result).toBeDefined();
       expect(result.this_week.total_calls).toBe(0);
@@ -635,7 +648,7 @@ describe('Conversation Intelligence Module', () => {
       db.prepare(`DELETE FROM messages WHERE client_id = 'integration_test'`).run();
     });
 
-    it('should handle complete intelligence report generation', () => {
+    it('should handle complete intelligence report generation', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('integration_test', 'Integration Test', 'Owner')
@@ -676,7 +689,7 @@ describe('Conversation Intelligence Module', () => {
         }
       }
 
-      const result = getConversationIntelligence(db, 'integration_test', 30);
+      const result = await getConversationIntelligence(db, 'integration_test', 30);
 
       expect(result).toBeDefined();
       expect(result.summary.total_calls).toBeGreaterThan(0);
@@ -686,7 +699,7 @@ describe('Conversation Intelligence Module', () => {
       expect(result.coaching_tips).toBeDefined();
     });
 
-    it('should identify response time patterns correctly', () => {
+    it('should identify response time patterns correctly', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('response_pattern', 'Response Pattern', 'Owner')
@@ -711,7 +724,7 @@ describe('Conversation Intelligence Module', () => {
         VALUES (?, 'response_pattern', '+12125553100', 'inbound', 'Hey', 'received', ?)
       `).run('rp_in1', responseTime.toISOString());
 
-      const result = analyzeResponseTimeImpact(db, 'response_pattern');
+      const result = await analyzeResponseTimeImpact(db, 'response_pattern');
 
       expect(result.buckets).toBeDefined();
       expect(Array.isArray(result.buckets)).toBe(true);

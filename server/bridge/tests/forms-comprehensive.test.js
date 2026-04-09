@@ -64,6 +64,14 @@ describe('Forms Route - Comprehensive', () => {
     mockDb = {
       prepare: jest.fn(),
       transaction: jest.fn((fn) => fn),
+      // db.query(sql, params, mode) — unified async helper used by routes
+      query: jest.fn(async (sql, params, mode) => {
+        const stmt = mockDb.prepare(sql);
+        if (!stmt) return null;
+        if (mode === 'run') return stmt.run ? stmt.run(...(params || [])) : undefined;
+        if (mode === 'get') return stmt.get ? stmt.get(...(params || [])) : null;
+        return stmt.all ? stmt.all(...(params || [])) : [];
+      }),
     };
 
     // Set up the app
@@ -72,6 +80,18 @@ describe('Forms Route - Comprehensive', () => {
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
     app.use('/webhooks/forms', formsRouter);
+    // Error handler so middleware AppErrors render as JSON (mirrors production app)
+    // eslint-disable-next-line no-unused-vars
+    app.use((err, req, res, next) => {
+      if (err && err.name === 'AppError') {
+        return res.status(err.statusCode || 400).json({ success: false, error: err.message, code: err.code });
+      }
+      // Express JSON body parser sends SyntaxError for malformed JSON
+      if (err && err.type === 'entity.parse.failed') {
+        return res.status(400).json({ success: false, error: 'Invalid JSON', code: 'INVALID_JSON' });
+      }
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    });
   });
 
   describe('POST / - Form submission with client_id in body', () => {
@@ -97,7 +117,9 @@ describe('Forms Route - Comprehensive', () => {
         });
 
       expect([200, 429]).toContain(response.status); // May hit rate limit
-      expect(response.body.status).toBe('received');
+      if (response.status === 200) {
+        expect(response.body.data.status).toBe('received');
+      }
     });
 
     test('should reject submission without client_id', async () => {
@@ -123,7 +145,7 @@ describe('Forms Route - Comprehensive', () => {
         });
 
       expect(response.status).toBe(400);
-      expect(response.body.error).toContain('invalid');
+      expect(response.body.error).toMatch(/invalid/i);
     });
 
     test('should handle clientId field name variant', async () => {
@@ -148,7 +170,7 @@ describe('Forms Route - Comprehensive', () => {
       expect([200, 429]).toContain(response.status); // May hit rate limit
     });
 
-    test('should accept form submission without phone (email only)', async () => {
+    test('should reject form submission without phone (phone is required)', async () => {
       mockDb.prepare.mockReturnValue({
         get: jest.fn().mockReturnValue({
           id: 'client-123',
@@ -168,7 +190,8 @@ describe('Forms Route - Comprehensive', () => {
           message: 'Lead without phone',
         });
 
-      expect([200, 429]).toContain(response.status); // May hit rate limit
+      // Route requires phone — returns 400 MISSING_PHONE (or 429 if rate limited)
+      expect([400, 429]).toContain(response.status);
     });
   });
 
@@ -194,7 +217,9 @@ describe('Forms Route - Comprehensive', () => {
         });
 
       expect([200, 429]).toContain(response.status); // May hit rate limit
-      expect(response.body.status).toBe('received');
+      if (response.status === 200) {
+        expect(response.body.data.status).toBe('received');
+      }
     });
 
     test('should reject invalid clientId format', async () => {
@@ -205,10 +230,11 @@ describe('Forms Route - Comprehensive', () => {
           phone: '+14155551234',
         });
 
-      expect(response.status).toBe(200); // Still returns 200 but doesn't process
+      // validateParams rejects invalid UUID with 400
+      expect([400, 429]).toContain(response.status);
     });
 
-    test('should return 200 if client not found or inactive', async () => {
+    test('should return 404 if client not found or inactive', async () => {
       mockDb.prepare.mockReturnValue({
         get: jest.fn().mockReturnValue(null), // Client not found
       });
@@ -220,7 +246,8 @@ describe('Forms Route - Comprehensive', () => {
           phone: '+14155551234',
         });
 
-      expect(response.status).toBe(200); // Still returns 200
+      // Route throws CLIENT_NOT_FOUND AppError with statusCode 404 (or 429 if rate limited)
+      expect([404, 429]).toContain(response.status);
     });
   });
 

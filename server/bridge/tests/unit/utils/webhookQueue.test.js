@@ -1,6 +1,5 @@
 'use strict';
 
-const fs = require('fs');
 const path = require('path');
 
 // Mock logger
@@ -21,12 +20,13 @@ global.fetch = jest.fn();
 describe('webhookQueue', () => {
   let enqueue, processQueue, startProcessor, stopProcessor, _getQueuePath;
   let mockQueue;
+  let fs; // declare here so we can re-require after resetModules
 
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
 
-    // Re-mock logger after resetModules
+    // Re-mock logger and fs after resetModules so the fresh module load gets the right mocks
     jest.mock('../../../utils/logger', () => ({
       logger: {
         info: jest.fn(),
@@ -34,6 +34,10 @@ describe('webhookQueue', () => {
         error: jest.fn(),
       },
     }));
+    jest.mock('fs');
+
+    // Re-require fs so we're working with the new mock instance
+    fs = require('fs');
 
     mockQueue = [];
 

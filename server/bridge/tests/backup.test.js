@@ -6,6 +6,18 @@
 jest.mock('fs');
 jest.mock('path');
 
+// Mock logger so backup.js getLogger() routes to console.log/error (which tests spy on)
+jest.mock('../utils/logger', () => ({
+  logger: {
+    info: (...args) => console.log(...args),
+    warn: (...args) => console.warn(...args),
+    error: (...args) => console.error(...args),
+    debug: () => {},
+  },
+  setupLogger: jest.fn(),
+  closeLogger: jest.fn(),
+}));
+
 const fs = require('fs');
 const path = require('path');
 const { backupDatabase, scheduleBackups, cleanupOldBackups } = require('../utils/backup');

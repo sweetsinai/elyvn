@@ -14,6 +14,18 @@ describe('appointmentReminders', () => {
     jest.clearAllMocks();
     db = new Database(':memory:');
     runMigrations(db);
+    db.query = function query(sql, params = [], mode = 'all') {
+      try {
+        const stmt = db.prepare(sql);
+        let result;
+        if (mode === 'get') result = stmt.get(...params);
+        else if (mode === 'run') result = stmt.run(...params);
+        else result = stmt.all(...params);
+        return Promise.resolve(result);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    };
 
     // Create test data
     db.prepare(`
@@ -28,7 +40,7 @@ describe('appointmentReminders', () => {
   });
 
   describe('scheduleReminders', () => {
-    test('schedules reminder for appointment 24h before', () => {
+    test('schedules reminder for appointment 24h before', async () => {
       const futureDate = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
       const appointment = {
@@ -41,7 +53,7 @@ describe('appointmentReminders', () => {
         datetime: futureDate
       };
 
-      const result = scheduleReminders(db, appointment);
+      const result = await scheduleReminders(db, appointment);
 
       expect(result).toBe(true);
 
@@ -52,7 +64,7 @@ describe('appointmentReminders', () => {
       expect(reminders.length).toBeGreaterThan(0);
     });
 
-    test('schedules reminder for appointment 1h before', () => {
+    test('schedules reminder for appointment 1h before', async () => {
       const futureDate = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
       const appointment = {
@@ -65,7 +77,7 @@ describe('appointmentReminders', () => {
         datetime: futureDate
       };
 
-      scheduleReminders(db, appointment);
+      await scheduleReminders(db, appointment);
 
       const reminders = db.prepare(
         "SELECT * FROM followups WHERE lead_id = ? AND type = 'reminder' AND touch_number = 11"
@@ -74,7 +86,7 @@ describe('appointmentReminders', () => {
       expect(reminders.length).toBeGreaterThan(0);
     });
 
-    test('schedules reminder for appointment 15m before', () => {
+    test('schedules reminder for appointment 15m before', async () => {
       const futureDate = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
       const appointment = {
@@ -87,7 +99,7 @@ describe('appointmentReminders', () => {
         datetime: futureDate
       };
 
-      scheduleReminders(db, appointment);
+      await scheduleReminders(db, appointment);
 
       const reminders = db.prepare(
         "SELECT * FROM followups WHERE lead_id = ? AND type = 'reminder' AND touch_number = 12"
@@ -96,7 +108,7 @@ describe('appointmentReminders', () => {
       expect(reminders.length).toBeGreaterThan(0);
     });
 
-    test('skips past reminders', () => {
+    test('skips past reminders', async () => {
       const nearFutureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
       const appointment = {
@@ -109,7 +121,7 @@ describe('appointmentReminders', () => {
         datetime: nearFutureDate
       };
 
-      scheduleReminders(db, appointment);
+      await scheduleReminders(db, appointment);
 
       const reminders = db.prepare(
         "SELECT COUNT(*) as count FROM followups WHERE lead_id = ? AND type = 'reminder'"
@@ -119,7 +131,7 @@ describe('appointmentReminders', () => {
       expect(reminders.count).toBeLessThanOrEqual(1);
     });
 
-    test('deduplicates reminders', () => {
+    test('deduplicates reminders', async () => {
       const futureDate = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
       const appointment = {
@@ -132,12 +144,12 @@ describe('appointmentReminders', () => {
         datetime: futureDate
       };
 
-      scheduleReminders(db, appointment);
+      await scheduleReminders(db, appointment);
       const firstCount = db.prepare(
         "SELECT COUNT(*) as count FROM followups WHERE lead_id = ? AND type = 'reminder'"
       ).get('lead1').count;
 
-      scheduleReminders(db, appointment);
+      await scheduleReminders(db, appointment);
       const secondCount = db.prepare(
         "SELECT COUNT(*) as count FROM followups WHERE lead_id = ? AND type = 'reminder'"
       ).get('lead1').count;
@@ -145,7 +157,7 @@ describe('appointmentReminders', () => {
       expect(firstCount).toBe(secondCount);
     });
 
-    test('includes business name in reminder content', () => {
+    test('includes business name in reminder content', async () => {
       const futureDate = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
       const appointment = {
@@ -158,7 +170,7 @@ describe('appointmentReminders', () => {
         datetime: futureDate
       };
 
-      scheduleReminders(db, appointment);
+      await scheduleReminders(db, appointment);
 
       const reminder = db.prepare(
         "SELECT content FROM followups WHERE lead_id = ? AND type = 'reminder' LIMIT 1"
@@ -167,7 +179,7 @@ describe('appointmentReminders', () => {
       expect(reminder.content).toContain('Test Business');
     });
 
-    test('includes appointment time in reminder content', () => {
+    test('includes appointment time in reminder content', async () => {
       const futureDate = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
       const appointment = {
@@ -180,7 +192,7 @@ describe('appointmentReminders', () => {
         datetime: futureDate
       };
 
-      scheduleReminders(db, appointment);
+      await scheduleReminders(db, appointment);
 
       const reminder = db.prepare(
         "SELECT content FROM followups WHERE lead_id = ? AND type = 'reminder' AND touch_number = 10 LIMIT 1"
@@ -190,8 +202,8 @@ describe('appointmentReminders', () => {
       expect(reminder.content).toMatch(/\d{1,2}:\d{2}\s*(AM|PM)/);
     });
 
-    test('returns false for missing appointment id', () => {
-      const result = scheduleReminders(db, {
+    test('returns false for missing appointment id', async () => {
+      const result = await scheduleReminders(db, {
         client_id: 'client1',
         lead_id: 'lead1',
         datetime: new Date().toISOString()
@@ -200,8 +212,8 @@ describe('appointmentReminders', () => {
       expect(result).toBe(false);
     });
 
-    test('returns false for missing appointment datetime', () => {
-      const result = scheduleReminders(db, {
+    test('returns false for missing appointment datetime', async () => {
+      const result = await scheduleReminders(db, {
         id: 'apt1',
         client_id: 'client1',
         lead_id: 'lead1'
@@ -210,14 +222,14 @@ describe('appointmentReminders', () => {
       expect(result).toBe(false);
     });
 
-    test('returns false for null appointment', () => {
-      const result = scheduleReminders(db, null);
+    test('returns false for null appointment', async () => {
+      const result = await scheduleReminders(db, null);
 
       expect(result).toBe(false);
     });
 
-    test('returns false for invalid datetime', () => {
-      const result = scheduleReminders(db, {
+    test('returns false for invalid datetime', async () => {
+      const result = await scheduleReminders(db, {
         id: 'apt1',
         client_id: 'client1',
         lead_id: 'lead1',
@@ -227,7 +239,7 @@ describe('appointmentReminders', () => {
       expect(result).toBe(false);
     });
 
-    test('uses default business name when client not found', () => {
+    test('uses default business name when client not found', async () => {
       const futureDate = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
       const appointment = {
@@ -241,7 +253,7 @@ describe('appointmentReminders', () => {
       };
 
       // With FK constraints, inserting a followup for a nonexistent client fails gracefully
-      const result = scheduleReminders(db, appointment);
+      const result = await scheduleReminders(db, appointment);
       expect(result).toBe(false);
     });
   });
@@ -344,11 +356,14 @@ describe('appointmentReminders', () => {
     test('processes multiple reminders', async () => {
       const sendSMSFn = jest.fn().mockResolvedValue({ success: true });
 
+      // Insert 5 leads and 1 reminder per lead to avoid (lead_id, touch_number) unique constraint
       for (let i = 0; i < 5; i++) {
+        db.prepare(`INSERT OR IGNORE INTO leads (id, client_id, phone, name) VALUES (?, 'client1', ?, 'Test Lead')`)
+          .run(`lead-multi-${i}`, `+1555000${String(i).padStart(4, '0')}`);
         db.prepare(`
           INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, scheduled_at, status)
-          VALUES (?, 'lead1', 'client1', 10, 'reminder', 'Text', datetime('now', '-1 minute'), 'scheduled')
-        `).run(`fu${i}`);
+          VALUES (?, ?, 'client1', 10, 'reminder', 'Text', datetime('now', '-1 minute'), 'scheduled')
+        `).run(`fu${i}`, `lead-multi-${i}`);
       }
 
       const sent = await processDueReminders(db, sendSMSFn);
@@ -399,12 +414,14 @@ describe('appointmentReminders', () => {
     test('respects MAX_REMINDER_LIMIT in a single run', async () => {
       const sendSMSFn = jest.fn().mockResolvedValue({ success: true });
 
-      // Create more reminders than the limit
+      // Create more reminders than the limit, using unique lead IDs to avoid (lead_id, touch_number) unique constraint
       for (let i = 0; i < 30; i++) {
+        db.prepare(`INSERT OR IGNORE INTO leads (id, client_id, phone, name) VALUES (?, 'client1', ?, 'Test Lead')`)
+          .run(`lead-limit-${i}`, `+1555100${String(i).padStart(4, '0')}`);
         db.prepare(`
           INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, scheduled_at, status)
-          VALUES (?, 'lead1', 'client1', 10, 'reminder', 'Text', datetime('now', '-1 minute'), 'scheduled')
-        `).run(`fu${i}`);
+          VALUES (?, ?, 'client1', 10, 'reminder', 'Text', datetime('now', '-1 minute'), 'scheduled')
+        `).run(`fu${i}`, `lead-limit-${i}`);
       }
 
       const sent = await processDueReminders(db, sendSMSFn);

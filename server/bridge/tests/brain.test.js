@@ -29,7 +29,7 @@ jest.mock('../utils/logger', () => ({
   closeLogger: jest.fn(),
 }));
 
-const { think, _claudeBreaker, _leadLocks } = require('../utils/brain');
+const { think, _claudeBreaker, _leadLocks, _resetForTesting } = require('../utils/brain');
 
 describe('brain.think', () => {
   let mockLeadMemory;
@@ -40,15 +40,26 @@ describe('brain.think', () => {
     // Clear mocks
     jest.clearAllMocks();
 
-    // Reset circuit breaker and lead locks so tests don't bleed into each other
-    if (_claudeBreaker) _claudeBreaker.reset();
-    if (_leadLocks) _leadLocks.clear();
+    // Reset circuit breaker, lead locks, and token bucket so tests don't bleed into each other
+    if (_resetForTesting) _resetForTesting();
+    else {
+      if (_claudeBreaker) _claudeBreaker.reset();
+      if (_leadLocks) _leadLocks.clear();
+    }
 
     // Setup mock database (just for guardrails queries)
+    const _defaultPrepare = jest.fn().mockReturnValue({
+      get: jest.fn().mockReturnValue(null),
+      all: jest.fn().mockReturnValue([]),
+      run: jest.fn().mockReturnValue({}),
+    });
     mockDb = {
-      prepare: jest.fn().mockReturnValue({
-        get: jest.fn().mockReturnValue(null),
-        all: jest.fn().mockReturnValue([]),
+      prepare: _defaultPrepare,
+      query: jest.fn((sql, params = [], mode = 'all') => {
+        const stmt = mockDb.prepare(sql);
+        if (mode === 'get') return Promise.resolve(stmt.get(...(params || [])));
+        if (mode === 'run') return Promise.resolve(stmt.run(...(params || [])));
+        return Promise.resolve(stmt.all(...(params || [])));
       }),
     };
 
@@ -548,6 +559,9 @@ describe('brain.think', () => {
   it('should handle guardrail check errors gracefully', async () => {
     const failingDb = {
       prepare: jest.fn().mockImplementation(() => {
+        throw new Error('DB error');
+      }),
+      query: jest.fn().mockImplementation(() => {
         throw new Error('DB error');
       }),
     };

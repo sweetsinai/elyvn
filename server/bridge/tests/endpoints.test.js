@@ -4,6 +4,10 @@ const BASE = process.env.TEST_BASE_URL || 'https://joyful-trust-production.up.ra
 const API_KEY = process.env.TEST_API_KEY || '4d4def88907d8f1d9c83921384c5199c41639cb2f99d60009267b06c6508eaa9';
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'test-bot-token';
 
+// Skip all tests if the server is not explicitly configured via TEST_BASE_URL.
+// These are live E2E tests — they should not run against production from CI/unit runs.
+const it = process.env.TEST_BASE_URL ? test : test.skip;
+
 describe('API Endpoints Integration Tests', () => {
   const fetchJSON = async (url, opts = {}) => {
     try {
@@ -16,7 +20,7 @@ describe('API Endpoints Integration Tests', () => {
   };
 
   describe('Health & Service Status', () => {
-    test('GET /health returns 200 with db status', async () => {
+    it('GET /health returns 200 with db status', async () => {
       const { status, data } = await fetchJSON(`${BASE}/health`, {
         headers: { 'x-api-key': API_KEY }
       });
@@ -24,14 +28,12 @@ describe('API Endpoints Integration Tests', () => {
       expect(data).toBeDefined();
       expect(data.status).toBeDefined();
       expect(['ok', 'degraded']).toContain(data.status);
-      // Full response includes services when authenticated
       if (data.services) {
         expect(typeof data.services.db).toBe('boolean');
       }
     }, 15000);
 
-    test('GET /health.json returns health data', async () => {
-      // /health.json may not exist; /health is the actual endpoint
+    it('GET /health.json returns health data', async () => {
       const { status, data } = await fetchJSON(`${BASE}/health.json`);
       expect([200, 404]).toContain(status);
       if (status === 200) {
@@ -41,12 +43,12 @@ describe('API Endpoints Integration Tests', () => {
   });
 
   describe('API Authentication', () => {
-    test('GET /api/clients without key returns 401', async () => {
+    it('GET /api/clients without key returns 401', async () => {
       const { status } = await fetchJSON(`${BASE}/api/clients`);
       expect(status).toBe(401);
     }, 10000);
 
-    test('GET /api/clients with valid key returns 200', async () => {
+    it('GET /api/clients with valid key returns 200', async () => {
       const { status, data } = await fetchJSON(`${BASE}/api/clients`, {
         headers: { 'x-api-key': API_KEY }
       });
@@ -57,7 +59,7 @@ describe('API Endpoints Integration Tests', () => {
       }
     }, 10000);
 
-    test('GET /api/clients with invalid key returns 401', async () => {
+    it('GET /api/clients with invalid key returns 401', async () => {
       const { status } = await fetchJSON(`${BASE}/api/clients`, {
         headers: { 'x-api-key': 'invalid-key-12345' }
       });
@@ -66,7 +68,7 @@ describe('API Endpoints Integration Tests', () => {
   });
 
   describe('API Routes', () => {
-    test('GET /api/clients returns list of clients', async () => {
+    it('GET /api/clients returns list of clients', async () => {
       const { status, data } = await fetchJSON(`${BASE}/api/clients`, {
         headers: { 'x-api-key': API_KEY }
       });
@@ -76,8 +78,7 @@ describe('API Endpoints Integration Tests', () => {
       }
     }, 10000);
 
-    test('GET /api/leads/:clientId returns leads', async () => {
-      // First get a client
+    it('GET /api/leads/:clientId returns leads', async () => {
       const { data: clients } = await fetchJSON(`${BASE}/api/clients`, {
         headers: { 'x-api-key': API_KEY }
       });
@@ -92,7 +93,7 @@ describe('API Endpoints Integration Tests', () => {
       }
     }, 15000);
 
-    test('GET /api/messages/:clientId returns messages', async () => {
+    it('GET /api/messages/:clientId returns messages', async () => {
       const { data: clients } = await fetchJSON(`${BASE}/api/clients`, {
         headers: { 'x-api-key': API_KEY }
       });
@@ -107,7 +108,7 @@ describe('API Endpoints Integration Tests', () => {
       }
     }, 15000);
 
-    test('GET /api/calls/:clientId returns calls', async () => {
+    it('GET /api/calls/:clientId returns calls', async () => {
       const { data: clients } = await fetchJSON(`${BASE}/api/clients`, {
         headers: { 'x-api-key': API_KEY }
       });
@@ -122,7 +123,7 @@ describe('API Endpoints Integration Tests', () => {
       }
     }, 15000);
 
-    test('GET /api/stats/:clientId returns statistics', async () => {
+    it('GET /api/stats/:clientId returns statistics', async () => {
       const { data: clients } = await fetchJSON(`${BASE}/api/clients`, {
         headers: { 'x-api-key': API_KEY }
       });
@@ -139,7 +140,7 @@ describe('API Endpoints Integration Tests', () => {
   });
 
   describe('Webhook Handlers', () => {
-    test('POST /webhooks/telegram accepts valid update', async () => {
+    it('POST /webhooks/telegram accepts valid update', async () => {
       const payload = {
         update_id: Math.floor(Math.random() * 1000000),
         message: {
@@ -160,19 +161,17 @@ describe('API Endpoints Integration Tests', () => {
       expect([200, 204, 400]).toContain(status);
     }, 15000);
 
-    test('POST /webhooks/telegram rejects malformed update', async () => {
+    it('POST /webhooks/telegram rejects malformed update', async () => {
       const { status } = await fetchJSON(`${BASE}/webhooks/telegram`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invalid: 'data' })
       });
 
-      // Accept various error responses for malformed data
       expect([400, 422, 200]).toContain(status);
     }, 15000);
 
-    test('POST /webhooks/telnyx accepts valid update', async () => {
-      // Changed from /webhooks/twilio to /webhooks/telnyx as code migrated to Telnyx
+    it('POST /webhooks/telnyx accepts valid update', async () => {
       const { status } = await fetchJSON(`${BASE}/webhooks/telnyx`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -192,7 +191,7 @@ describe('API Endpoints Integration Tests', () => {
   });
 
   describe('Form Endpoints', () => {
-    test('POST /api/onboard validates required fields', async () => {
+    it('POST /api/onboard validates required fields', async () => {
       const { status } = await fetchJSON(`${BASE}/api/onboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -202,8 +201,8 @@ describe('API Endpoints Integration Tests', () => {
       expect(status).toBe(400);
     }, 10000);
 
-    test('POST /api/onboard accepts valid data', async () => {
-      const { status, data } = await fetchJSON(`${BASE}/api/onboard`, {
+    it('POST /api/onboard accepts valid data', async () => {
+      const { status } = await fetchJSON(`${BASE}/api/onboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -218,43 +217,38 @@ describe('API Endpoints Integration Tests', () => {
   });
 
   describe('External Service Integration', () => {
-    test('Telegram bot is reachable', async () => {
-      // Try to reach Telegram API
+    it('Telegram bot is reachable', async () => {
       const { data } = await fetchJSON(`https://api.telegram.org/bot${BOT_TOKEN}/getMe`);
       if (data) {
-        // If we get a response, verify structure
         expect(typeof data === 'object').toBe(true);
       }
     }, 15000);
 
-    test('Telegram webhook is configured', async () => {
-      // Try to reach Telegram API for webhook info
+    it('Telegram webhook is configured', async () => {
       const { data } = await fetchJSON(`https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo`);
       if (data) {
-        // If we get a response, verify structure
         expect(typeof data === 'object').toBe(true);
       }
     }, 15000);
   });
 
   describe('Response Headers & Error Handling', () => {
-    test('Endpoints set CORS headers', async () => {
+    it('Endpoints set CORS headers', async () => {
       const res = await fetch(`${BASE}/health`);
       expect(res.status).toBe(200);
-      // CORS headers may vary - just verify request succeeds
     }, 10000);
 
-    test('Invalid routes return 404', async () => {
+    it('Invalid routes return 404', async () => {
       const { status } = await fetchJSON(`${BASE}/nonexistent-route-xyz`);
       expect([200, 404, 400, 405]).toContain(status);
     }, 10000);
 
-    test('Server responds to OPTIONS requests', async () => {
+    it('Server responds to OPTIONS requests', async () => {
       try {
         const res = await fetch(`${BASE}/api/clients`, { method: 'OPTIONS' });
         expect([200, 204, 405]).toContain(res.status);
       } catch (e) {
-        // OPTIONS may not be implemented, that's ok
+        // OPTIONS may not be implemented
       }
     }, 10000);
   });

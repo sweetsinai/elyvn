@@ -14,6 +14,12 @@ const { CreateCheckoutSchema } = require('../utils/schemas/billing');
 
 // Stripe plans configuration
 const PLANS = {
+  solo: {
+    name: 'Solo',
+    price: 9900, // $99 in cents
+    priceId: process.env.STRIPE_PRICE_SOLO,
+    calls: 100,
+  },
   starter: {
     name: 'Starter',
     price: 29900, // $299 in cents

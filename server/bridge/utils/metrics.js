@@ -278,6 +278,16 @@ function resetMetrics() {
   metrics._recent_errors = [];
   metrics._recent_requests = [];
   metrics._last_reset = new Date();
+  // Reset all histogram sample arrays and their computed averages
+  for (const key of Object.keys(metrics)) {
+    if (key.startsWith('_hist_')) {
+      metrics[key] = [];
+    } else if (key.startsWith('avg_') && key !== 'avg_response_time_ms') {
+      metrics[key] = 0;
+    } else if (key.startsWith('_latest_')) {
+      delete metrics[key];
+    }
+  }
   // Reset sliding window ring buffer
   _ringBuffer.length = 0;
   _ringHead = 0;

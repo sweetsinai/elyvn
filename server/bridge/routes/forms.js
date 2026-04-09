@@ -162,7 +162,7 @@ async function processFormSubmission(db, body, clientId, req) {
   const leadId = randomUUID();
   await db.query(`
     INSERT INTO leads (id, client_id, phone, name, email, source, score, stage, last_contact, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'))
+    VALUES (?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'), datetime('now'))
     ON CONFLICT(client_id, phone) DO UPDATE SET
       name = COALESCE(excluded.name, leads.name),
       email = COALESCE(excluded.email, leads.email),

@@ -4,6 +4,17 @@
  */
 
 jest.mock('../utils/dbAdapter');
+jest.mock('../utils/logger', () => ({
+  logger: {
+    info: jest.fn((...args) => console.log(...args)),
+    warn: jest.fn((...args) => console.warn(...args)),
+    error: jest.fn((...args) => console.error(...args)),
+    debug: jest.fn(),
+  },
+}));
+jest.mock('../utils/websocket', () => ({
+  cleanupWebSocket: jest.fn(),
+}));
 
 // Require after mock setup
 let initGracefulShutdown;

@@ -31,6 +31,18 @@ describe('actionExecutor.executeActions', () => {
 
     db = new Database(':memory:');
     runMigrations(db);
+    db.query = function query(sql, params = [], mode = 'all') {
+      try {
+        const stmt = db.prepare(sql);
+        let result;
+        if (mode === 'get') result = stmt.get(...params);
+        else if (mode === 'run') result = stmt.run(...params);
+        else result = stmt.all(...params);
+        return Promise.resolve(result);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    };
 
     // Create test data
     db.prepare(`

@@ -963,7 +963,7 @@ const migrations = [
         -- Event store: per-aggregate timeline queries
         CREATE INDEX IF NOT EXISTS idx_event_store_aggregate ON event_store(client_id, aggregate_id, created_at);
         -- Feature store: per-lead lookup
-        CREATE INDEX IF NOT EXISTS idx_feature_store_lead ON feature_store(lead_id, recorded_at);
+        CREATE INDEX IF NOT EXISTS idx_feature_store_lead ON feature_store(lead_id, computed_at);
       `);
       getLogger().info('[migrations] 036: performance indexes added');
     },
@@ -1096,6 +1096,22 @@ const migrations = [
       `);
 
       getLogger().info('[migrations] 039: product completeness columns added');
+    },
+  },
+  {
+    id: '040_followups_touch_unique',
+    description: 'Add unique constraint on followups(lead_id, touch_number) to prevent duplicate touch inserts',
+    up(db) {
+      try {
+        db.exec(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_followups_lead_touch_unique
+          ON followups(lead_id, touch_number)
+          WHERE touch_number IS NOT NULL;
+        `);
+      } catch (_) {
+        // Index may already exist — skip
+      }
+      getLogger().info('[migrations] 040: followups unique touch index added');
     },
   },
 ];

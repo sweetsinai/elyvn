@@ -7,12 +7,25 @@ const {
 } = require('../utils/smartScheduler');
 const { runMigrations } = require('../utils/migrations');
 
+/**
+ * Add db.query() to a better-sqlite3 instance so async source code works.
+ */
+function addQueryMethod(db) {
+  db.query = function(sql, params = [], mode = 'all') {
+    const stmt = db.prepare(sql);
+    if (mode === 'get') return Promise.resolve(stmt.get(...(params || [])));
+    if (mode === 'run') return Promise.resolve(stmt.run(...(params || [])));
+    return Promise.resolve(stmt.all(...(params || [])));
+  };
+}
+
 describe('Smart Scheduler Module', () => {
   let db;
 
   beforeAll(() => {
     db = new Database(':memory:');
     runMigrations(db);
+    addQueryMethod(db);
 
     // Insert test client
     db.prepare(`
@@ -26,7 +39,7 @@ describe('Smart Scheduler Module', () => {
   });
 
   describe('generateDailySchedule', () => {
-    it('should return array of scheduled contacts', () => {
+    it('should return array of scheduled contacts', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
       db.prepare(`DELETE FROM calls WHERE client_id = 'client1'`).run();
 
@@ -41,7 +54,7 @@ describe('Smart Scheduler Module', () => {
         `).run(`sched_lead${i}`, phone, 5 + i, `Lead ${i}`, twoDaysAgo);
       }
 
-      const result = generateDailySchedule(db, 'client1');
+      const result = await generateDailySchedule(db, 'client1');
 
       expect(Array.isArray(result)).toBe(true);
 
@@ -56,7 +69,7 @@ describe('Smart Scheduler Module', () => {
       }
     });
 
-    it('should exclude booked and lost leads from schedule', () => {
+    it('should exclude booked and lost leads from schedule', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
 
       const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString();
@@ -79,7 +92,7 @@ describe('Smart Scheduler Module', () => {
         VALUES ('lost_lead', 'client1', '+12125551602', 2, 'lost', 'Lost', ?)
       `).run(twoDaysAgo);
 
-      const result = generateDailySchedule(db, 'client1');
+      const result = await generateDailySchedule(db, 'client1');
 
       const scheduledIds = result.map(item => item.leadId);
       expect(scheduledIds).toContain('active_lead');
@@ -87,7 +100,7 @@ describe('Smart Scheduler Module', () => {
       expect(scheduledIds).not.toContain('lost_lead');
     });
 
-    it('should exclude leads updated within 1 day', () => {
+    it('should exclude leads updated within 1 day', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
 
       const now = new Date().toISOString();
@@ -105,14 +118,14 @@ describe('Smart Scheduler Module', () => {
         VALUES ('old_lead', 'client1', '+12125551604', 5, 'warm', 'Old', ?)
       `).run(twoDaysAgo);
 
-      const result = generateDailySchedule(db, 'client1');
+      const result = await generateDailySchedule(db, 'client1');
 
       const scheduledIds = result.map(item => item.leadId);
       expect(scheduledIds).not.toContain('recent_lead');
       expect(scheduledIds).toContain('old_lead');
     });
 
-    it('should sort by priority (highest first)', () => {
+    it('should sort by priority (highest first)', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
 
       const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString();
@@ -127,15 +140,15 @@ describe('Smart Scheduler Module', () => {
         VALUES ('high_priority', 'client1', '+12125551606', 9, 'warm', 'High', ?)
       `).run(twoDaysAgo);
 
-      const result = generateDailySchedule(db, 'client1');
+      const result = await generateDailySchedule(db, 'client1');
 
       if (result.length >= 2) {
         expect(result[0].priority).toBeGreaterThanOrEqual(result[1].priority);
       }
     });
 
-    it('should return empty array for non-existent client', () => {
-      const result = generateDailySchedule(db, 'nonexistent');
+    it('should return empty array for non-existent client', async () => {
+      const result = await generateDailySchedule(db, 'nonexistent');
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(0);
@@ -143,7 +156,7 @@ describe('Smart Scheduler Module', () => {
   });
 
   describe('analyzeTimeSlotSuccess', () => {
-    it('should return slots and recommendation', () => {
+    it('should return slots and recommendation', async () => {
       db.prepare(`DELETE FROM calls WHERE client_id = 'client1'`).run();
 
       const now = new Date().toISOString();
@@ -162,7 +175,7 @@ describe('Smart Scheduler Module', () => {
         }
       }
 
-      const result = analyzeTimeSlotSuccess(db, 'client1');
+      const result = await analyzeTimeSlotSuccess(db, 'client1');
 
       expect(result).toBeDefined();
       expect(Array.isArray(result.slots)).toBe(true);
@@ -176,16 +189,16 @@ describe('Smart Scheduler Module', () => {
       }
     });
 
-    it('should generate appropriate recommendation based on data', () => {
+    it('should generate appropriate recommendation based on data', async () => {
       db.prepare(`DELETE FROM calls WHERE client_id = 'client1'`).run();
 
-      const result = analyzeTimeSlotSuccess(db, 'client1');
+      const result = await analyzeTimeSlotSuccess(db, 'client1');
 
       expect(result.recommendation).toBeDefined();
       expect(typeof result.recommendation).toBe('string');
     });
 
-    it('should identify best time slot with sufficient samples', () => {
+    it('should identify best time slot with sufficient samples', async () => {
       db.prepare(`DELETE FROM calls WHERE client_id = 'slot_client'`).run();
 
       db.prepare(`
@@ -219,7 +232,7 @@ describe('Smart Scheduler Module', () => {
         `).run(`worst_call_${i}`, `worst_call_${i}_id`, outcome, date2pm.toISOString());
       }
 
-      const result = analyzeTimeSlotSuccess(db, 'slot_client');
+      const result = await analyzeTimeSlotSuccess(db, 'slot_client');
 
       expect(result.slots).toBeDefined();
       expect(result.slots.length).toBeGreaterThan(0);
@@ -231,20 +244,20 @@ describe('Smart Scheduler Module', () => {
       }
     });
 
-    it('should return null for non-existent client', () => {
-      const result = analyzeTimeSlotSuccess(db, null);
+    it('should return null for non-existent client', async () => {
+      const result = await analyzeTimeSlotSuccess(db, null);
       expect(result).toBeNull();
     });
   });
 
   describe('getOptimalContactTime', () => {
-    it('should return optimal contact time for lead', () => {
+    it('should return optimal contact time for lead', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name)
         VALUES ('opt_lead', 'client1', '+12125551900', 5, 'warm', 'Optimal Test')
       `).run();
 
-      const result = getOptimalContactTime(db, 'opt_lead', 'client1');
+      const result = await getOptimalContactTime(db, 'opt_lead', 'client1');
 
       expect(result).toBeDefined();
       expect(result.optimal_hour).toBeGreaterThanOrEqual(0);
@@ -255,22 +268,22 @@ describe('Smart Scheduler Module', () => {
       expect(result.reason).toBeDefined();
     });
 
-    it('should return null for non-existent lead', () => {
-      const result = getOptimalContactTime(db, 'nonexistent', 'client1');
+    it('should return null for non-existent lead', async () => {
+      const result = await getOptimalContactTime(db, 'nonexistent', 'client1');
       expect(result).toBeNull();
     });
 
-    it('should return null for missing leadId', () => {
-      const result = getOptimalContactTime(db, null, 'client1');
+    it('should return null for missing leadId', async () => {
+      const result = await getOptimalContactTime(db, null, 'client1');
       expect(result).toBeNull();
     });
 
-    it('should return null for missing clientId', () => {
-      const result = getOptimalContactTime(db, 'leadId', null);
+    it('should return null for missing clientId', async () => {
+      const result = await getOptimalContactTime(db, 'leadId', null);
       expect(result).toBeNull();
     });
 
-    it('should increase confidence with more successful interactions', () => {
+    it('should increase confidence with more successful interactions', async () => {
       db.prepare(`DELETE FROM calls WHERE client_id = 'client1' AND caller_phone = '+12125551901'`).run();
 
       db.prepare(`
@@ -287,7 +300,7 @@ describe('Smart Scheduler Module', () => {
         VALUES ('conf_call1', 'conf_call1_id', 'client1', '+12125551901', 'inbound', 300, 'booked', 8, ?)
       `).run(date.toISOString());
 
-      const result1 = getOptimalContactTime(db, 'conf_lead', 'client1');
+      const result1 = await getOptimalContactTime(db, 'conf_lead', 'client1');
 
       // Add more successful interactions
       for (let i = 0; i < 4; i++) {
@@ -297,25 +310,25 @@ describe('Smart Scheduler Module', () => {
         `).run(`conf_call_${i + 2}`, `conf_call_${i + 2}_id`, date.toISOString());
       }
 
-      const result2 = getOptimalContactTime(db, 'conf_lead', 'client1');
+      const result2 = await getOptimalContactTime(db, 'conf_lead', 'client1');
 
       expect(result2.confidence).toBeGreaterThanOrEqual(result1.confidence);
     });
 
-    it('should suggest reasonable default for lead with no history', () => {
+    it('should suggest reasonable default for lead with no history', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name)
         VALUES ('new_contact_lead', 'client1', '+12125551902', 0, 'new', 'New Lead')
       `).run();
 
-      const result = getOptimalContactTime(db, 'new_contact_lead', 'client1');
+      const result = await getOptimalContactTime(db, 'new_contact_lead', 'client1');
 
       expect(result.optimal_hour).toBeDefined();
       expect(result.optimal_day).toBeDefined();
       expect(result.confidence).toBeGreaterThanOrEqual(0.5);
     });
 
-    it('should handle success criteria: booked, qualified, and score >= 6', () => {
+    it('should handle success criteria: booked, qualified, and score >= 6', async () => {
       const phone = '+12125559999';
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name)
@@ -341,13 +354,13 @@ describe('Smart Scheduler Module', () => {
         VALUES ('call3', 'call3_id', 'client1', ?, 'inbound', 300, 'other', 7, ?)
       `).run(phone, date.toISOString());
 
-      const result = getOptimalContactTime(db, 'score_lead', 'client1');
+      const result = await getOptimalContactTime(db, 'score_lead', 'client1');
 
       expect(result.optimal_hour).toBe(14); // All successes at 14 (2 PM)
       expect(result.confidence).toBeGreaterThan(0.5);
     });
 
-    it('should use general patterns when no successful interactions exist', () => {
+    it('should use general patterns when no successful interactions exist', async () => {
       const phone = '+12125558888';
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name)
@@ -366,14 +379,14 @@ describe('Smart Scheduler Module', () => {
         `).run(`gen_call_${hour}`, `gen_call_${hour}_id`, phone, d.toISOString());
       }
 
-      const result = getOptimalContactTime(db, 'gen_lead', 'client1');
+      const result = await getOptimalContactTime(db, 'gen_lead', 'client1');
 
       expect(result.optimal_hour).toBeGreaterThanOrEqual(9);
       expect(result.optimal_hour).toBeLessThan(12);
       expect(result.confidence).toBeLessThanOrEqual(0.6);
     });
 
-    it('should include message data in analysis', () => {
+    it('should include message data in analysis', async () => {
       const phone = '+12125557777';
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name)
@@ -388,27 +401,27 @@ describe('Smart Scheduler Module', () => {
         VALUES ('msg1', 'client1', ?, 'sent', ?)
       `).run(phone, date.toISOString());
 
-      const result = getOptimalContactTime(db, 'msg_lead', 'client1');
+      const result = await getOptimalContactTime(db, 'msg_lead', 'client1');
 
       expect(result).toBeDefined();
       expect(result.reason).toContain('interactions');
     });
 
-    it('should return default hour 10 and Monday when no data available', () => {
+    it('should return default hour 10 and Monday when no data available', async () => {
       const phone = '+12125556666';
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name)
         VALUES ('no_data_lead', 'client1', ?, 0, 'new', 'No Data')
       `).run(phone);
 
-      const result = getOptimalContactTime(db, 'no_data_lead', 'client1');
+      const result = await getOptimalContactTime(db, 'no_data_lead', 'client1');
 
       expect(result.optimal_hour).toBe(10);
       expect(result.optimal_day).toBe('Monday');
       expect(result.confidence).toBe(0.5);
     });
 
-    it('should calculate confidence correctly based on success distribution', () => {
+    it('should calculate confidence correctly based on success distribution', async () => {
       const phone = '+12125555555';
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name)
@@ -426,7 +439,7 @@ describe('Smart Scheduler Module', () => {
         `).run(`conf_calc_${i}`, `conf_calc_${i}_id`, phone, date.toISOString());
       }
 
-      const result = getOptimalContactTime(db, 'conf_calc_lead', 'client1');
+      const result = await getOptimalContactTime(db, 'conf_calc_lead', 'client1');
 
       // Confidence = min(0.95, (5/5) + 0.3) = min(0.95, 1.3) = 0.95
       expect(result.confidence).toBe(0.95);
@@ -434,7 +447,7 @@ describe('Smart Scheduler Module', () => {
   });
 
   describe('getOptimalTimesForAllLeads', () => {
-    it('should return array of optimal times for all leads', () => {
+    it('should return array of optimal times for all leads', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
 
       for (let i = 0; i < 3; i++) {
@@ -444,7 +457,7 @@ describe('Smart Scheduler Module', () => {
         `).run(`batch_lead${i}`, `+1212555${2000 + i}`, `Batch Lead ${i}`);
       }
 
-      const result = getOptimalTimesForAllLeads(db, 'client1');
+      const result = await getOptimalTimesForAllLeads(db, 'client1');
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(3);
@@ -457,21 +470,21 @@ describe('Smart Scheduler Module', () => {
       }
     });
 
-    it('should return empty array for client with no leads', () => {
-      const result = getOptimalTimesForAllLeads(db, 'empty_client');
+    it('should return empty array for client with no leads', async () => {
+      const result = await getOptimalTimesForAllLeads(db, 'empty_client');
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(0);
     });
 
-    it('should return empty array for null client', () => {
-      const result = getOptimalTimesForAllLeads(db, null);
+    it('should return empty array for null client', async () => {
+      const result = await getOptimalTimesForAllLeads(db, null);
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(0);
     });
 
-    it('should filter out null timing results', () => {
+    it('should filter out null timing results', async () => {
       // Create a client with one valid lead and check result doesn't include nulls
       db.prepare(`DELETE FROM leads WHERE client_id = 'filter_client'`).run();
 
@@ -485,7 +498,7 @@ describe('Smart Scheduler Module', () => {
         VALUES ('valid_lead', 'filter_client', '+12125554444', 5, 'warm', 'Valid')
       `).run();
 
-      const result = getOptimalTimesForAllLeads(db, 'filter_client');
+      const result = await getOptimalTimesForAllLeads(db, 'filter_client');
 
       expect(result.length).toBe(1);
       expect(result[0].leadId).toBe('valid_lead');
@@ -493,13 +506,13 @@ describe('Smart Scheduler Module', () => {
   });
 
   describe('Edge Cases and Integration', () => {
-    it('should handle leads with special characters in names', () => {
+    it('should handle leads with special characters in names', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, updated_at)
         VALUES ('special_lead', 'client1', '+12125551234', 5, 'warm', ?, ?)
       `).run('John\'s Lead (Test)', new Date().toISOString());
 
-      const result = generateDailySchedule(db, 'client1');
+      const result = await generateDailySchedule(db, 'client1');
       const scheduleItem = result.find(item => item.leadId === 'special_lead');
 
       if (scheduleItem) {
@@ -507,7 +520,7 @@ describe('Smart Scheduler Module', () => {
       }
     });
 
-    it('should handle leads with NULL names', () => {
+    it('should handle leads with NULL names', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1' AND name IS NULL`).run();
 
       db.prepare(`
@@ -515,7 +528,7 @@ describe('Smart Scheduler Module', () => {
         VALUES ('null_name_lead', 'client1', '+12125551111', 5, 'warm', NULL, ?)
       `).run(new Date(Date.now() - 2 * 86400000).toISOString());
 
-      const result = generateDailySchedule(db, 'client1');
+      const result = await generateDailySchedule(db, 'client1');
       const item = result.find(item => item.leadId === 'null_name_lead');
 
       if (item) {
@@ -523,7 +536,7 @@ describe('Smart Scheduler Module', () => {
       }
     });
 
-    it('should distribute leads across business hours (9 AM to 5 PM)', () => {
+    it('should distribute leads across business hours (9 AM to 5 PM)', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'dist_client'`).run();
 
       db.prepare(`
@@ -541,7 +554,7 @@ describe('Smart Scheduler Module', () => {
         `).run(`dist_lead_${i}`, `+1212555${3000 + i}`, i, `Lead ${i}`, twoDaysAgo);
       }
 
-      const result = generateDailySchedule(db, 'dist_client');
+      const result = await generateDailySchedule(db, 'dist_client');
 
       // All scheduled times should be during business hours
       result.forEach(item => {
@@ -552,7 +565,7 @@ describe('Smart Scheduler Module', () => {
       });
     });
 
-    it('should skip lunch hour (12 PM - 1 PM)', () => {
+    it('should skip lunch hour (12 PM - 1 PM)', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'lunch_client'`).run();
 
       db.prepare(`
@@ -570,7 +583,7 @@ describe('Smart Scheduler Module', () => {
         `).run(`lunch_lead_${i}`, `+1212556${i}`, i, `Lead ${i}`, twoDaysAgo);
       }
 
-      const result = generateDailySchedule(db, 'lunch_client');
+      const result = await generateDailySchedule(db, 'lunch_client');
 
       // Check that hours skip 12
       const hours = result.map(item => new Date(item.scheduled_time).getHours());
@@ -578,7 +591,7 @@ describe('Smart Scheduler Module', () => {
       // (depends on the number of leads, but hour 12 should be skipped)
     });
 
-    it('should calculate success rate correctly for priority', () => {
+    it('should calculate success rate correctly for priority', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'success_client'`).run();
       db.prepare(`DELETE FROM calls WHERE client_id = 'success_client'`).run();
 
@@ -616,7 +629,7 @@ describe('Smart Scheduler Module', () => {
         VALUES ('succ4', 'succ4_id', 'success_client', ?, 'inbound', 300, 'not_interested', ?)
       `).run(phone, new Date().toISOString());
 
-      const result = generateDailySchedule(db, 'success_client');
+      const result = await generateDailySchedule(db, 'success_client');
       const item = result.find(item => item.leadId === 'success_lead');
 
       if (item) {
@@ -625,7 +638,7 @@ describe('Smart Scheduler Module', () => {
       }
     });
 
-    it('should handle leads with zero score', () => {
+    it('should handle leads with zero score', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'zero_score_client'`).run();
 
       db.prepare(`
@@ -640,14 +653,14 @@ describe('Smart Scheduler Module', () => {
         VALUES ('zero_lead', 'zero_score_client', '+12125550000', 0, 'warm', 'Zero', ?)
       `).run(twoDaysAgo);
 
-      const result = generateDailySchedule(db, 'zero_score_client');
+      const result = await generateDailySchedule(db, 'zero_score_client');
       const item = result.find(item => item.leadId === 'zero_lead');
 
       expect(item).toBeDefined();
       expect(item.priority).toBeGreaterThanOrEqual(0);
     });
 
-    it('should include reason with score and success rate in schedule', () => {
+    it('should include reason with score and success rate in schedule', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'reason_client'`).run();
 
       db.prepare(`
@@ -662,7 +675,7 @@ describe('Smart Scheduler Module', () => {
         VALUES ('reason_lead', 'reason_client', '+12125554321', 8, 'warm', 'Reason', ?)
       `).run(twoDaysAgo);
 
-      const result = generateDailySchedule(db, 'reason_client');
+      const result = await generateDailySchedule(db, 'reason_client');
       const item = result.find(item => item.leadId === 'reason_lead');
 
       if (item) {
@@ -671,7 +684,7 @@ describe('Smart Scheduler Module', () => {
       }
     });
 
-    it('should wrap hour back to 9 when exceeding 17', () => {
+    it('should wrap hour back to 9 when exceeding 17', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'wrap_client'`).run();
 
       db.prepare(`
@@ -689,7 +702,7 @@ describe('Smart Scheduler Module', () => {
         `).run(`wrap_lead_${i}`, `+1212557${i}`, i, `Lead ${i}`, twoDaysAgo);
       }
 
-      const result = generateDailySchedule(db, 'wrap_client');
+      const result = await generateDailySchedule(db, 'wrap_client');
 
       // All times should be valid hours
       result.forEach(item => {

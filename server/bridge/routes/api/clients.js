@@ -20,7 +20,7 @@ router.param('clientId', clientIsolationParam);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Safe columns to return — never expose password_hash, verification_token, verification_expires
-const CLIENT_SAFE_COLS = 'id, business_name, owner_name, owner_email, owner_phone, phone, email, website, industry, timezone, plan, subscription_status, stripe_customer_id, stripe_subscription_id, retell_agent_id, retell_phone, twilio_phone, transfer_phone, calcom_event_type_id, calcom_booking_link, booking_link, google_review_link, telegram_chat_id, avg_ticket, ticket_price, ai_enabled, auto_followup_enabled, is_active, created_at, updated_at';
+const CLIENT_SAFE_COLS = 'id, business_name, name, owner_name, owner_email, owner_phone, industry, plan, subscription_status, stripe_customer_id, stripe_subscription_id, retell_agent_id, retell_phone, twilio_phone, telnyx_phone, transfer_phone, calcom_event_type_id, calcom_booking_link, google_review_link, telegram_chat_id, avg_ticket, is_active, notification_mode, whatsapp_phone, created_at, updated_at';
 
 // Whitelist of allowed client fields for updates (prevents SQL injection)
 const ALLOWED_CLIENT_FIELDS = new Set([

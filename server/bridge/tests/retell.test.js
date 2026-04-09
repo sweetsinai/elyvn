@@ -11,6 +11,7 @@ describe('Retell Route', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.RETELL_WEBHOOK_SECRET;
 
     // Create mock database
     mockDb = {
@@ -18,7 +19,19 @@ describe('Retell Route', () => {
         run: jest.fn().mockReturnValue({ changes: 1 }),
         get: jest.fn().mockReturnValue(null),
         all: jest.fn().mockReturnValue([])
-      }))
+      })),
+      query(sql, params = [], mode = 'all') {
+        try {
+          const stmt = this.prepare(sql);
+          let result;
+          if (mode === 'get') result = stmt.get(...params);
+          else if (mode === 'run') result = stmt.run(...params);
+          else result = stmt.all(...params);
+          return Promise.resolve(result);
+        } catch (err) {
+          return Promise.reject(err);
+        }
+      },
     };
 
     // Mock external dependencies
@@ -35,6 +48,13 @@ describe('Retell Route', () => {
     app.use(express.json());
     app.locals.db = mockDb;
     app.use('/webhooks/retell', router);
+
+    // Error handler so AppError instances are serialised to JSON
+    // eslint-disable-next-line no-unused-vars
+    app.use((err, req, res, next) => {
+      const status = err.statusCode || err.status || 500;
+      res.status(status).json({ error: err.message, code: err.code });
+    });
   });
 
   describe('Webhook Signature Validation', () => {

@@ -2,12 +2,30 @@ const Database = require('better-sqlite3');
 const { predictLeadScore, getConversionAnalytics, batchScoreLeads, getLeadScoringReport } = require('../utils/leadScoring');
 const { runMigrations } = require('../utils/migrations');
 
+// Add db.query helper to a raw better-sqlite3 instance
+function addQueryHelper(db) {
+  db.query = function query(sql, params = [], mode = 'all') {
+    try {
+      const stmt = db.prepare(sql);
+      let result;
+      if (mode === 'get') result = stmt.get(...(params || []));
+      else if (mode === 'run') result = stmt.run(...(params || []));
+      else result = stmt.all(...(params || []));
+      return Promise.resolve(result);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  };
+  return db;
+}
+
 describe('Lead Scoring Module', () => {
   let db;
 
   beforeAll(() => {
     db = new Database(':memory:');
     runMigrations(db);
+    addQueryHelper(db);
 
     // Insert test client
     db.prepare(`
@@ -21,13 +39,13 @@ describe('Lead Scoring Module', () => {
   });
 
   describe('predictLeadScore', () => {
-    it('should return score 0-100 with valid factors for a new lead', () => {
+    it('should return score 0-100 with valid factors for a new lead', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name)
         VALUES ('lead1', 'client1', '+12125551234', 0, 'new', 'Test Lead')
       `).run();
 
-      const result = predictLeadScore(db, 'lead1', 'client1');
+      const result = await predictLeadScore(db, 'lead1', 'client1');
 
       expect(result).toBeDefined();
       expect(result.score).toBeGreaterThanOrEqual(0);
@@ -42,14 +60,14 @@ describe('Lead Scoring Module', () => {
       expect(result.recommended_action).toBeDefined();
     });
 
-    it('should return 0 score for missing lead', () => {
-      const result = predictLeadScore(db, 'nonexistent', 'client1');
+    it('should return 0 score for missing lead', async () => {
+      const result = await predictLeadScore(db, 'nonexistent', 'client1');
 
       expect(result.score).toBe(0);
       expect(result.insight).toBe('Lead not found');
     });
 
-    it('should score leads with more interactions higher', () => {
+    it('should score leads with more interactions higher', async () => {
       // Create two leads
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name)
@@ -84,15 +102,15 @@ describe('Lead Scoring Module', () => {
         `).run(`msg_${i}`, now);
       }
 
-      const lowScore = predictLeadScore(db, 'lead2', 'client1');
-      const highScore = predictLeadScore(db, 'lead3', 'client1');
+      const lowScore = await predictLeadScore(db, 'lead2', 'client1');
+      const highScore = await predictLeadScore(db, 'lead3', 'client1');
 
       expect(highScore.score).toBeGreaterThan(lowScore.score);
       expect(highScore.details.totalInteractions).toBe(8);
       expect(lowScore.details.totalInteractions).toBe(1);
     });
 
-    it('should score recently active leads higher than stale ones', () => {
+    it('should score recently active leads higher than stale ones', async () => {
       const now = new Date().toISOString();
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
 
@@ -118,20 +136,20 @@ describe('Lead Scoring Module', () => {
         VALUES ('call_stale', 'call_stale_id', 'client1', '+12125551238', 'inbound', 300, 'qualified', 8, ?)
       `).run(thirtyDaysAgo);
 
-      const recentScore = predictLeadScore(db, 'lead_recent', 'client1');
-      const staleScore = predictLeadScore(db, 'lead_stale', 'client1');
+      const recentScore = await predictLeadScore(db, 'lead_recent', 'client1');
+      const staleScore = await predictLeadScore(db, 'lead_stale', 'client1');
 
       expect(recentScore.score).toBeGreaterThan(staleScore.score);
       expect(recentScore.factors.recency).toBeGreaterThan(staleScore.factors.recency);
     });
 
-    it('should provide insight based on score range', () => {
+    it('should provide insight based on score range', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name)
         VALUES ('lead_insight', 'client1', '+12125551239', 5, 'new', 'Insight Test')
       `).run();
 
-      const result = predictLeadScore(db, 'lead_insight', 'client1');
+      const result = await predictLeadScore(db, 'lead_insight', 'client1');
 
       expect(result.insight).toBeDefined();
       expect(result.insight.length).toBeGreaterThan(0);
@@ -139,7 +157,7 @@ describe('Lead Scoring Module', () => {
   });
 
   describe('batchScoreLeads', () => {
-    it('should return array sorted by score descending', () => {
+    it('should return array sorted by score descending', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
       db.prepare(`DELETE FROM calls WHERE client_id = 'client1'`).run();
 
@@ -162,7 +180,7 @@ describe('Lead Scoring Module', () => {
         VALUES ('batch_call1', 'batch_call1_id', 'client1', '+12125551241', 'inbound', 300, 'qualified', 8, ?)
       `).run(now);
 
-      const result = batchScoreLeads(db, 'client1');
+      const result = await batchScoreLeads(db, 'client1');
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(2);
@@ -174,7 +192,7 @@ describe('Lead Scoring Module', () => {
       expect(result[0]).toHaveProperty('recommended_action');
     });
 
-    it('should exclude lost and booked leads from batch scoring', () => {
+    it('should exclude lost and booked leads from batch scoring', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
 
       db.prepare(`
@@ -192,15 +210,15 @@ describe('Lead Scoring Module', () => {
         VALUES ('lost_lead', 'client1', '+12125551244', 2, 'lost', 'Lost')
       `).run();
 
-      const result = batchScoreLeads(db, 'client1');
+      const result = await batchScoreLeads(db, 'client1');
 
       const activeIds = result.map(l => l.leadId);
       expect(activeIds).toContain('active_lead');
       expect(activeIds).not.toContain('lost_lead');
     });
 
-    it('should return empty array for non-existent client', () => {
-      const result = batchScoreLeads(db, 'nonexistent_client');
+    it('should return empty array for non-existent client', async () => {
+      const result = await batchScoreLeads(db, 'nonexistent_client');
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(0);
@@ -208,7 +226,7 @@ describe('Lead Scoring Module', () => {
   });
 
   describe('getConversionAnalytics', () => {
-    it('should return valid structure with correct metrics', () => {
+    it('should return valid structure with correct metrics', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
       db.prepare(`DELETE FROM calls WHERE client_id = 'client1'`).run();
       db.prepare(`DELETE FROM messages WHERE client_id = 'client1'`).run();
@@ -238,7 +256,7 @@ describe('Lead Scoring Module', () => {
         }
       }
 
-      const result = getConversionAnalytics(db, 'client1');
+      const result = await getConversionAnalytics(db, 'client1');
 
       expect(result).toBeDefined();
       expect(result.conversion_rate).toBeGreaterThan(0);
@@ -248,8 +266,8 @@ describe('Lead Scoring Module', () => {
       expect(Array.isArray(result.top_sources)).toBe(true);
     });
 
-    it('should return zero metrics for empty client', () => {
-      const result = getConversionAnalytics(db, 'empty_client');
+    it('should return zero metrics for empty client', async () => {
+      const result = await getConversionAnalytics(db, 'empty_client');
 
       expect(result.conversion_rate).toBe(0);
       expect(result.avg_touches_to_convert).toBe(0);
@@ -257,7 +275,7 @@ describe('Lead Scoring Module', () => {
       expect(result.top_sources.length).toBe(0);
     });
 
-    it('should calculate conversion rate correctly', () => {
+    it('should calculate conversion rate correctly', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
 
       db.prepare(`
@@ -270,14 +288,14 @@ describe('Lead Scoring Module', () => {
         VALUES ('rate2', 'client1', '+12125551301', 3, 'new', 'Not Converted')
       `).run();
 
-      const result = getConversionAnalytics(db, 'client1');
+      const result = await getConversionAnalytics(db, 'client1');
 
       expect(result.conversion_rate).toBe(50);
     });
   });
 
   describe('getLeadScoringReport', () => {
-    it('should return comprehensive report for a lead', () => {
+    it('should return comprehensive report for a lead', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
       db.prepare(`DELETE FROM calls WHERE client_id = 'client1'`).run();
 
@@ -293,7 +311,7 @@ describe('Lead Scoring Module', () => {
         VALUES ('report_call', 'report_call_id', 'client1', '+12125551302', 'inbound', 300, 'qualified', 8, ?)
       `).run(now);
 
-      const result = getLeadScoringReport(db, 'report_lead', 'client1');
+      const result = await getLeadScoringReport(db, 'report_lead', 'client1');
 
       expect(result).toBeDefined();
       expect(result.lead).toBeDefined();
@@ -306,36 +324,36 @@ describe('Lead Scoring Module', () => {
       expect(result.benchmarks).toBeDefined();
     });
 
-    it('should return null for non-existent lead', () => {
-      const result = getLeadScoringReport(db, 'nonexistent', 'client1');
+    it('should return null for non-existent lead', async () => {
+      const result = await getLeadScoringReport(db, 'nonexistent', 'client1');
 
       expect(result).toBeNull();
     });
 
-    it('should return null when missing leadId', () => {
-      const result = getLeadScoringReport(db, null, 'client1');
+    it('should return null when missing leadId', async () => {
+      const result = await getLeadScoringReport(db, null, 'client1');
       expect(result).toBeNull();
     });
 
-    it('should return null when missing clientId', () => {
-      const result = getLeadScoringReport(db, 'lead1', null);
+    it('should return null when missing clientId', async () => {
+      const result = await getLeadScoringReport(db, 'lead1', null);
       expect(result).toBeNull();
     });
   });
 
   describe('predictLeadScore - Edge Cases and Branches', () => {
-    it('should return 0 when both leadId and clientId are missing', () => {
-      const result = predictLeadScore(db, null, null);
+    it('should return 0 when both leadId and clientId are missing', async () => {
+      const result = await predictLeadScore(db, null, null);
       expect(result.score).toBe(0);
       expect(result.insight).toBe('Insufficient data');
     });
 
-    it('should return 0 when only leadId is missing', () => {
-      const result = predictLeadScore(db, null, 'client1');
+    it('should return 0 when only leadId is missing', async () => {
+      const result = await predictLeadScore(db, null, 'client1');
       expect(result.score).toBe(0);
     });
 
-    it('should handle responsiveness with immediate response (< 5 min)', () => {
+    it('should handle responsiveness with immediate response (< 5 min)', async () => {
       db.prepare(`DELETE FROM leads WHERE id = 'resp_lead1'`).run();
       db.prepare(`DELETE FROM messages WHERE phone = '+12125551400'`).run();
 
@@ -358,11 +376,11 @@ describe('Lead Scoring Module', () => {
         VALUES (?, 'client1', '+12125551400', 'inbound', 'Hi', 'received', ?)
       `).run('msg_in1', oneMinuteAgo);
 
-      const result = predictLeadScore(db, 'resp_lead1', 'client1');
+      const result = await predictLeadScore(db, 'resp_lead1', 'client1');
       expect(result.factors.responsiveness).toBe(100);
     });
 
-    it('should handle responsiveness with 30 min response (very fast)', () => {
+    it('should handle responsiveness with 30 min response (very fast)', async () => {
       db.prepare(`DELETE FROM leads WHERE id = 'resp_lead2'`).run();
       db.prepare(`DELETE FROM messages WHERE phone = '+12125551401'`).run();
 
@@ -385,12 +403,12 @@ describe('Lead Scoring Module', () => {
         VALUES (?, 'client1', '+12125551401', 'inbound', 'Hi', 'received', ?)
       `).run('msg_in2', tenMinutesAgo);
 
-      const result = predictLeadScore(db, 'resp_lead2', 'client1');
+      const result = await predictLeadScore(db, 'resp_lead2', 'client1');
       // Between 30-60 minutes should be 75
       expect(result.factors.responsiveness).toBe(75);
     });
 
-    it('should detect responsiveness via call answer (no first response message)', () => {
+    it('should detect responsiveness via call answer (no first response message)', async () => {
       db.prepare(`DELETE FROM leads WHERE id = 'resp_call'`).run();
       db.prepare(`DELETE FROM messages WHERE phone = '+12125551402'`).run();
       db.prepare(`DELETE FROM calls WHERE caller_phone = '+12125551402'`).run();
@@ -414,11 +432,11 @@ describe('Lead Scoring Module', () => {
         VALUES (?, ?, 'client1', '+12125551402', 'inbound', 300, 'qualified', 8, ?)
       `).run('call_resp', 'call_resp_id', fiftyMinutesAgo);
 
-      const result = predictLeadScore(db, 'resp_call', 'client1');
+      const result = await predictLeadScore(db, 'resp_call', 'client1');
       expect(result.factors.responsiveness).toBeGreaterThan(0);
     });
 
-    it('should score engagement with 5+ interactions at max', () => {
+    it('should score engagement with 5+ interactions at max', async () => {
       db.prepare(`DELETE FROM leads WHERE id = 'eng_lead5'`).run();
       db.prepare(`DELETE FROM calls WHERE caller_phone = '+12125551405'`).run();
       db.prepare(`DELETE FROM messages WHERE phone = '+12125551405'`).run();
@@ -436,11 +454,11 @@ describe('Lead Scoring Module', () => {
         `).run(`call_eng${i}`, `call_eng${i}_id`, now);
       }
 
-      const result = predictLeadScore(db, 'eng_lead5', 'client1');
+      const result = await predictLeadScore(db, 'eng_lead5', 'client1');
       expect(result.factors.engagement).toBe(100);
     });
 
-    it('should handle intent signals from different sources', () => {
+    it('should handle intent signals from different sources', async () => {
       db.prepare(`DELETE FROM leads WHERE id = 'intent_lead'`).run();
       db.prepare(`DELETE FROM calls WHERE caller_phone = '+12125551410'`).run();
 
@@ -455,11 +473,11 @@ describe('Lead Scoring Module', () => {
         VALUES (?, ?, 'client1', '+12125551410', 'inbound', 300, 'qualified', 8, 9, ?)
       `).run('call_intent', 'call_intent_id', now);
 
-      const result = predictLeadScore(db, 'intent_lead', 'client1');
+      const result = await predictLeadScore(db, 'intent_lead', 'client1');
       expect(result.factors.intent).toBeGreaterThan(0);
     });
 
-    it('should score recency with various time windows', () => {
+    it('should score recency with various time windows', async () => {
       db.prepare(`DELETE FROM leads WHERE id LIKE 'recency_%'`).run();
       db.prepare(`DELETE FROM calls WHERE id LIKE 'call_%' AND id NOT LIKE 'call_high%' AND id NOT LIKE 'call_action%' AND id NOT LIKE 'call_resp%' AND id NOT LIKE 'call_intent%' AND id NOT LIKE 'call_eng%' AND id NOT LIKE 'call_multi%'`).run();
 
@@ -469,7 +487,7 @@ describe('Lead Scoring Module', () => {
         { name: '48h', minutes: 48 * 60, expectedFactor: 75 },
       ];
 
-      testCases.forEach((testCase, idx) => {
+      for (const [idx, testCase] of testCases.entries()) {
         const leadId = `recency_${testCase.name}`;
         const phone = `+1212555${1800 + idx}`;
 
@@ -484,13 +502,13 @@ describe('Lead Scoring Module', () => {
           VALUES (?, ?, 'client1', ?, 'inbound', 300, 'qualified', 8, ?)
         `).run(`recency_call_${testCase.name}`, `recency_call_${testCase.name}_id`, phone, contactTime);
 
-        const result = predictLeadScore(db, leadId, 'client1');
+        const result = await predictLeadScore(db, leadId, 'client1');
         expect(result.factors.recency).toBeLessThanOrEqual(100);
         expect(result.factors.recency).toBeGreaterThanOrEqual(5);
-      });
+      }
     });
 
-    it('should score multi-channel engagement higher', () => {
+    it('should score multi-channel engagement higher', async () => {
       db.prepare(`DELETE FROM leads WHERE id = 'multi_lead'`).run();
       db.prepare(`DELETE FROM calls WHERE caller_phone = '+12125551456'`).run();
       db.prepare(`DELETE FROM messages WHERE phone = '+12125551456'`).run();
@@ -511,11 +529,11 @@ describe('Lead Scoring Module', () => {
         VALUES (?, 'client1', '+12125551456', 'inbound', 'Message', 'received', ?)
       `).run('msg_multi', now);
 
-      const result = predictLeadScore(db, 'multi_lead', 'client1');
+      const result = await predictLeadScore(db, 'multi_lead', 'client1');
       expect(result.factors.channelDiversity).toBe(100);
     });
 
-    it('should generate actionable insights based on score ranges', () => {
+    it('should generate actionable insights based on score ranges', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
 
       // High urgency lead (score >= 80)
@@ -532,14 +550,14 @@ describe('Lead Scoring Module', () => {
         `).run(`call_high${i}`, `call_high${i}_id`, now);
       }
 
-      const highResult = predictLeadScore(db, 'high_lead', 'client1');
+      const highResult = await predictLeadScore(db, 'high_lead', 'client1');
       if (highResult.score >= 80) {
         expect(highResult.insight).toContain('urgency');
         expect(highResult.recommended_action).toContain('immediately');
       }
     });
 
-    it('should recommend different actions based on score', () => {
+    it('should recommend different actions based on score', async () => {
       const testCases = [
         { score: 85, shouldContain: 'immediately' },
         { score: 65, shouldContain: 'follow-up' },
@@ -563,13 +581,13 @@ describe('Lead Scoring Module', () => {
           `).run(`call_action${i}_${j}`, `call_action${i}_${j}_id`, phone, now);
         }
 
-        const result = predictLeadScore(db, leadId, 'client1');
+        const result = await predictLeadScore(db, leadId, 'client1');
         expect(result.recommended_action).toBeDefined();
         expect(result.recommended_action.length).toBeGreaterThan(0);
       }
     });
 
-    it('should handle leads with no first outreach gracefully', () => {
+    it('should handle leads with no first outreach gracefully', async () => {
       db.prepare(`DELETE FROM leads WHERE id = 'no_outreach_lead'`).run();
       db.prepare(`DELETE FROM messages WHERE phone = '+12125551920'`).run();
       db.prepare(`DELETE FROM calls WHERE caller_phone = '+12125551920'`).run();
@@ -579,22 +597,22 @@ describe('Lead Scoring Module', () => {
         VALUES ('no_outreach_lead', 'client1', '+12125551920', 0, 'new')
       `).run();
 
-      const result = predictLeadScore(db, 'no_outreach_lead', 'client1');
+      const result = await predictLeadScore(db, 'no_outreach_lead', 'client1');
       // Lead with no interactions will have score based on factors
       expect(result.score).toBeGreaterThanOrEqual(0);
       expect(result.insight).toBeDefined();
     });
 
-    it('should handle error gracefully during scoring', () => {
+    it('should handle error gracefully during scoring', async () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      const result = predictLeadScore(db, 'nonexistent_id', 'nonexistent_client');
+      const result = await predictLeadScore(db, 'nonexistent_id', 'nonexistent_client');
       expect(result.score).toBe(0);
 
       consoleSpy.mockRestore();
     });
 
-    it('should batch score multiple leads efficiently', () => {
+    it('should batch score multiple leads efficiently', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'client1'`).run();
 
       for (let i = 0; i < 5; i++) {
@@ -604,7 +622,7 @@ describe('Lead Scoring Module', () => {
         `).run(`batch_${i}`, `+1212555${1490 + i}`, 5 - i);
       }
 
-      const result = batchScoreLeads(db, 'client1');
+      const result = await batchScoreLeads(db, 'client1');
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBeLessThanOrEqual(5);
       expect(result[0].predictive_score).toBeGreaterThanOrEqual(result[result.length - 1]?.predictive_score || 0);

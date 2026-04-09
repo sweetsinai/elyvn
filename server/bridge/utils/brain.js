@@ -109,7 +109,22 @@ async function _think(eventType, eventData, leadMemory, db) {
       const raw = await loadKnowledgeBase(client.id);
       if (raw) {
         const kbData = JSON.parse(raw);
-        knowledgeBase = typeof kbData === 'string' ? kbData : JSON.stringify(kbData, null, 2);
+        // Convert JSON to concise text format (saves ~30% tokens vs raw JSON)
+        if (typeof kbData === 'object' && kbData !== null) {
+          const parts = [];
+          if (kbData.business_name) parts.push(`Business: ${kbData.business_name}`);
+          if (kbData.services?.length) parts.push(`Services: ${kbData.services.join(', ')}`);
+          if (kbData.business_hours) parts.push(`Hours: ${kbData.business_hours}`);
+          if (kbData.booking_info) parts.push(`Booking: ${kbData.booking_info}`);
+          if (kbData.faq?.length) {
+            parts.push('FAQ:');
+            kbData.faq.forEach(f => parts.push(`Q: ${f.question}\nA: ${f.answer}`));
+          }
+          if (kbData.escalation_phrases?.length) parts.push(`Escalate on: ${kbData.escalation_phrases.join(', ')}`);
+          knowledgeBase = parts.join('\n');
+        } else {
+          knowledgeBase = typeof kbData === 'string' ? kbData : JSON.stringify(kbData);
+        }
         if (knowledgeBase.length > MAX_KB_SIZE) {
           knowledgeBase = knowledgeBase.substring(0, MAX_KB_SIZE) + '\n[...truncated]';
         }
@@ -248,11 +263,35 @@ What actions should ELYVN take?`;
 
     const brainStart = Date.now();
 
+    const PROMPT_VERSION = 'brain-v2';
+
     const response = await claudeBreaker.call({
       model: config.ai.model,
       max_tokens: 1000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
+      tools: [{
+        name: 'decide_actions',
+        description: 'Return the brain decision with reasoning and actions to execute.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            reasoning: { type: 'string', description: '2-3 sentences explaining the decision' },
+            actions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  action: { type: 'string', enum: ['send_sms', 'schedule_followup', 'cancel_pending_followups', 'update_lead_stage', 'update_lead_score', 'book_appointment', 'notify_owner', 'log_insight', 'no_action'] },
+                },
+                required: ['action'],
+              },
+            },
+          },
+          required: ['reasoning', 'actions'],
+        },
+      }],
+      tool_choice: { type: 'tool', name: 'decide_actions' },
     });
 
     recordMetric('brain_decision_time_ms', Date.now() - brainStart, 'histogram');
@@ -260,33 +299,37 @@ What actions should ELYVN take?`;
     // Track AI decision usage for billing
     try { const { trackUsage } = require('./usageTracker'); trackUsage(db, leadMemory?.clientId, 'ai_decision'); } catch (_) {}
 
-    const text = response.content
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('');
+    // Extract structured tool_use response (guaranteed JSON via tool_choice)
+    let decision = null;
+    const toolBlock = response.content.find(b => b.type === 'tool_use' && b.name === 'decide_actions');
+    const textBlock = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
 
-    // Audit trail: log brain reasoning before parsing/executing (FIX 2)
+    if (toolBlock?.input) {
+      decision = toolBlock.input;
+    }
+
+    // Audit trail with prompt version
     try {
       if (lead?.id) {
         const { appendEvent, Events } = require('./eventStore');
         await appendEvent(db, lead.id, 'lead', Events.BrainReasoningCaptured, {
+          prompt_version: PROMPT_VERSION,
           prompt_preview: systemPrompt.substring(0, 500),
-          response: text,
+          response: JSON.stringify(decision || textBlock),
           model: config.ai.model || 'claude-unknown',
           event_type: eventType,
         }, client?.id || null);
       }
-    } catch (_) {
-      // Audit logging failure is non-fatal
-    }
+    } catch (_) {}
 
-    const cleaned = text.replace(/```json|```/g, '').trim();
-    let decision;
-    try {
-      decision = JSON.parse(cleaned);
-    } catch (parseErr) {
-      logger.error('[Brain] JSON parse failed:', parseErr.message);
-      return {
+    // Fallback: parse text response if tool_use not returned
+    if (!decision) {
+      try {
+        const cleaned = (textBlock || '').replace(/```json|```/g, '').trim();
+        decision = JSON.parse(cleaned);
+      } catch (parseErr) {
+        logger.error('[Brain] JSON parse failed (no tool_use block):', parseErr.message);
+        return {
         reasoning: 'Brain parse error — unreadable response',
         actions: [{ action: 'notify_owner', message: 'Brain returned unparseable response for ' + eventType, urgency: 'high' }],
       };
@@ -330,6 +373,7 @@ What actions should ELYVN take?`;
     logger.info(`[Brain] Actions: ${decision.actions.map(a => a.action).join(', ')}`);
 
     return decision;
+    }  // end if (!decision)
   } catch (error) {
     logger.error('[Brain] Error:', error.message);
     return {
@@ -386,4 +430,10 @@ async function checkGuardrails(db, lead, client) {
   return warnings;
 }
 
-module.exports = { think, _claudeBreaker: claudeBreaker, _leadLocks: leadLocks };
+function _resetForTesting() {
+  brainTokens = BRAIN_MAX_QPS;
+  claudeBreaker.reset();
+  leadLocks.clear();
+}
+
+module.exports = { think, _claudeBreaker: claudeBreaker, _leadLocks: leadLocks, _resetForTesting };

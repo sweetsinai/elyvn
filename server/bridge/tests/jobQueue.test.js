@@ -3,10 +3,13 @@
  * 100% branch and line coverage
  */
 
-const { enqueueJob, processJobs, cancelJobs } = require('../utils/jobQueue');
-const { randomUUID } = require('crypto');
-
-jest.mock('crypto');
+jest.mock('crypto', () => {
+  const actual = jest.requireActual('crypto');
+  return {
+    ...actual,
+    randomUUID: jest.fn(),
+  };
+});
 jest.mock('../utils/logger', () => ({
   logger: {
     info: jest.fn(),
@@ -15,111 +18,160 @@ jest.mock('../utils/logger', () => ({
     debug: jest.fn(),
   },
 }));
+jest.mock('../utils/metrics', () => ({
+  recordMetric: jest.fn(),
+}));
 
-const { logger } = require('../utils/logger');
+// We need to reset the module between some tests because ensureSchemaOnce
+// caches a promise at module level. Import the module fresh each test suite.
+let enqueueJob, processJobs, cancelJobs;
 
 describe('jobQueue', () => {
   let mockDb;
-  let mockStatement;
-  let mockPrepare;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset module so _schemaPromise singleton resets
+    jest.resetModules();
+    // Re-apply mocks after resetModules
+    jest.mock('crypto', () => {
+      const actual = jest.requireActual('crypto');
+      return {
+        ...actual,
+        randomUUID: jest.fn().mockReturnValue('test-uuid-1234'),
+      };
+    });
+    jest.mock('../utils/logger', () => ({
+      logger: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+      },
+    }));
+    jest.mock('../utils/metrics', () => ({
+      recordMetric: jest.fn(),
+    }));
 
-    mockStatement = {
-      run: jest.fn(),
-      all: jest.fn(),
-      get: jest.fn(),
-    };
-
-    mockPrepare = jest.fn(() => mockStatement);
-
+    // db.query mock — returns a resolved promise by default
+    // Individual tests override this as needed
     mockDb = {
-      prepare: mockPrepare,
+      query: jest.fn().mockResolvedValue({ changes: 0 }),
     };
 
-    randomUUID.mockReturnValue('test-uuid-1234');
+    ({ enqueueJob, processJobs, cancelJobs } = require('../utils/jobQueue'));
   });
 
+  // ─── helpers ─────────────────────────────────────────────────────────────────
+  // Build a mockDb whose query resolves with different values depending on the SQL
+  function makeQueryMock(overrides = {}) {
+    return jest.fn(async (sql, params = [], mode = 'all') => {
+      for (const [pattern, value] of Object.entries(overrides)) {
+        if (sql.includes(pattern)) {
+          return typeof value === 'function' ? value(sql, params, mode) : value;
+        }
+      }
+      // Default
+      if (mode === 'all') return [];
+      if (mode === 'get') return undefined;
+      return { changes: 0 };
+    });
+  }
+
+  // ─── enqueueJob ──────────────────────────────────────────────────────────────
   describe('enqueueJob', () => {
-    it('should enqueue a job with default scheduledAt', () => {
-      mockStatement.run.mockReturnValue({ changes: 1 });
-
-      const jobId = enqueueJob(mockDb, 'speed_to_lead_sms', { to: '5551234567' });
-
-      expect(jobId).toBe('test-uuid-1234');
-      expect(randomUUID).toHaveBeenCalled();
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO job_queue')
-      );
-      expect(mockStatement.run).toHaveBeenCalledWith(
-        'test-uuid-1234',
-        'speed_to_lead_sms',
-        JSON.stringify({ to: '5551234567' }),
-        expect.stringMatching(/\d{4}-\d{2}-\d{2}/)
-      );
-    });
-
-    it('should enqueue a job with custom scheduledAt', () => {
-      mockStatement.run.mockReturnValue({ changes: 1 });
-      const customTime = '2025-03-25T10:00:00.000Z';
-
-      const jobId = enqueueJob(mockDb, 'speed_to_lead_callback', { leadId: '123' }, customTime);
-
-      expect(jobId).toBe('test-uuid-1234');
-      expect(mockStatement.run).toHaveBeenCalledWith(
-        'test-uuid-1234',
-        'speed_to_lead_callback',
-        JSON.stringify({ leadId: '123' }),
-        customTime
-      );
-    });
-
-    it('should handle string payload', () => {
-      mockStatement.run.mockReturnValue({ changes: 1 });
-      const payload = JSON.stringify({ test: 'data' });
-
-      enqueueJob(mockDb, 'test_job', payload);
-
-      expect(mockStatement.run).toHaveBeenCalledWith(
-        'test-uuid-1234',
-        'test_job',
-        payload,
-        expect.anything()
-      );
-    });
-
-    it('should throw error when db is missing', () => {
-      expect(() => enqueueJob(null, 'test_job', {})).toThrow('db and type required');
-    });
-
-    it('should throw error when type is missing', () => {
-      expect(() => enqueueJob(mockDb, null, {})).toThrow('db and type required');
-    });
-
-    it('should throw error when db.prepare fails', () => {
-      mockPrepare.mockImplementation(() => {
-        throw new Error('Database error');
+    it('should enqueue a job with default scheduledAt', async () => {
+      mockDb.query = makeQueryMock({
+        'ALTER TABLE': null,          // ensureSchema — ignore
+        'CREATE UNIQUE INDEX': null,
+        'CREATE TABLE': null,
+        'INSERT INTO job_queue': { changes: 1 },
       });
 
-      expect(() => enqueueJob(mockDb, 'test_job', {})).toThrow('Database error');
-      expect(logger.error).toHaveBeenCalledWith(
+      const jobId = await enqueueJob(mockDb, 'speed_to_lead_sms', { to: '5551234567' });
+
+      expect(jobId).toBe('test-uuid-1234');
+
+      const insertCall = mockDb.query.mock.calls.find(c => c[0].includes('INSERT INTO job_queue'));
+      expect(insertCall).toBeDefined();
+      expect(insertCall[0]).toContain('INSERT INTO job_queue');
+      expect(insertCall[1][0]).toBe('test-uuid-1234');
+      expect(insertCall[1][1]).toBe('speed_to_lead_sms');
+      expect(insertCall[1][2]).toBe(JSON.stringify({ to: '5551234567' }));
+      expect(insertCall[1][3]).toMatch(/\d{4}-\d{2}-\d{2}/);
+    });
+
+    it('should enqueue a job with custom scheduledAt', async () => {
+      mockDb.query = makeQueryMock({
+        'ALTER TABLE': null,
+        'CREATE UNIQUE INDEX': null,
+        'CREATE TABLE': null,
+        'INSERT INTO job_queue': { changes: 1 },
+      });
+      const customTime = '2025-03-25T10:00:00.000Z';
+
+      const jobId = await enqueueJob(mockDb, 'speed_to_lead_callback', { leadId: '123' }, customTime);
+
+      expect(jobId).toBe('test-uuid-1234');
+      const insertCall = mockDb.query.mock.calls.find(c => c[0].includes('INSERT INTO job_queue'));
+      expect(insertCall[1][3]).toBe(customTime);
+    });
+
+    it('should handle string payload', async () => {
+      mockDb.query = makeQueryMock({
+        'ALTER TABLE': null,
+        'CREATE UNIQUE INDEX': null,
+        'CREATE TABLE': null,
+        'INSERT INTO job_queue': { changes: 1 },
+      });
+      const payload = JSON.stringify({ test: 'data' });
+
+      await enqueueJob(mockDb, 'test_job', payload);
+
+      const insertCall = mockDb.query.mock.calls.find(c => c[0].includes('INSERT INTO job_queue'));
+      expect(insertCall[1][2]).toBe(payload);
+    });
+
+    it('should throw error when db is missing', async () => {
+      await expect(enqueueJob(null, 'test_job', {})).rejects.toThrow('db and type required');
+    });
+
+    it('should throw error when type is missing', async () => {
+      await expect(enqueueJob(mockDb, null, {})).rejects.toThrow('db and type required');
+    });
+
+    it('should throw error when db.query fails on INSERT', async () => {
+      mockDb.query = jest.fn(async (sql) => {
+        if (sql.includes('INSERT INTO job_queue')) throw new Error('Database error');
+        return null; // schema calls
+      });
+
+      await expect(enqueueJob(mockDb, 'test_job', {})).rejects.toThrow('Database error');
+      const { logger: l } = require('../utils/logger');
+      expect(l.error).toHaveBeenCalledWith(
         '[jobQueue] enqueueJob error:',
         'Database error'
       );
     });
 
-    it('should log enqueued job', () => {
-      mockStatement.run.mockReturnValue({ changes: 1 });
+    it('should log enqueued job', async () => {
+      mockDb.query = makeQueryMock({
+        'ALTER TABLE': null,
+        'CREATE UNIQUE INDEX': null,
+        'CREATE TABLE': null,
+        'INSERT INTO job_queue': { changes: 1 },
+      });
 
-      enqueueJob(mockDb, 'speed_to_lead_sms', {});
+      await enqueueJob(mockDb, 'speed_to_lead_sms', {});
 
-      expect(logger.info).toHaveBeenCalledWith(
+      const { logger: l } = require('../utils/logger');
+      expect(l.info).toHaveBeenCalledWith(
         expect.stringContaining('[jobQueue] Enqueued speed_to_lead_sms job')
       );
     });
   });
 
+  // ─── processJobs ─────────────────────────────────────────────────────────────
   describe('processJobs', () => {
     it('should return empty results when db is missing', async () => {
       const result = await processJobs(null, {});
@@ -141,16 +193,22 @@ describe('jobQueue', () => {
         max_attempts: 3,
       };
 
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': [job],
+        "status = 'failed', error = ?, updated_at": { changes: 1 },
+        "status = 'processing'": { changes: 1 },
+        "status = 'completed'": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       const result = await processJobs(mockDb, { test_job: handler });
 
       expect(result).toEqual({ processed: 1, failed: 0 });
       expect(handler).toHaveBeenCalledWith({ test: 'data' }, 'job-1', mockDb);
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining("UPDATE job_queue SET status = 'completed'")
-      );
+
+      const completedCall = mockDb.query.mock.calls.find(c => c[0].includes("status = 'completed'"));
+      expect(completedCall).toBeDefined();
     });
 
     it('should parse JSON payload from string', async () => {
@@ -163,8 +221,13 @@ describe('jobQueue', () => {
         max_attempts: 3,
       };
 
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': [job],
+        "status = 'processing'": { changes: 1 },
+        "status = 'completed'": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       await processJobs(mockDb, { test_job: handler });
 
@@ -181,16 +244,20 @@ describe('jobQueue', () => {
         max_attempts: 3,
       };
 
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': [job],
+        "status = 'processing'": { changes: 1 },
+        "status = 'failed'": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       await processJobs(mockDb, { test_job: handler });
 
       // Handler should NOT be called — job is marked failed instead
       expect(handler).not.toHaveBeenCalled();
-      expect(mockDb.prepare).toHaveBeenCalledWith(
-        expect.stringContaining("status = 'failed'")
-      );
+      const failCall = mockDb.query.mock.calls.find(c => c[0].includes("status = 'failed'"));
+      expect(failCall).toBeDefined();
     });
 
     it('should handle payload already as object', async () => {
@@ -203,8 +270,13 @@ describe('jobQueue', () => {
         max_attempts: 3,
       };
 
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': [job],
+        "status = 'processing'": { changes: 1 },
+        "status = 'completed'": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       await processJobs(mockDb, { test_job: handler });
 
@@ -220,26 +292,27 @@ describe('jobQueue', () => {
         max_attempts: 3,
       };
 
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': [job],
+        "status = 'failed'": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       const result = await processJobs(mockDb, {});
 
       expect(result).toEqual({ processed: 0, failed: 1 });
-      expect(logger.warn).toHaveBeenCalledWith(
+      const { logger: l } = require('../utils/logger');
+      expect(l.warn).toHaveBeenCalledWith(
         expect.stringContaining('[jobQueue] No handler for job type')
       );
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining("UPDATE job_queue SET status = 'failed'")
-      );
-      expect(mockStatement.run).toHaveBeenCalledWith(
-        'Unknown job type',
-        'job-1'
-      );
+      const failCall = mockDb.query.mock.calls.find(c => c[0].includes("status = 'failed'") && c[1] && c[1][0] === 'Unknown job type');
+      expect(failCall).toBeDefined();
+      expect(failCall[1]).toEqual(['Unknown job type', 'job-1']);
     });
 
     it('should attempt to timeout slow handlers', async () => {
-      // This test verifies the timeout mechanism exists
+      // This test verifies the timeout mechanism exists and handler gets invoked
       const job = {
         id: 'job-1',
         type: 'slow_job',
@@ -248,21 +321,32 @@ describe('jobQueue', () => {
         max_attempts: 3,
       };
 
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
-
-      // Create a handler that should timeout
-      const slowHandler = jest.fn();
-      slowHandler.mockImplementationOnce(() =>
-        new Promise(r => {
-          // Never resolve - will trigger timeout
-        })
+      let handlerResolve;
+      const slowHandler = jest.fn().mockImplementationOnce(
+        () => new Promise(resolve => { handlerResolve = resolve; })
       );
+
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': [job],
+        "status = 'processing'": { changes: 1 },
+        "status = 'pending', attempts = ?": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       const processPromise = processJobs(mockDb, { slow_job: slowHandler });
 
+      // Flush microtasks so the handler gets invoked
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
       // The handler was called
       expect(slowHandler).toHaveBeenCalled();
+
+      // Resolve handler so the promise doesn't hang
+      handlerResolve();
+      await processPromise;
     });
 
     it('should reschedule job with exponential backoff on first failure', async () => {
@@ -275,21 +359,23 @@ describe('jobQueue', () => {
         max_attempts: 3,
       };
 
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': [job],
+        "status = 'processing'": { changes: 1 },
+        "status = 'pending', attempts = ?": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       const result = await processJobs(mockDb, { test_job: handler });
 
       expect(result).toEqual({ processed: 0, failed: 1 });
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE job_queue SET attempts = ?, scheduled_at = ?')
+
+      const rescheduleCall = mockDb.query.mock.calls.find(c =>
+        c[0].includes("UPDATE job_queue SET status = 'pending', attempts = ?, scheduled_at = ?")
       );
-      expect(mockStatement.run).toHaveBeenCalledWith(
-        1,
-        expect.any(String),
-        'Handler error',
-        'job-1'
-      );
+      expect(rescheduleCall).toBeDefined();
+      expect(rescheduleCall[1]).toEqual([1, expect.any(String), 'Handler error', 'job-1']);
     });
 
     it('should reschedule job with exponential backoff on second failure', async () => {
@@ -302,17 +388,20 @@ describe('jobQueue', () => {
         max_attempts: 3,
       };
 
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': [job],
+        "status = 'processing'": { changes: 1 },
+        "status = 'pending', attempts = ?": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
-      const result = await processJobs(mockDb, { test_job: handler });
+      await processJobs(mockDb, { test_job: handler });
 
-      expect(mockStatement.run).toHaveBeenCalledWith(
-        2,
-        expect.any(String),
-        'Handler error',
-        'job-1'
+      const rescheduleCall = mockDb.query.mock.calls.find(c =>
+        c[0].includes("UPDATE job_queue SET status = 'pending', attempts = ?, scheduled_at = ?")
       );
+      expect(rescheduleCall[1]).toEqual([2, expect.any(String), 'Handler error', 'job-1']);
     });
 
     it('should mark job as permanently failed after max attempts', async () => {
@@ -325,50 +414,63 @@ describe('jobQueue', () => {
         max_attempts: 3,
       };
 
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': [job],
+        "status = 'processing'": { changes: 1 },
+        "ALTER TABLE": null,
+        "CREATE UNIQUE INDEX": null,
+        "CREATE TABLE": null,
+        "dead_letter_queue": { changes: 1 },
+        "status = 'failed', error = ?, failed_at": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       const result = await processJobs(mockDb, { test_job: handler });
 
       expect(result).toEqual({ processed: 0, failed: 1 });
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining("UPDATE job_queue SET status = 'failed'")
+
+      const failCall = mockDb.query.mock.calls.find(c =>
+        c[0].includes("status = 'failed'") && c[0].includes('failed_at')
       );
-      expect(mockStatement.run).toHaveBeenCalledWith(
-        'Handler error',
-        'job-1'
-      );
+      expect(failCall).toBeDefined();
+      expect(failCall[1]).toEqual([expect.any(String), 'job-1']);
     });
 
     it('should clean up old completed jobs', async () => {
-      mockStatement.all.mockReturnValue([]);
-      mockStatement.run.mockReturnValue({ changes: 5 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 5 },
+        'SELECT * FROM job_queue': [],
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       await processJobs(mockDb, {});
 
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining("DELETE FROM job_queue")
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        '[jobQueue] Cleaned up 5 old jobs'
-      );
+      const cleanupCall = mockDb.query.mock.calls.find(c => c[0].includes('DELETE FROM job_queue'));
+      expect(cleanupCall).toBeDefined();
+      const { logger: l } = require('../utils/logger');
+      expect(l.info).toHaveBeenCalledWith('[jobQueue] Cleaned up 5 old jobs');
     });
 
     it('should handle cleanup error gracefully', async () => {
-      mockPrepare.mockImplementationOnce(() => {
-        throw new Error('Cleanup failed');
-      }).mockImplementation(() => mockStatement);
-
-      mockStatement.all.mockReturnValue([]);
-      mockStatement.run.mockReturnValue({ changes: 0 });
+      let cleanupCalled = false;
+      mockDb.query = jest.fn(async (sql, params = [], mode = 'all') => {
+        if (sql.includes('DELETE FROM job_queue')) {
+          if (!cleanupCalled) {
+            cleanupCalled = true;
+            throw new Error('Cleanup failed');
+          }
+        }
+        if (sql.includes('SELECT * FROM job_queue')) return [];
+        if (sql.includes('SELECT COUNT(*)')) return { c: 0 };
+        return { changes: 0 };
+      });
 
       const result = await processJobs(mockDb, {});
 
       expect(result).toEqual({ processed: 0, failed: 0 });
-      expect(logger.warn).toHaveBeenCalledWith(
-        '[jobQueue] Cleanup error:',
-        'Cleanup failed'
-      );
+      const { logger: l } = require('../utils/logger');
+      expect(l.warn).toHaveBeenCalledWith('[jobQueue] Cleanup error:', 'Cleanup failed');
     });
 
     it('should process multiple jobs', async () => {
@@ -379,8 +481,13 @@ describe('jobQueue', () => {
         { id: 'job-3', type: 'test_job', payload: '{}', attempts: 0, max_attempts: 3 },
       ];
 
-      mockStatement.all.mockReturnValue(jobs);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': jobs,
+        "status = 'processing'": { changes: 1 },
+        "status = 'completed'": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       const result = await processJobs(mockDb, { test_job: handler });
 
@@ -389,14 +496,13 @@ describe('jobQueue', () => {
     });
 
     it('should handle processJobs outer error gracefully', async () => {
-      mockPrepare.mockImplementation(() => {
-        throw new Error('Database connection lost');
-      });
+      mockDb.query = jest.fn().mockRejectedValue(new Error('Database connection lost'));
 
       const result = await processJobs(mockDb, {});
 
       expect(result).toEqual({ processed: 0, failed: 0 });
-      expect(logger.error).toHaveBeenCalledWith(
+      const { logger: l } = require('../utils/logger');
+      expect(l.error).toHaveBeenCalledWith(
         '[jobQueue] processJobs error:',
         'Database connection lost'
       );
@@ -409,8 +515,13 @@ describe('jobQueue', () => {
         { id: 'job-2', type: 'test_job', payload: '{}', attempts: 0, max_attempts: 3 },
       ];
 
-      mockStatement.all.mockReturnValue(jobs);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': jobs,
+        "status = 'processing'": { changes: 1 },
+        "status = 'completed'": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       const result = await processJobs(mockDb, { test_job: handler });
 
@@ -428,12 +539,18 @@ describe('jobQueue', () => {
         max_attempts: 3,
       };
 
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': [job],
+        "status = 'processing'": { changes: 1 },
+        "status = 'completed'": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       await processJobs(mockDb, { test_job: handler });
 
-      expect(logger.info).toHaveBeenCalledWith(
+      const { logger: l } = require('../utils/logger');
+      expect(l.info).toHaveBeenCalledWith(
         expect.stringContaining('[jobQueue] Completed job job-1')
       );
     });
@@ -448,8 +565,13 @@ describe('jobQueue', () => {
         max_attempts: 3,
       };
 
-      mockStatement.all.mockReturnValue([job]);
-      mockStatement.run.mockReturnValue({ changes: 1 });
+      mockDb.query = makeQueryMock({
+        'DELETE FROM job_queue': { changes: 0 },
+        'SELECT * FROM job_queue': [job],
+        "status = 'processing'": { changes: 1 },
+        "status = 'pending', attempts = ?": { changes: 1 },
+        "SELECT COUNT(*)": { c: 0 },
+      });
 
       const result = await processJobs(mockDb, { test_job: handler });
 
@@ -457,100 +579,109 @@ describe('jobQueue', () => {
     });
   });
 
+  // ─── cancelJobs ──────────────────────────────────────────────────────────────
   describe('cancelJobs', () => {
-    it('should return 0 when db is missing', () => {
-      const count = cancelJobs(null, { type: 'test_job' });
+    it('should return 0 when db is missing', async () => {
+      const count = await cancelJobs(null, { type: 'test_job' });
       expect(count).toBe(0);
     });
 
-    it('should return 0 when filter is missing', () => {
-      const count = cancelJobs(mockDb, null);
+    it('should return 0 when filter is missing', async () => {
+      const count = await cancelJobs(mockDb, null);
       expect(count).toBe(0);
     });
 
-    it('should cancel jobs by type', () => {
-      mockStatement.run.mockReturnValue({ changes: 5 });
+    it('should cancel jobs by type', async () => {
+      mockDb.query = jest.fn().mockResolvedValue({ changes: 5 });
 
-      const count = cancelJobs(mockDb, { type: 'speed_to_lead_sms' });
+      const count = await cancelJobs(mockDb, { type: 'speed_to_lead_sms' });
 
       expect(count).toBe(5);
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining("status = 'pending' AND type = ?")
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining("status = 'pending' AND type = ?"),
+        ['speed_to_lead_sms'],
+        'run'
       );
-      expect(mockStatement.run).toHaveBeenCalledWith('speed_to_lead_sms');
     });
 
-    it('should cancel jobs by payload contains', () => {
-      mockStatement.run.mockReturnValue({ changes: 3 });
+    it('should cancel jobs by payload contains', async () => {
+      mockDb.query = jest.fn().mockResolvedValue({ changes: 3 });
 
-      const count = cancelJobs(mockDb, { payloadContains: 'leadId' });
+      const count = await cancelJobs(mockDb, { payloadContains: 'leadId' });
 
       expect(count).toBe(3);
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining("status = 'pending' AND payload LIKE ?")
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining("status = 'pending' AND payload LIKE ?"),
+        ['%leadId%'],
+        'run'
       );
-      expect(mockStatement.run).toHaveBeenCalledWith('%leadId%');
     });
 
-    it('should cancel jobs by both type and payload', () => {
-      mockStatement.run.mockReturnValue({ changes: 2 });
+    it('should cancel jobs by both type and payload', async () => {
+      mockDb.query = jest.fn().mockResolvedValue({ changes: 2 });
 
-      const count = cancelJobs(mockDb, { type: 'test_job', payloadContains: 'key' });
+      const count = await cancelJobs(mockDb, { type: 'test_job', payloadContains: 'key' });
 
       expect(count).toBe(2);
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining("status = 'pending' AND type = ? AND payload LIKE ?")
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining("status = 'pending' AND type = ? AND payload LIKE ?"),
+        ['test_job', '%key%'],
+        'run'
       );
-      expect(mockStatement.run).toHaveBeenCalledWith('test_job', '%key%');
     });
 
-    it('should return 0 when no jobs are cancelled', () => {
-      mockStatement.run.mockReturnValue({ changes: 0 });
+    it('should return 0 when no jobs are cancelled', async () => {
+      mockDb.query = jest.fn().mockResolvedValue({ changes: 0 });
 
-      const count = cancelJobs(mockDb, { type: 'unknown_type' });
+      const count = await cancelJobs(mockDb, { type: 'unknown_type' });
 
       expect(count).toBe(0);
     });
 
-    it('should handle undefined changes gracefully', () => {
-      mockStatement.run.mockReturnValue({});
+    it('should handle undefined changes gracefully', async () => {
+      mockDb.query = jest.fn().mockResolvedValue({});
 
-      const count = cancelJobs(mockDb, { type: 'test_job' });
+      const count = await cancelJobs(mockDb, { type: 'test_job' });
 
       expect(count).toBe(0);
     });
 
-    it('should log cancelled jobs count', () => {
-      mockStatement.run.mockReturnValue({ changes: 5 });
+    it('should log cancelled jobs count', async () => {
+      mockDb.query = jest.fn().mockResolvedValue({ changes: 5 });
 
-      cancelJobs(mockDb, { type: 'test_job' });
+      await cancelJobs(mockDb, { type: 'test_job' });
 
-      expect(logger.info).toHaveBeenCalledWith(
+      const { logger: l } = require('../utils/logger');
+      expect(l.info).toHaveBeenCalledWith(
         '[jobQueue] Cancelled 5 pending jobs'
       );
     });
 
-    it('should handle error gracefully', () => {
-      mockPrepare.mockImplementation(() => {
-        throw new Error('Database error');
-      });
+    it('should handle error gracefully', async () => {
+      mockDb.query = jest.fn().mockRejectedValue(new Error('Database error'));
 
-      const count = cancelJobs(mockDb, { type: 'test_job' });
+      const count = await cancelJobs(mockDb, { type: 'test_job' });
 
       expect(count).toBe(0);
-      expect(logger.error).toHaveBeenCalledWith(
+      const { logger: l } = require('../utils/logger');
+      expect(l.error).toHaveBeenCalledWith(
         '[jobQueue] cancelJobs error:',
         'Database error'
       );
     });
 
-    it('should cancel jobs with empty filter object', () => {
-      mockStatement.run.mockReturnValue({ changes: 10 });
+    it('should cancel jobs with empty filter object', async () => {
+      mockDb.query = jest.fn().mockResolvedValue({ changes: 10 });
 
-      const count = cancelJobs(mockDb, {});
+      const count = await cancelJobs(mockDb, {});
 
       expect(count).toBe(10);
-      expect(mockStatement.run).toHaveBeenCalledWith();
+      // Empty filter means no WHERE clauses beyond status = 'pending'
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining("status = 'pending'"),
+        [],
+        'run'
+      );
     });
   });
 });

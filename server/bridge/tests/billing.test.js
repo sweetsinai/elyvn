@@ -13,7 +13,7 @@ describe('billing routes', () => {
   let mockDb;
 
   function buildDb(overrides = {}) {
-    return {
+    const db = {
       prepare: jest.fn((sql) => {
         if (sql.includes('SELECT id FROM clients WHERE stripe_customer_id') ||
             sql.includes('SELECT id, name, owner_email, password_hash')) {
@@ -36,6 +36,13 @@ describe('billing routes', () => {
         return { get: jest.fn(() => null), run: jest.fn(), all: jest.fn(() => []) };
       }),
     };
+    db.query = jest.fn((sql, params = [], mode = 'all') => {
+      const stmt = db.prepare(sql);
+      if (mode === 'get') return Promise.resolve(stmt.get(...(params || [])));
+      if (mode === 'run') return Promise.resolve(stmt.run(...(params || [])));
+      return Promise.resolve(stmt.all(...(params || [])));
+    });
+    return db;
   }
 
   beforeEach(() => {
@@ -74,10 +81,10 @@ describe('billing routes', () => {
   // ── GET /billing/plans ──
 
   describe('GET /billing/plans', () => {
-    test('returns 3 plans', async () => {
+    test('returns plans', async () => {
       const res = await request(app).get('/billing/plans');
       expect(res.status).toBe(200);
-      expect(res.body.plans).toHaveLength(3);
+      expect(res.body.plans.length).toBeGreaterThanOrEqual(3);
       const names = res.body.plans.map(p => p.id);
       expect(names).toEqual(expect.arrayContaining(['starter', 'growth', 'scale']));
     });

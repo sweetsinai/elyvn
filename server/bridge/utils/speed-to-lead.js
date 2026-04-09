@@ -119,13 +119,14 @@ async function triggerSpeedSequence(db, leadData) {
     const tomorrow = new Date(now + 24 * 60 * 60 * 1000).toISOString();
     const threeDays = new Date(now + 72 * 60 * 60 * 1000).toISOString();
 
-    const has4 = await db.query("SELECT id FROM followups WHERE lead_id = ? AND touch_number = 4 AND status = 'scheduled'", [leadId], 'get');
-    if (!has4) {
-      await db.query(`
-        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
-        VALUES (?, ?, ?, 4, 'reminder_or_nudge', NULL, 'pending', ?, 'scheduled')
-      `, [randomUUID(), leadId, clientId, tomorrow], 'run');
+    // Use INSERT OR IGNORE to handle concurrent duplicate inserts atomically
+    const insert4Result = await db.query(`
+      INSERT OR IGNORE INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+      VALUES (?, ?, ?, 4, 'reminder_or_nudge', NULL, 'pending', ?, 'scheduled')
+    `, [randomUUID(), leadId, clientId, tomorrow], 'run');
+    const has4Inserted = insert4Result && insert4Result.changes > 0;
 
+    if (has4Inserted) {
       try {
         await appendEvent(db, leadId, 'lead', Events.FollowupScheduled, {
           touch_number: 4, type: 'reminder_or_nudge', scheduled_at: tomorrow,
@@ -133,12 +134,13 @@ async function triggerSpeedSequence(db, leadData) {
       } catch (_) {}
     }
 
-    const has5 = await db.query("SELECT id FROM followups WHERE lead_id = ? AND touch_number = 5 AND status = 'scheduled'", [leadId], 'get');
-    if (!has5) {
-      await db.query(`
-        INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
-        VALUES (?, ?, ?, 5, 'review_or_final', NULL, 'pending', ?, 'scheduled')
-      `, [randomUUID(), leadId, clientId, threeDays], 'run');
+    const insert5Result = await db.query(`
+      INSERT OR IGNORE INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
+      VALUES (?, ?, ?, 5, 'review_or_final', NULL, 'pending', ?, 'scheduled')
+    `, [randomUUID(), leadId, clientId, threeDays], 'run');
+    const has5Inserted = insert5Result && insert5Result.changes > 0;
+
+    if (has5Inserted) {
 
       try {
         await appendEvent(db, leadId, 'lead', Events.FollowupScheduled, {

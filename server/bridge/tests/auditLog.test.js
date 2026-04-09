@@ -1,11 +1,16 @@
 'use strict';
 
 const { logAudit, sanitizeDetails, validateAction, fallbackLog, cleanupAuditLog } = require('../utils/auditLog');
+const { logger } = require('../utils/logger');
 const fs = require('fs');
 
 jest.mock('fs');
 jest.mock('crypto', () => ({
   randomUUID: jest.fn(() => 'mock-uuid-1234'),
+  createHash: jest.fn(() => ({
+    update: jest.fn().mockReturnThis(),
+    digest: jest.fn(() => 'mock-hash-abc'),
+  })),
 }));
 
 describe('Audit Log Utility', () => {
@@ -13,14 +18,33 @@ describe('Audit Log Utility', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Re-wire createHash mock after clearAllMocks (clearAllMocks resets mock implementations)
+    const crypto = require('crypto');
+    crypto.createHash.mockReturnValue({
+      update: jest.fn().mockReturnThis(),
+      digest: jest.fn(() => 'mock-hash-abc'),
+    });
+
     mockDb = {
       prepare: jest.fn((sql) => ({
         run: jest.fn(),
         get: jest.fn(),
         all: jest.fn(),
       })),
+      // async query interface used by the source
+      query: jest.fn().mockResolvedValue(null),
     };
     fs.appendFileSync.mockClear();
+
+    // Spy on logger methods (auditLog uses getLogger() which returns the real logger)
+    jest.spyOn(logger, 'info').mockImplementation(() => {});
+    jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    jest.spyOn(logger, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   describe('sanitizeDetails', () => {
@@ -137,26 +161,26 @@ describe('Audit Log Utility', () => {
         throw new Error('Write failed');
       });
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const entry = { id: 'test' };
 
       fallbackLog(entry);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      // auditLog uses getLogger().error — spy on logger.error
+      expect(logger.error).toHaveBeenCalledWith(
         '[audit] Fallback log write failed:',
         'Write failed'
       );
-
-      consoleSpy.mockRestore();
     });
   });
 
   describe('logAudit', () => {
-    test('writes entry to database', () => {
-      const mockRun = jest.fn();
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('writes entry to database', async () => {
+      // db.query resolves with null for the hash lookup (empty table), then null for insert
+      mockDb.query
+        .mockResolvedValueOnce(null)  // getLatestHash SELECT
+        .mockResolvedValueOnce(null); // INSERT
 
-      logAudit(mockDb, {
+      await logAudit(mockDb, {
         clientId: 'client-123',
         userId: 'user-456',
         action: 'auth_success',
@@ -167,71 +191,73 @@ describe('Audit Log Utility', () => {
         details: { status: 'ok' },
       });
 
-      expect(mockDb.prepare).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO audit_log'));
-      expect(mockRun).toHaveBeenCalled();
-      const runCall = mockRun.mock.calls[0][0];
-      expect(runCall).toBe('mock-uuid-1234'); // mocked UUID
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO audit_log'),
+        expect.any(Array),
+        'run'
+      );
+      // First param in the values array is the id
+      const insertCall = mockDb.query.mock.calls.find(c => c[0].includes('INSERT INTO audit_log'));
+      expect(insertCall[1][0]).toBe('mock-uuid-1234');
     });
 
-    test('sanitizes and validates action before logging', () => {
-      const mockRun = jest.fn();
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('sanitizes and validates action before logging', async () => {
+      mockDb.query
+        .mockResolvedValueOnce(null)  // getLatestHash
+        .mockResolvedValueOnce(null); // INSERT
 
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-
-      logAudit(mockDb, {
+      await logAudit(mockDb, {
         action: 'custom_unknown_action',
         details: 'test\x00data',
       });
 
-      expect(mockRun).toHaveBeenCalled();
-      const args = mockRun.mock.calls[0];
-      // Args: id, client_id, user_id, action, resource_type, resource_id, ip, user_agent, details, created_at
-      expect(args[3]).toBe('custom_unknown_action'); // unknown action stored as-is
-      expect(args[8]).toBe('testdata'); // Control chars removed
-      expect(consoleSpy).toHaveBeenCalledWith(
+      // logger.warn is spied on in beforeEach
+      expect(logger.warn).toHaveBeenCalledWith(
         '[audit] Unknown action detected: custom_unknown_action'
       );
 
-      consoleSpy.mockRestore();
+      // Verify the INSERT was called with the correct action and sanitized details
+      const insertCall = mockDb.query.mock.calls.find(c => c[0].includes('INSERT INTO audit_log'));
+      expect(insertCall).toBeDefined();
+      const params = insertCall[1];
+      // params: [id, client_id, user_id, action, resource_type, resource_id, ip_address, user_agent, details, created_at, hash, previousHash]
+      expect(params[3]).toBe('custom_unknown_action');
+      expect(params[8]).toBe('testdata'); // Control chars removed
     });
 
-    test('falls back to file logging on database error', () => {
-      const mockRun = jest.fn(() => {
-        throw new Error('Database connection failed');
-      });
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('falls back to file logging on database error', async () => {
+      mockDb.query
+        .mockResolvedValueOnce(null)  // getLatestHash
+        .mockRejectedValueOnce(new Error('Database connection failed')); // INSERT
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       fs.appendFileSync.mockClear();
 
-      logAudit(mockDb, {
+      await logAudit(mockDb, {
         action: 'auth_failure',
         details: 'Failed login attempt',
       });
 
-      expect(consoleSpy).toHaveBeenCalledWith('[audit] Log error:', 'Database connection failed');
+      expect(logger.error).toHaveBeenCalledWith('[audit] Log error:', 'Database connection failed');
       expect(fs.appendFileSync).toHaveBeenCalled();
-
-      consoleSpy.mockRestore();
     });
 
-    test('handles null details gracefully', () => {
-      const mockRun = jest.fn();
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('handles null details gracefully', async () => {
+      mockDb.query
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
 
-      logAudit(mockDb, {
+      await logAudit(mockDb, {
         action: 'lead_created',
         details: null,
       });
 
-      expect(mockRun).toHaveBeenCalled();
-      const args = mockRun.mock.calls[0];
-      expect(args[8]).toBeNull(); // details column
+      const insertCall = mockDb.query.mock.calls.find(c => c[0].includes('INSERT INTO audit_log'));
+      expect(insertCall).toBeDefined();
+      expect(insertCall[1][8]).toBeNull(); // details column (index 8)
     });
 
-    test('returns early if no database provided', () => {
-      logAudit(null, {
+    test('returns early if no database provided', async () => {
+      await logAudit(null, {
         action: 'auth_success',
       });
 
@@ -239,36 +265,43 @@ describe('Audit Log Utility', () => {
       expect(true).toBe(true);
     });
 
-    test('sets all optional fields to null when not provided', () => {
-      const mockRun = jest.fn();
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('sets all optional fields to null when not provided', async () => {
+      mockDb.query
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
 
-      logAudit(mockDb, {
+      await logAudit(mockDb, {
         action: 'auth_success',
         // No other fields provided
       });
 
-      expect(mockRun).toHaveBeenCalled();
-      const args = mockRun.mock.calls[0];
-      expect(args[1]).toBeNull(); // client_id
-      expect(args[2]).toBeNull(); // user_id
-      expect(args[4]).toBeNull(); // resource_type
-      expect(args[5]).toBeNull(); // resource_id
-      expect(args[6]).toBeNull(); // ip_address
-      expect(args[7]).toBeNull(); // user_agent
-      expect(args[8]).toBeNull(); // details
+      const insertCall = mockDb.query.mock.calls.find(c => c[0].includes('INSERT INTO audit_log'));
+      expect(insertCall).toBeDefined();
+      const params = insertCall[1];
+      // [id, client_id, user_id, action, resource_type, resource_id, ip_address, user_agent, details, created_at, hash, previousHash]
+      expect(params[1]).toBeNull(); // client_id
+      expect(params[2]).toBeNull(); // user_id
+      expect(params[4]).toBeNull(); // resource_type
+      expect(params[5]).toBeNull(); // resource_id
+      expect(params[6]).toBeNull(); // ip_address
+      expect(params[7]).toBeNull(); // user_agent
+      expect(params[8]).toBeNull(); // details
     });
 
-    test('creates timestamp for created_at', () => {
-      const mockRun = jest.fn();
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('creates timestamp for created_at', async () => {
+      mockDb.query
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
 
       const beforeTime = new Date();
-      logAudit(mockDb, { action: 'auth_success' });
+      await logAudit(mockDb, { action: 'auth_success' });
       const afterTime = new Date();
 
-      const args = mockRun.mock.calls[0];
-      const createdAt = new Date(args[9]);
+      const insertCall = mockDb.query.mock.calls.find(c => c[0].includes('INSERT INTO audit_log'));
+      expect(insertCall).toBeDefined();
+      const params = insertCall[1];
+      // created_at is at index 9
+      const createdAt = new Date(params[9]);
 
       expect(createdAt.getTime()).toBeGreaterThanOrEqual(beforeTime.getTime());
       expect(createdAt.getTime()).toBeLessThanOrEqual(afterTime.getTime());
@@ -276,78 +309,75 @@ describe('Audit Log Utility', () => {
   });
 
   describe('cleanupAuditLog', () => {
-    test('deletes old entries from database', () => {
-      const mockRun = jest.fn().mockReturnValue({ changes: 42 });
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('deletes old entries from database', async () => {
+      mockDb.query.mockResolvedValueOnce({ changes: 42 });
 
-      const result = cleanupAuditLog(mockDb, 90);
+      const result = await cleanupAuditLog(mockDb, 90);
 
-      expect(mockDb.prepare).toHaveBeenCalledWith(
-        expect.stringContaining('DELETE FROM audit_log')
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM audit_log'),
+        [90],
+        'run'
       );
-      expect(mockRun).toHaveBeenCalledWith(90);
       expect(result).toBe(42);
     });
 
-    test('uses default retention days of 90', () => {
-      const mockRun = jest.fn().mockReturnValue({ changes: 10 });
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('uses default retention days of 90', async () => {
+      mockDb.query.mockResolvedValueOnce({ changes: 10 });
 
-      cleanupAuditLog(mockDb);
+      await cleanupAuditLog(mockDb);
 
-      expect(mockRun).toHaveBeenCalledWith(90);
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.any(String),
+        [90],
+        'run'
+      );
     });
 
-    test('uses custom retention days', () => {
-      const mockRun = jest.fn().mockReturnValue({ changes: 5 });
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('uses custom retention days', async () => {
+      mockDb.query.mockResolvedValueOnce({ changes: 5 });
 
-      cleanupAuditLog(mockDb, 30);
+      await cleanupAuditLog(mockDb, 30);
 
-      expect(mockRun).toHaveBeenCalledWith(30);
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.any(String),
+        [30],
+        'run'
+      );
     });
 
-    test('returns 0 if no database provided', () => {
-      const result = cleanupAuditLog(null, 90);
+    test('returns 0 if no database provided', async () => {
+      const result = await cleanupAuditLog(null, 90);
       expect(result).toBe(0);
     });
 
-    test('returns 0 and logs error on cleanup failure', () => {
-      const mockRun = jest.fn(() => {
-        throw new Error('Cleanup failed');
-      });
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('returns 0 and logs error on cleanup failure', async () => {
+      mockDb.query.mockRejectedValueOnce(new Error('Cleanup failed'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-      const result = cleanupAuditLog(mockDb, 90);
+      const result = await cleanupAuditLog(mockDb, 90);
 
       expect(result).toBe(0);
-      expect(consoleSpy).toHaveBeenCalledWith('[audit] Cleanup failed:', 'Cleanup failed');
-
-      consoleSpy.mockRestore();
+      expect(logger.error).toHaveBeenCalledWith('[audit] Cleanup failed:', 'Cleanup failed');
     });
 
-    test('logs successful cleanup with change count', () => {
-      const mockRun = jest.fn().mockReturnValue({ changes: 100 });
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('logs successful cleanup with change count', async () => {
+      mockDb.query.mockResolvedValueOnce({ changes: 100 });
 
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-      cleanupAuditLog(mockDb, 60);
+      await cleanupAuditLog(mockDb, 60);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(logger.info).toHaveBeenCalledWith(
         '[audit] Cleaned up 100 entries older than 60 days'
       );
-
-      consoleSpy.mockRestore();
     });
   });
 
   describe('Integration scenarios', () => {
-    test('full audit logging flow with valid action and details', () => {
-      const mockRun = jest.fn();
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('full audit logging flow with valid action and details', async () => {
+      mockDb.query
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
 
-      logAudit(mockDb, {
+      await logAudit(mockDb, {
         clientId: 'abc123',
         userId: 'user789',
         action: 'lead_updated',
@@ -358,38 +388,36 @@ describe('Audit Log Utility', () => {
         details: { field: 'phone', oldValue: '555-1234', newValue: '555-5678' },
       });
 
-      expect(mockRun).toHaveBeenCalled();
-      const args = mockRun.mock.calls[0];
-      expect(args[3]).toBe('lead_updated'); // known action stored as-is
+      const insertCall = mockDb.query.mock.calls.find(c => c[0].includes('INSERT INTO audit_log'));
+      expect(insertCall).toBeDefined();
+      expect(insertCall[1][3]).toBe('lead_updated'); // known action stored as-is
     });
 
-    test('audit logging with unknown action gets flagged', () => {
-      const mockRun = jest.fn();
-      mockDb.prepare.mockReturnValue({ run: mockRun });
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+    test('audit logging with unknown action gets flagged', async () => {
+      mockDb.query
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
 
-      logAudit(mockDb, {
+      await logAudit(mockDb, {
         action: 'mysterious_event',
         details: { reason: 'testing' },
       });
 
-      const args = mockRun.mock.calls[0];
-      expect(args[3]).toBe('mysterious_event'); // stored as-is
-      expect(consoleSpy).toHaveBeenCalledWith(
+      const insertCall = mockDb.query.mock.calls.find(c => c[0].includes('INSERT INTO audit_log'));
+      expect(insertCall).toBeDefined();
+      expect(insertCall[1][3]).toBe('mysterious_event'); // stored as-is
+      expect(logger.warn).toHaveBeenCalledWith(
         '[audit] Unknown action detected: mysterious_event'
       );
-
-      consoleSpy.mockRestore();
     });
 
-    test('large payload gets truncated and logged to file on error', () => {
-      const mockRun = jest.fn(() => {
-        throw new Error('Payload too large');
-      });
-      mockDb.prepare.mockReturnValue({ run: mockRun });
+    test('large payload gets truncated and logged to file on error', async () => {
+      mockDb.query
+        .mockResolvedValueOnce(null)  // getLatestHash
+        .mockRejectedValueOnce(new Error('Payload too large')); // INSERT fails
 
       const largeDetails = 'x'.repeat(10000);
-      logAudit(mockDb, {
+      await logAudit(mockDb, {
         action: 'auth_success',
         details: largeDetails,
       });

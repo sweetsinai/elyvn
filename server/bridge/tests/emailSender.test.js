@@ -4,7 +4,7 @@
  */
 
 const Database = require('better-sqlite3');
-const { sendColdEmail, DAILY_LIMIT } = require('../utils/emailSender');
+const { sendColdEmail, DAILY_LIMIT, _smtpBreaker } = require('../utils/emailSender');
 const { runMigrations } = require('../utils/migrations');
 
 jest.mock('../utils/mailer');
@@ -16,6 +16,25 @@ describe('emailSender', () => {
     jest.clearAllMocks();
     db = new Database(':memory:');
     runMigrations(db);
+
+    // Reset circuit breaker between tests so failures in one don't trip others
+    if (_smtpBreaker && typeof _smtpBreaker.reset === 'function') {
+      _smtpBreaker.reset();
+    }
+
+    // Add unified async query helper (mirrors createDatabase in dbAdapter.js)
+    db.query = function query(sql, params = [], mode = 'all') {
+      try {
+        const stmt = db.prepare(sql);
+        let result;
+        if (mode === 'get') result = stmt.get(...params);
+        else if (mode === 'run') result = stmt.run(...params);
+        else result = stmt.all(...params);
+        return Promise.resolve(result);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    };
 
     // Set up environment
     process.env.SMTP_USER = 'sender@example.com';

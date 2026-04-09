@@ -30,6 +30,18 @@ jest.mock('../utils/dataRetention');
 
 const telegram = require('../utils/telegram');
 
+/**
+ * Add db.query() to a better-sqlite3 instance so async source code works.
+ */
+function addQueryMethod(db) {
+  db.query = function(sql, params = [], mode = 'all') {
+    const stmt = db.prepare(sql);
+    if (mode === 'get') return Promise.resolve(stmt.get(...(params || [])));
+    if (mode === 'run') return Promise.resolve(stmt.run(...(params || [])));
+    return Promise.resolve(stmt.all(...(params || [])));
+  };
+}
+
 describe('scheduler', () => {
   let db;
 
@@ -49,6 +61,7 @@ describe('scheduler', () => {
 
     db = new Database(':memory:');
     runMigrations(db);
+    addQueryMethod(db);
 
     // Create test data
     db.prepare(`
@@ -79,8 +92,8 @@ describe('scheduler', () => {
   });
 
   describe('sendDailySummaries', () => {
-    test('sends daily summary to active clients with telegram', () => {
-      sendDailySummaries(db);
+    test('sends daily summary to active clients with telegram', async () => {
+      await sendDailySummaries(db);
 
       expect(telegram.sendMessage).toHaveBeenCalledWith(
         '123456',
@@ -88,8 +101,8 @@ describe('scheduler', () => {
       );
     });
 
-    test('includes call stats in summary', () => {
-      sendDailySummaries(db);
+    test('includes call stats in summary', async () => {
+      await sendDailySummaries(db);
 
       const call = telegram.sendMessage.mock.calls[0][1];
       expect(call).toContain('Calls:');
@@ -97,26 +110,26 @@ describe('scheduler', () => {
       expect(call).toContain('Missed:');
     });
 
-    test('skips clients without telegram_chat_id', () => {
+    test('skips clients without telegram_chat_id', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, is_active)
         VALUES ('client2', 'No Telegram', 1)
       `).run();
 
       telegram.sendMessage.mockClear();
-      sendDailySummaries(db);
+      await sendDailySummaries(db);
 
       expect(telegram.sendMessage).toHaveBeenCalledTimes(1); // Only client1
     });
 
-    test('skips inactive clients', () => {
+    test('skips inactive clients', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, telegram_chat_id, is_active)
         VALUES ('client3', 'Inactive', '789', 0)
       `).run();
 
       telegram.sendMessage.mockClear();
-      sendDailySummaries(db);
+      await sendDailySummaries(db);
 
       expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
       expect(telegram.sendMessage).toHaveBeenCalledWith(expect.stringMatching('123456'), expect.anything());
@@ -124,8 +137,8 @@ describe('scheduler', () => {
   });
 
   describe('sendWeeklyReports', () => {
-    test('sends weekly report to active clients', () => {
-      sendWeeklyReports(db);
+    test('sends weekly report to active clients', async () => {
+      await sendWeeklyReports(db);
 
       expect(telegram.sendMessage).toHaveBeenCalledWith(
         '123456',
@@ -133,22 +146,22 @@ describe('scheduler', () => {
       );
     });
 
-    test('calculates missed call rate correctly', () => {
-      sendWeeklyReports(db);
+    test('calculates missed call rate correctly', async () => {
+      await sendWeeklyReports(db);
 
       const report = telegram.sendMessage.mock.calls[0][1];
       expect(report).toContain('Missed rate:');
     });
 
-    test('inserts report into weekly_reports table', () => {
-      sendWeeklyReports(db);
+    test('inserts report into weekly_reports table', async () => {
+      await sendWeeklyReports(db);
 
       const reports = db.prepare('SELECT * FROM weekly_reports WHERE client_id = ?').all('client1');
       expect(reports.length).toBeGreaterThan(0);
     });
 
-    test('calculates estimated revenue', () => {
-      sendWeeklyReports(db);
+    test('calculates estimated revenue', async () => {
+      await sendWeeklyReports(db);
 
       const reports = db.prepare('SELECT estimated_revenue FROM weekly_reports WHERE client_id = ?')
         .get('client1');
@@ -157,7 +170,7 @@ describe('scheduler', () => {
   });
 
   describe('createAppointmentReminders', () => {
-    test('creates multiple reminders for an appointment', () => {
+    test('creates multiple reminders for an appointment', async () => {
       const appointment = {
         id: 'apt1',
         lead_id: 'lead1',
@@ -168,7 +181,7 @@ describe('scheduler', () => {
         datetime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
       };
 
-      createAppointmentReminders(db, appointment, { business_name: 'Test Co' });
+      await createAppointmentReminders(db, appointment, { business_name: 'Test Co' });
 
       const reminders = db.prepare(
         "SELECT * FROM followups WHERE lead_id = ? AND type = 'reminder'"
@@ -177,7 +190,7 @@ describe('scheduler', () => {
       expect(reminders.length).toBeGreaterThan(0);
     });
 
-    test('skips past reminders', () => {
+    test('skips past reminders', async () => {
       const appointment = {
         id: 'apt1',
         lead_id: 'lead1',
@@ -188,7 +201,7 @@ describe('scheduler', () => {
         datetime: new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 min from now
       };
 
-      createAppointmentReminders(db, appointment, { business_name: 'Test Co' });
+      await createAppointmentReminders(db, appointment, { business_name: 'Test Co' });
 
       const reminders = db.prepare(
         "SELECT * FROM followups WHERE lead_id = ? AND type = 'reminder' AND touch_number IN (10, 11, 12)"
@@ -198,7 +211,7 @@ describe('scheduler', () => {
       expect(reminders.length).toBeLessThanOrEqual(1);
     });
 
-    test('deduplicates reminders', () => {
+    test('deduplicates reminders', async () => {
       const appointment = {
         id: 'apt1',
         lead_id: 'lead1',
@@ -209,22 +222,22 @@ describe('scheduler', () => {
         datetime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
       };
 
-      createAppointmentReminders(db, appointment, { business_name: 'Test Co' });
+      await createAppointmentReminders(db, appointment, { business_name: 'Test Co' });
       const firstCount = db.prepare("SELECT COUNT(*) as c FROM followups WHERE lead_id = ? AND type = 'reminder'")
         .get('lead1').c;
 
-      createAppointmentReminders(db, appointment, { business_name: 'Test Co' });
+      await createAppointmentReminders(db, appointment, { business_name: 'Test Co' });
       const secondCount = db.prepare("SELECT COUNT(*) as c FROM followups WHERE lead_id = ? AND type = 'reminder'")
         .get('lead1').c;
 
       expect(firstCount).toBe(secondCount);
     });
 
-    test('returns false for invalid appointment', () => {
-      const result = createAppointmentReminders(db, null, {});
+    test('returns false for invalid appointment', async () => {
+      const result = await createAppointmentReminders(db, null, {});
       expect(result).toBe(undefined);
 
-      const resultNoDatetime = createAppointmentReminders(db, { id: 'apt1' }, {});
+      const resultNoDatetime = await createAppointmentReminders(db, { id: 'apt1' }, {});
       expect(resultNoDatetime).toBe(undefined);
     });
   });
@@ -515,13 +528,13 @@ describe('scheduler', () => {
     test('should handle errors in daily summaries gracefully', async () => {
       telegram.sendMessage.mockRejectedValueOnce(new Error('Network error'));
 
-      expect(() => sendDailySummaries(db)).not.toThrow();
+      await expect(sendDailySummaries(db)).resolves.not.toThrow();
     });
 
     test('should handle errors in weekly reports gracefully', async () => {
       telegram.sendMessage.mockRejectedValueOnce(new Error('Network error'));
 
-      expect(() => sendWeeklyReports(db)).not.toThrow();
+      await expect(sendWeeklyReports(db)).resolves.not.toThrow();
     });
 
     test('should log errors during appointment reminder processing', async () => {
@@ -533,12 +546,12 @@ describe('scheduler', () => {
         VALUES ('fu1', 'lead1', 'client1', 10, 'reminder', 'Reminder text', 'appointment_reminder_template', datetime('now', '-1 minute'), 'scheduled')
       `).run();
 
-      expect(() => processAppointmentReminders(db)).not.toThrow();
+      await expect(processAppointmentReminders(db)).resolves.not.toThrow();
     });
   });
 
   describe('Appointment Reminders - Additional Coverage', () => {
-    test('should handle missing appointment lead_id', () => {
+    test('should handle missing appointment lead_id', async () => {
       const appointment = {
         id: 'apt1',
         client_id: 'client1',
@@ -547,10 +560,10 @@ describe('scheduler', () => {
         // Missing lead_id
       };
 
-      expect(() => createAppointmentReminders(db, appointment, {})).not.toThrow();
+      await expect(createAppointmentReminders(db, appointment, {})).resolves.not.toThrow();
     });
 
-    test('should skip invalid appointment datetime', () => {
+    test('should skip invalid appointment datetime', async () => {
       const appointment = {
         id: 'apt1',
         lead_id: 'lead1',
@@ -558,10 +571,10 @@ describe('scheduler', () => {
         datetime: 'invalid-date'
       };
 
-      expect(() => createAppointmentReminders(db, appointment, {})).not.toThrow();
+      await expect(createAppointmentReminders(db, appointment, {})).resolves.not.toThrow();
     });
 
-    test('should use default business name if not provided', () => {
+    test('should use default business name if not provided', async () => {
       const appointment = {
         id: 'apt1',
         lead_id: 'lead1',
@@ -572,7 +585,7 @@ describe('scheduler', () => {
         datetime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
       };
 
-      createAppointmentReminders(db, appointment, null);
+      await createAppointmentReminders(db, appointment, null);
 
       const reminders = db.prepare(
         "SELECT * FROM followups WHERE lead_id = ? AND type = 'reminder'"
@@ -582,7 +595,7 @@ describe('scheduler', () => {
       expect(reminders.length).toBeGreaterThanOrEqual(0);
     });
 
-    test('should format appointment time correctly in reminder message', () => {
+    test('should format appointment time correctly in reminder message', async () => {
       const apptTime = new Date(Date.now() + 48 * 60 * 60 * 1000);
       apptTime.setHours(14, 30, 0, 0);
 
@@ -596,7 +609,7 @@ describe('scheduler', () => {
         datetime: apptTime.toISOString()
       };
 
-      createAppointmentReminders(db, appointment, { business_name: 'Test Co' });
+      await createAppointmentReminders(db, appointment, { business_name: 'Test Co' });
 
       const reminders = db.prepare(
         "SELECT content FROM followups WHERE lead_id = ? AND type = 'reminder'"
@@ -685,7 +698,7 @@ describe('scheduler', () => {
         VALUES ('client2', 'No Chat', 1)
       `).run();
 
-      expect(() => dailyLeadScoring(db)).not.toThrow();
+      await expect(dailyLeadScoring(db)).resolves.not.toThrow();
     });
 
     test('should map 0-100 predictive score to 0-10 lead score', async () => {

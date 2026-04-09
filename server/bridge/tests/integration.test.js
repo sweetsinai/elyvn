@@ -194,8 +194,8 @@ describe('Integration Tests - Webhook → DB Flows', () => {
         .send(formData)
         .expect(200);
 
-      expect(response.body.status).toBe('received');
-      expect(response.body.message).toContain('Lead captured');
+      expect(response.body.data.status).toBe('received');
+      expect(response.body.data.message).toContain('Lead captured');
       // Note: The form handler processes async, so we don't verify DB here
     });
 
@@ -224,7 +224,7 @@ describe('Integration Tests - Webhook → DB Flows', () => {
         .expect(400);
     });
 
-    test('POST /webhooks/form with invalid email → creates lead without email', async () => {
+    test('POST /webhooks/form with invalid email → returns 400', async () => {
       const formData = {
         client_id: testClientId,
         name: 'Alice Brown',
@@ -232,15 +232,13 @@ describe('Integration Tests - Webhook → DB Flows', () => {
         phone: '+14155553333'
       };
 
-      const response = await request(app)
+      await request(app)
         .post('/webhooks/form')
         .send(formData)
-        .expect(200);
-
-      expect(response.body.status).toBe('received');
+        .expect(400);
     });
 
-    test('POST /webhooks/form with invalid phone → creates lead without phone', async () => {
+    test('POST /webhooks/form with invalid phone → returns 400', async () => {
       const formData = {
         client_id: testClientId,
         name: 'Charlie Davis',
@@ -248,12 +246,10 @@ describe('Integration Tests - Webhook → DB Flows', () => {
         phone: '123' // Invalid
       };
 
-      const response = await request(app)
+      await request(app)
         .post('/webhooks/form')
         .send(formData)
-        .expect(200);
-
-      expect(response.body.status).toBe('received');
+        .expect(400);
     });
   });
 
@@ -664,7 +660,7 @@ describe('Integration Tests - Webhook → DB Flows', () => {
     test('Form webhook returns JSON', async () => {
       const response = await request(app)
         .post('/webhooks/form')
-        .send({ client_id: testClientId, name: 'Test' })
+        .send({ client_id: testClientId, name: 'Test', phone: '+14155557777' })
         .expect(200);
 
       expect(response.type).toMatch(/json/);

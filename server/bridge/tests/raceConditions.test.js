@@ -45,8 +45,8 @@ jest.mock('../utils/phone', () => ({
 
 const Database = require('better-sqlite3');
 const { runMigrations } = require('../utils/migrations');
-const { think, _leadLocks, _claudeBreaker } = require('../utils/brain');
-const { processJobs } = require('../utils/jobQueue');
+const { think, _leadLocks, _claudeBreaker, _resetForTesting } = require('../utils/brain');
+const { processJobs, _resetSchemaForTesting } = require('../utils/jobQueue');
 const { initScheduler, stopScheduler } = require('../utils/scheduler');
 const { triggerSpeedSequence } = require('../utils/speed-to-lead');
 
@@ -79,21 +79,34 @@ function makeLeadMemory(leadId = 'lead-race-1') {
   };
 }
 
-/** Minimal mock db that satisfies brain's guardrail queries. */
+/** Minimal mock db that satisfies brain's guardrail queries.
+ * Provides both db.prepare() (sync) and db.query() (async) interfaces.
+ */
 function makeMockDb() {
-  return {
+  const db = {
     prepare: jest.fn().mockReturnValue({
       get: jest.fn().mockReturnValue(null),
       all: jest.fn().mockReturnValue([]),
       run: jest.fn().mockReturnValue({ changes: 0 }),
     }),
+    query: jest.fn().mockResolvedValue(null),
   };
+  return db;
 }
 
-/** Build a real in-memory SQLite db with all migrations applied. */
+/** Build a real in-memory SQLite db with all migrations applied.
+ * Adds a .query() adapter so async source code works with the sync better-sqlite3 API.
+ */
 function makeRealDb() {
   const db = new Database(':memory:');
   runMigrations(db);
+  // Attach async db.query() shim compatible with the app's dbAdapter interface
+  db.query = (sql, params = [], mode = 'all') => {
+    const stmt = db.prepare(sql);
+    if (mode === 'get') return Promise.resolve(stmt.get(...params));
+    if (mode === 'run') return Promise.resolve(stmt.run(...params));
+    return Promise.resolve(stmt.all(...params));
+  };
   return db;
 }
 
@@ -104,8 +117,11 @@ describe('Brain lock serialization', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    if (_claudeBreaker) _claudeBreaker.reset();
-    if (_leadLocks) _leadLocks.clear();
+    if (typeof _resetForTesting === 'function') _resetForTesting();
+    else {
+      if (_claudeBreaker) _claudeBreaker.reset();
+      if (_leadLocks) _leadLocks.clear();
+    }
     Anthropic = require('@anthropic-ai/sdk');
   });
 
@@ -225,8 +241,11 @@ describe('Brain lock token safety', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    if (_claudeBreaker) _claudeBreaker.reset();
-    if (_leadLocks) _leadLocks.clear();
+    if (typeof _resetForTesting === 'function') _resetForTesting();
+    else {
+      if (_claudeBreaker) _claudeBreaker.reset();
+      if (_leadLocks) _leadLocks.clear();
+    }
     Anthropic = require('@anthropic-ai/sdk');
   });
 
@@ -326,6 +345,7 @@ describe('Job queue dedup — TOCTOU protection', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    _resetSchemaForTesting();
     db = makeRealDb();
   });
 
@@ -509,6 +529,7 @@ describe('Speed-to-lead sequence dedup', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    _resetSchemaForTesting();
     db = makeRealDb();
 
     // Seed required FK rows

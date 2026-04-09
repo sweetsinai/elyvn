@@ -15,6 +15,7 @@ router.param('clientId', clientIsolationParam);
 // Plan limits
 const PLAN_LIMITS = {
   trial:   { calls: 50,   sms: 100,  emails: 50  },
+  solo:    { calls: 100,  sms: 300,  emails: 100 },
   starter: { calls: 500,  sms: 1000, emails: 200 },
   growth:  { calls: 1500, sms: 3000, emails: 500 },
   scale:   { calls: -1,   sms: -1,   emails: -1  }, // unlimited
@@ -120,21 +121,30 @@ router.get('/onboarding/:clientId', async (req, res, next) => {
     );
     if (!client) return next(new AppError('NOT_FOUND', 'Client not found', 404));
 
-    const steps = [
-      { id: 1, name: 'business_info', label: 'Set up your business', done: !!(client.business_name && client.industry) },
-      { id: 2, name: 'phone_number', label: 'Connect phone number', done: !!client.twilio_phone },
-      { id: 3, name: 'voice_agent', label: 'Configure voice AI', done: !!client.retell_agent_id },
-      { id: 4, name: 'notifications', label: 'Connect Telegram', done: !!client.telegram_chat_id },
-      { id: 5, name: 'booking', label: 'Set up booking link', done: !!client.calcom_booking_link },
-      { id: 6, name: 'review_link', label: 'Add Google review link', done: !!client.google_review_link },
-      { id: 7, name: 'test_call', label: 'Make a test call', done: (client.onboarding_step || 0) >= 7 },
+    // 3 essential steps (minimum to go live) + 4 optional (improve experience)
+    const essentialSteps = [
+      { id: 1, name: 'business_info', label: 'Business name + industry', done: !!(client.business_name && client.industry), required: true },
+      { id: 2, name: 'phone_number', label: 'Connect phone number', done: !!client.twilio_phone, required: true },
+      { id: 3, name: 'notifications', label: 'Connect Telegram', done: !!client.telegram_chat_id, required: true },
     ];
+    const optionalSteps = [
+      { id: 4, name: 'voice_agent', label: 'Configure voice AI', done: !!client.retell_agent_id, required: false },
+      { id: 5, name: 'booking', label: 'Set up booking link', done: !!client.calcom_booking_link, required: false },
+      { id: 6, name: 'review_link', label: 'Add Google review link', done: !!client.google_review_link, required: false },
+      { id: 7, name: 'test_call', label: 'Make a test call', done: (client.onboarding_step || 0) >= 7, required: false },
+    ];
+    const steps = [...essentialSteps, ...optionalSteps];
 
+    const essentialDone = essentialSteps.filter(s => s.done).length;
     const completedCount = steps.filter(s => s.done).length;
     const pct = Math.round((completedCount / steps.length) * 100);
+    const canGoLive = essentialDone === essentialSteps.length;
 
     res.json({
       steps,
+      essential_complete: essentialDone,
+      essential_total: essentialSteps.length,
+      can_go_live: canGoLive,
       current_step: client.onboarding_step || 0,
       completed: client.onboarding_completed === 1,
       progress_pct: pct,

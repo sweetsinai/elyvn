@@ -9,6 +9,11 @@ jest.mock('better-sqlite3');
 jest.mock('../utils/migrations', () => ({
   runMigrations: jest.fn()
 }));
+jest.mock('../utils/supabaseAdapter', () => ({
+  createSupabaseDatabase: jest.fn(() => {
+    throw new Error('PostgreSQL adapter not yet implemented');
+  }),
+}));
 
 describe('dbAdapter', () => {
   beforeEach(() => {

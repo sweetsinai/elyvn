@@ -24,18 +24,21 @@ jobs:
       - name: Install dependencies
         run: cd server/bridge && npm ci
 
-      - name: Run unit tests
+      - name: Run tests
         run: |
           cd server/bridge
-          npx jest --forceExit --passWithNoTests --no-coverage \
-            --testPathPattern="tests/(validate|rateLimiter|scoring|resilience|response|AppError|nonceStore|queryCache)" \
-            --testPathIgnorePatterns="endpoints|integration|webhookQueue|followupEmail|dbAdapter|metrics"
+          npx jest --forceExit --passWithNoTests --no-coverage
         env:
           NODE_ENV: test
           ANTHROPIC_API_KEY: test-key
           JWT_SECRET: test-jwt-secret-that-is-at-least-32-chars
           ENCRYPTION_KEY: test-encryption-key-at-least-32-chars-long
           ELYVN_API_KEY: test-api-key
+          RETELL_WEBHOOK_SECRET: test-retell-secret-for-ci
+          TWILIO_AUTH_TOKEN: test-twilio-auth-token-for-ci
+          TWILIO_ACCOUNT_SID: ACtest123456789
+          STRIPE_WEBHOOK_SECRET: whsec_test_stripe_secret_for_ci
+          TELEGRAM_WEBHOOK_SECRET: test-telegram-secret-for-ci
 
   lint:
     name: Code Quality

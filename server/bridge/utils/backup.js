@@ -115,11 +115,20 @@ function scheduleBackups(dbPath, intervalHours = 24, db) {
     getLogger().error('[backup] Initial backup failed:', err)
   );
 
-  // Schedule recurring backups
-  const handle = setInterval(() => {
-    backupDatabase(dbPath, db).catch(err =>
-      getLogger().error('[backup] Scheduled backup failed:', err)
-    );
+  // Schedule recurring backups with failure alerting
+  const handle = setInterval(async () => {
+    const result = await backupDatabase(dbPath, db).catch(err => {
+      getLogger().error('[backup] Scheduled backup failed:', err);
+      return { success: false, error: err.message };
+    });
+
+    // Alert on failure via Telegram (so owner knows backups are broken)
+    if (!result.success) {
+      try {
+        const { alertCriticalError } = require('../config/startup');
+        if (alertCriticalError) alertCriticalError(new Error(`Backup failed: ${result.error}`), 'backup.scheduled');
+      } catch (_) {}
+    }
   }, intervalMs);
 
   getLogger().info(`[backup] Backups scheduled every ${intervalHours} hours (with WAL checkpoint and rotation)`);

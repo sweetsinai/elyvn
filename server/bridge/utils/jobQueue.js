@@ -404,4 +404,8 @@ async function getDLQ(db) {
   }
 }
 
-module.exports = { enqueueJob, processJobs, cancelJobs, recoverStalledJobs, getDLQ, getQueueHealth };
+function _resetSchemaForTesting() {
+  _schemaPromise = null;
+}
+
+module.exports = { enqueueJob, processJobs, cancelJobs, recoverStalledJobs, getDLQ, getQueueHealth, _resetSchemaForTesting };

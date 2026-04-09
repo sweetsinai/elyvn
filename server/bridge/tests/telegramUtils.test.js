@@ -92,7 +92,7 @@ describe('telegram utils', () => {
 
       global.fetch.mockResolvedValueOnce({
         ok: false,
-        json: jest.fn().mockResolvedValueOnce({ ok: false, error_code: 400 })
+        json: jest.fn().mockResolvedValue({ ok: false, error_code: 400 })
       });
 
       const result = await telegram.sendMessage('12345', 'Test');
@@ -105,7 +105,7 @@ describe('telegram utils', () => {
 
       global.fetch.mockResolvedValueOnce({
         ok: false,
-        json: jest.fn().mockResolvedValueOnce({ ok: false, error_code: 401 })
+        json: jest.fn().mockResolvedValue({ ok: false, error_code: 401 })
       });
 
       await telegram.sendMessage('12345', 'Test');
@@ -182,7 +182,7 @@ describe('telegram utils', () => {
 
       global.fetch.mockResolvedValueOnce({
         ok: false,
-        json: jest.fn().mockResolvedValueOnce({ ok: false, error_code: 400 })
+        json: jest.fn().mockResolvedValue({ ok: false, error_code: 400 })
       });
 
       const result = await telegram.answerCallback('cb-bad', 'Test');
@@ -243,7 +243,7 @@ describe('telegram utils', () => {
     test('logs failure message when response not ok', async () => {
       global.fetch.mockResolvedValueOnce({
         ok: false,
-        json: jest.fn().mockResolvedValueOnce({ ok: false, error: 'Invalid URL' })
+        json: jest.fn().mockResolvedValue({ ok: false, error: 'Invalid URL' })
       });
 
       const telegram = require('../utils/telegram');

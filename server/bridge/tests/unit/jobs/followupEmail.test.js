@@ -245,7 +245,8 @@ describe('noreplyFollowup', () => {
       db,
       'noreply_followup',
       expect.objectContaining({ day: 7 }),
-      expect.any(String)
+      expect.any(String),
+      expect.any(String)  // dedup key (e.g. noreply_d7_<prospect_id>)
     );
   });
 

@@ -48,14 +48,26 @@ describe('twilio routes', () => {
   function buildDb(overrides = {}) {
     const insertedOptOuts = [];
     const deletedOptOuts = [];
-    return {
+    const db = {
       insertedOptOuts,
       deletedOptOuts,
+      query(sql, params = [], mode = 'all') {
+        try {
+          const stmt = this.prepare(sql);
+          let result;
+          if (mode === 'get') result = stmt.get(...params);
+          else if (mode === 'run') result = stmt.run(...params);
+          else result = stmt.all(...params);
+          return Promise.resolve(result);
+        } catch (err) {
+          return Promise.reject(err);
+        }
+      },
       prepare: jest.fn((sql) => {
         if (sql.includes('SELECT id FROM messages WHERE message_sid')) {
           return { get: jest.fn(() => overrides.duplicateMsg ? { id: 'existing' } : null) };
         }
-        if (sql.includes('SELECT * FROM clients WHERE twilio_phone')) {
+        if (sql.includes('FROM clients WHERE telnyx_phone') || sql.includes('SELECT * FROM clients WHERE twilio_phone')) {
           return {
             get: jest.fn(() => overrides.client || {
               id: 'client-1', name: 'TestBiz', business_name: 'TestBiz',
@@ -66,7 +78,7 @@ describe('twilio routes', () => {
             }),
           };
         }
-        if (sql.includes('INSERT OR IGNORE INTO sms_opt_outs')) {
+        if (sql.includes('sms_opt_outs') && (sql.includes('INSERT'))) {
           return { run: jest.fn((...args) => insertedOptOuts.push(args)) };
         }
         if (sql.includes('DELETE FROM sms_opt_outs')) {
@@ -90,6 +102,7 @@ describe('twilio routes', () => {
         return { get: jest.fn(() => null), run: jest.fn(), all: jest.fn(() => []) };
       }),
     };
+    return db;
   }
 
   beforeEach(() => {

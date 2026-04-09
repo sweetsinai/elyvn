@@ -192,7 +192,7 @@ describe('Lead Lifecycle — Integration', () => {
       expect(found.score).toBe(70);
     });
 
-    test('returns meta pagination fields', async () => {
+    test('returns pagination fields', async () => {
       seedLead(db, clientId);
 
       const res = await request(app)
@@ -200,11 +200,10 @@ describe('Lead Lifecycle — Integration', () => {
         .set('x-api-key', TEST_KEY)
         .expect(200);
 
-      expect(res.body.meta).toBeDefined();
-      expect(typeof res.body.meta.total).toBe('number');
-      expect(typeof res.body.meta.page).toBe('number');
-      expect(typeof res.body.meta.limit).toBe('number');
-      expect(typeof res.body.meta.total_pages).toBe('number');
+      expect(res.body.pagination).toBeDefined();
+      expect(typeof res.body.pagination.total).toBe('number');
+      expect(typeof res.body.pagination.limit).toBe('number');
+      expect(typeof res.body.pagination.offset).toBe('number');
     });
 
     test('returns 400 for a non-UUID clientId', async () => {
@@ -526,31 +525,30 @@ describe('Lead Lifecycle — Integration', () => {
       expect(found).toBeDefined();
     });
 
-    test('pagination: page 1 limit 2 returns exactly 2 leads', async () => {
+    test('pagination: offset 0 limit 2 returns exactly 2 leads', async () => {
       const res = await request(app)
         .get(`/api/leads/${clientId}`)
         .set('x-api-key', TEST_KEY)
-        .query({ page: 1, limit: 2 })
+        .query({ limit: 2, offset: 0 })
         .expect(200);
 
       expect(res.body.data.length).toBe(2);
-      expect(res.body.meta.limit).toBe(2);
-      expect(res.body.meta.page).toBe(1);
-      expect(res.body.meta.total).toBeGreaterThanOrEqual(4);
-      expect(res.body.meta.total_pages).toBeGreaterThanOrEqual(2);
+      expect(res.body.pagination.limit).toBe(2);
+      expect(res.body.pagination.offset).toBe(0);
+      expect(res.body.pagination.total).toBeGreaterThanOrEqual(4);
     });
 
-    test('pagination: page 2 limit 2 returns the next 2 leads', async () => {
+    test('pagination: offset 2 limit 2 returns the next 2 leads', async () => {
       const resPage1 = await request(app)
         .get(`/api/leads/${clientId}`)
         .set('x-api-key', TEST_KEY)
-        .query({ page: 1, limit: 2 })
+        .query({ limit: 2, offset: 0 })
         .expect(200);
 
       const resPage2 = await request(app)
         .get(`/api/leads/${clientId}`)
         .set('x-api-key', TEST_KEY)
-        .query({ page: 2, limit: 2 })
+        .query({ limit: 2, offset: 2 })
         .expect(200);
 
       expect(resPage2.body.data.length).toBeGreaterThanOrEqual(1);
@@ -586,7 +584,7 @@ describe('Lead Lifecycle — Integration', () => {
         .expect(200);
 
       expect(res.body.data).toEqual([]);
-      expect(res.body.meta.total).toBe(0);
+      expect(res.body.pagination.total).toBe(0);
     });
   });
 

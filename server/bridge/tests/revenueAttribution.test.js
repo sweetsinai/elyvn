@@ -2,12 +2,30 @@ const Database = require('better-sqlite3');
 const { getAttribution, getROIMetrics, getChannelPerformance } = require('../utils/revenueAttribution');
 const { runMigrations } = require('../utils/migrations');
 
+// Add db.query helper to a raw better-sqlite3 instance
+function addQueryHelper(db) {
+  db.query = function query(sql, params = [], mode = 'all') {
+    try {
+      const stmt = db.prepare(sql);
+      let result;
+      if (mode === 'get') result = stmt.get(...(params || []));
+      else if (mode === 'run') result = stmt.run(...(params || []));
+      else result = stmt.all(...(params || []));
+      return Promise.resolve(result);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  };
+  return db;
+}
+
 describe('Revenue Attribution Module', () => {
   let db;
 
   beforeAll(() => {
     db = new Database(':memory:');
     runMigrations(db);
+    addQueryHelper(db);
 
     // Insert test clients with different avg_tickets
     db.prepare(`
@@ -39,7 +57,7 @@ describe('Revenue Attribution Module', () => {
       db.prepare(`DELETE FROM followups WHERE client_id = 'client1'`).run();
     });
 
-    it('should return attribution object for booked lead', () => {
+    it('should return attribution object for booked lead', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('lead1', 'client1', '+12125551234', 8, 'booked', 'Test Lead', datetime('now'))
@@ -59,7 +77,7 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, 'client1', '+12125551234', 'inbound', 'Hello', 'received', ?)
       `).run('msg1', now);
 
-      const result = getAttribution(db, 'lead1', 'client1');
+      const result = await getAttribution(db, 'lead1', 'client1');
 
       expect(result).toBeDefined();
       expect(result.first_touch).toBeDefined();
@@ -69,22 +87,22 @@ describe('Revenue Attribution Module', () => {
       expect(result.estimated_value).toBe(5000); // avg_ticket
     });
 
-    it('should return null for invalid leadId', () => {
-      const result = getAttribution(db, null, 'client1');
+    it('should return null for invalid leadId', async () => {
+      const result = await getAttribution(db, null, 'client1');
       expect(result).toBeNull();
     });
 
-    it('should return null for invalid clientId', () => {
-      const result = getAttribution(db, 'lead1', null);
+    it('should return null for invalid clientId', async () => {
+      const result = await getAttribution(db, 'lead1', null);
       expect(result).toBeNull();
     });
 
-    it('should return null for non-existent lead', () => {
-      const result = getAttribution(db, 'nonexistent', 'client1');
+    it('should return null for non-existent lead', async () => {
+      const result = await getAttribution(db, 'nonexistent', 'client1');
       expect(result).toBeNull();
     });
 
-    it('should build chronological touch timeline', () => {
+    it('should build chronological touch timeline', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('lead_timeline', 'client1', '+12125551235', 8, 'booked', 'Timeline Lead', datetime('now'))
@@ -110,14 +128,14 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, 'lead_timeline', 'client1', 1, 'sms', 'Followup', ?, ?)
       `).run('timeline_fu1', t2, t2);
 
-      const result = getAttribution(db, 'lead_timeline', 'client1');
+      const result = await getAttribution(db, 'lead_timeline', 'client1');
 
       expect(result.touches).toHaveLength(3);
       expect(result.touches[0].timestamp).toBe(t1); // Earliest
       expect(result.touches[2].timestamp).toBe(t3); // Latest
     });
 
-    it('should include time_to_convert_hours in result for booked lead', () => {
+    it('should include time_to_convert_hours in result for booked lead', async () => {
       const created = new Date('2024-01-01T10:00:00Z');
       const booked = new Date('2024-01-01T14:00:00Z'); // 4 hours later
 
@@ -126,13 +144,13 @@ describe('Revenue Attribution Module', () => {
         VALUES ('lead_time', 'client1', '+12125551236', 8, 'booked', 'Time Lead', ?, ?)
       `).run(created.toISOString(), booked.toISOString());
 
-      const result = getAttribution(db, 'lead_time', 'client1');
+      const result = await getAttribution(db, 'lead_time', 'client1');
 
       expect(result).toBeDefined();
       expect(result).toHaveProperty('time_to_convert_hours');
     });
 
-    it('should perform multi-touch attribution across channels', () => {
+    it('should perform multi-touch attribution across channels', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('lead_multi', 'client1', '+12125551237', 8, 'booked', 'Multi Touch', datetime('now'))
@@ -152,7 +170,7 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, ?, 'client1', '+12125551237', 'inbound', 300, 'booked', 8, ?)
       `).run('multi_call', 'multi_call_id', now);
 
-      const result = getAttribution(db, 'lead_multi', 'client1');
+      const result = await getAttribution(db, 'lead_multi', 'client1');
 
       expect(result.channel_attribution).toBeDefined();
       expect(result.channel_attribution['sms']).toBeDefined();
@@ -161,8 +179,8 @@ describe('Revenue Attribution Module', () => {
   });
 
   describe('getROIMetrics', () => {
-    it('should return valid ROI structure', () => {
-      const result = getROIMetrics(db, 'client1', 30);
+    it('should return valid ROI structure', async () => {
+      const result = await getROIMetrics(db, 'client1', 30);
 
       expect(result).toBeDefined();
       expect(result.total_revenue).toBeGreaterThanOrEqual(0);
@@ -179,12 +197,12 @@ describe('Revenue Attribution Module', () => {
       expect(result.total_bookings).toBeGreaterThanOrEqual(0);
     });
 
-    it('should return null for non-existent client', () => {
-      const result = getROIMetrics(db, 'nonexistent', 30);
+    it('should return null for non-existent client', async () => {
+      const result = await getROIMetrics(db, 'nonexistent', 30);
       expect(result).toBeNull();
     });
 
-    it('should calculate total_revenue from bookings and avg_ticket', () => {
+    it('should calculate total_revenue from bookings and avg_ticket', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'roi_client'`).run();
       db.prepare(`DELETE FROM calls WHERE client_id = 'roi_client'`).run();
 
@@ -209,14 +227,14 @@ describe('Revenue Attribution Module', () => {
         `).run(`roi_call${i}`, `roi_call${i}_id`, phone, now);
       }
 
-      const result = getROIMetrics(db, 'roi_client', 30);
+      const result = await getROIMetrics(db, 'roi_client', 30);
 
       expect(result.total_revenue).toBeGreaterThan(0);
       expect(result.total_bookings).toBe(2);
     });
 
-    it('should include channel-specific ROI metrics', () => {
-      const result = getROIMetrics(db, 'client1', 30);
+    it('should include channel-specific ROI metrics', async () => {
+      const result = await getROIMetrics(db, 'client1', 30);
 
       expect(result.channel_roi.sms).toBeDefined();
       expect(result.channel_roi.sms.spent).toBeGreaterThanOrEqual(0);
@@ -227,7 +245,7 @@ describe('Revenue Attribution Module', () => {
       expect(result.channel_roi.email).toBeDefined();
     });
 
-    it('should calculate average time to close', () => {
+    it('should calculate average time to close', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'time_client'`).run();
 
       db.prepare(`
@@ -243,15 +261,15 @@ describe('Revenue Attribution Module', () => {
         VALUES ('time_lead', 'time_client', '+12125551350', 8, 'booked', 'Time Lead', ?, ?)
       `).run(created.toISOString(), updated.toISOString());
 
-      const result = getROIMetrics(db, 'time_client', 30);
+      const result = await getROIMetrics(db, 'time_client', 30);
 
       expect(result.avg_time_to_close).toBe(4);
     });
   });
 
   describe('getChannelPerformance', () => {
-    it('should return channels array with performance metrics', () => {
-      const result = getChannelPerformance(db, 'client1');
+    it('should return channels array with performance metrics', async () => {
+      const result = await getChannelPerformance(db, 'client1');
 
       expect(result).toBeDefined();
       expect(Array.isArray(result.channels)).toBe(true);
@@ -266,12 +284,12 @@ describe('Revenue Attribution Module', () => {
       }
     });
 
-    it('should return null for non-existent client', () => {
-      const result = getChannelPerformance(db, null);
+    it('should return null for non-existent client', async () => {
+      const result = await getChannelPerformance(db, null);
       expect(result).toBeNull();
     });
 
-    it('should calculate conversion rate per channel', () => {
+    it('should calculate conversion rate per channel', async () => {
       db.prepare(`DELETE FROM leads WHERE client_id = 'channel_client'`).run();
       db.prepare(`DELETE FROM calls WHERE client_id = 'channel_client'`).run();
       db.prepare(`DELETE FROM messages WHERE client_id = 'channel_client'`).run();
@@ -305,7 +323,7 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, ?, 'channel_client', '+12125551401', 'inbound', 300, 'not_interested', 3, ?)
       `).run('ch_call1', 'ch_call1_id', now);
 
-      const result = getChannelPerformance(db, 'channel_client');
+      const result = await getChannelPerformance(db, 'channel_client');
 
       expect(result.channels).toBeDefined();
       expect(result.channels.length).toBeGreaterThan(0);
@@ -317,8 +335,8 @@ describe('Revenue Attribution Module', () => {
       }
     });
 
-    it('should calculate average touches per channel', () => {
-      const result = getChannelPerformance(db, 'client1');
+    it('should calculate average touches per channel', async () => {
+      const result = await getChannelPerformance(db, 'client1');
 
       for (const channel of result.channels) {
         expect(channel.avg_touches).toBeGreaterThanOrEqual(0);
@@ -334,7 +352,7 @@ describe('Revenue Attribution Module', () => {
       db.prepare(`DELETE FROM followups WHERE client_id = 'client1'`).run();
     });
 
-    it('should handle lead with only calls, no messages', () => {
+    it('should handle lead with only calls, no messages', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('lead_calls_only', 'client1', '+12125551240', 8, 'booked', 'Calls Only', datetime('now'))
@@ -346,7 +364,7 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, ?, 'client1', '+12125551240', 'inbound', 300, 'booked', 8, ?)
       `).run('call_only_1', 'call_only_1_id', now);
 
-      const result = getAttribution(db, 'lead_calls_only', 'client1');
+      const result = await getAttribution(db, 'lead_calls_only', 'client1');
 
       expect(result).not.toBeNull();
       expect(result.touches.length).toBe(1);
@@ -354,7 +372,7 @@ describe('Revenue Attribution Module', () => {
       expect(result.channel_attribution['voice']).toBeDefined();
     });
 
-    it('should handle lead with only messages, no calls', () => {
+    it('should handle lead with only messages, no calls', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('lead_msgs_only', 'client1', '+12125551241', 8, 'booked', 'Messages Only', datetime('now'))
@@ -366,14 +384,14 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, 'client1', '+12125551241', 'inbound', 'Message', 'received', 'sms', ?)
       `).run('msg_only_1', now);
 
-      const result = getAttribution(db, 'lead_msgs_only', 'client1');
+      const result = await getAttribution(db, 'lead_msgs_only', 'client1');
 
       expect(result).not.toBeNull();
       expect(result.touches.length).toBe(1);
       expect(result.touches[0].type).toBe('message');
     });
 
-    it('should handle lead with only followups', () => {
+    it('should handle lead with only followups', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('lead_fu_only', 'client1', '+12125551242', 8, 'booked', 'Followup Only', datetime('now'))
@@ -385,14 +403,14 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, 'lead_fu_only', 'client1', 1, 'email', 'Follow up', ?, ?)
       `).run('fu_only_1', now, now);
 
-      const result = getAttribution(db, 'lead_fu_only', 'client1');
+      const result = await getAttribution(db, 'lead_fu_only', 'client1');
 
       expect(result).not.toBeNull();
       expect(result.touches.length).toBe(1);
       expect(result.touches[0].type).toBe('followup');
     });
 
-    it('should handle multiple calls from same lead', () => {
+    it('should handle multiple calls from same lead', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('lead_multi_call', 'client1', '+12125551243', 8, 'booked', 'Multi Call', datetime('now'))
@@ -406,13 +424,13 @@ describe('Revenue Attribution Module', () => {
         `).run(`call_multi_${i}`, `call_multi_${i}_id`, now);
       }
 
-      const result = getAttribution(db, 'lead_multi_call', 'client1');
+      const result = await getAttribution(db, 'lead_multi_call', 'client1');
 
       expect(result.touches.length).toBe(5);
       expect(result.channel_attribution['voice'].touches).toBe(5);
     });
 
-    it('should track first and last touch correctly with many touches', () => {
+    it('should track first and last touch correctly with many touches', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('lead_many_touches', 'client1', '+12125551244', 8, 'booked', 'Many Touches', datetime('now'))
@@ -433,13 +451,13 @@ describe('Revenue Attribution Module', () => {
         `).run(`call_touch_${i}`, `call_touch_${i}_id`, times[i]);
       }
 
-      const result = getAttribution(db, 'lead_many_touches', 'client1');
+      const result = await getAttribution(db, 'lead_many_touches', 'client1');
 
       expect(result.first_touch.timestamp).toBe(times[0]);
       expect(result.last_touch.timestamp).toBe(times[times.length - 1]);
     });
 
-    it('should calculate linear attribution weights correctly with 3 channels', () => {
+    it('should calculate linear attribution weights correctly with 3 channels', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('lead_3ch', 'client1', '+12125551245', 8, 'booked', 'Three Channels', datetime('now'))
@@ -463,7 +481,7 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, 'lead_3ch', 'client1', 1, 'email', 'Follow up', ?, ?)
       `).run('fu_3ch', now, now);
 
-      const result = getAttribution(db, 'lead_3ch', 'client1');
+      const result = await getAttribution(db, 'lead_3ch', 'client1');
 
       // Each channel should have equal weight (1/3)
       const expectedWeight = 1 / 3;
@@ -472,7 +490,7 @@ describe('Revenue Attribution Module', () => {
       }
     });
 
-    it('should include score from calls in attribution', () => {
+    it('should include score from calls in attribution', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('lead_score', 'client1', '+12125551246', 8, 'booked', 'Score Lead', datetime('now'))
@@ -484,12 +502,12 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, ?, 'client1', '+12125551246', 'inbound', 300, 'booked', 9, ?)
       `).run('call_score', 'call_score_id', now);
 
-      const result = getAttribution(db, 'lead_score', 'client1');
+      const result = await getAttribution(db, 'lead_score', 'client1');
 
       expect(result.touches[0].score).toBe(9);
     });
 
-    it('should handle booked lead with updated_at time', () => {
+    it('should handle booked lead with updated_at time', async () => {
       const created = new Date('2024-01-01T10:00:00Z');
       const updated = new Date('2024-01-01T18:00:00Z'); // 8 hours later
 
@@ -504,23 +522,23 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, ?, 'client1', '+12125551247', 'inbound', 300, 'booked', 8, ?)
       `).run('call_booked_time', 'call_booked_time_id', created.toISOString());
 
-      const result = getAttribution(db, 'lead_booked_time', 'client1');
+      const result = await getAttribution(db, 'lead_booked_time', 'client1');
 
       expect(result.time_to_convert_hours).toBe(8);
     });
 
-    it('should return null time_to_convert for non-booked lead', () => {
+    it('should return null time_to_convert for non-booked lead', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at, updated_at)
         VALUES ('lead_not_booked', 'client1', '+12125551248', 5, 'qualified', 'Not Booked', datetime('now'), datetime('now'))
       `).run();
 
-      const result = getAttribution(db, 'lead_not_booked', 'client1');
+      const result = await getAttribution(db, 'lead_not_booked', 'client1');
 
       expect(result.time_to_convert_hours).toBeNull();
     });
 
-    it('should calculate estimated_value correctly for booked lead', () => {
+    it('should calculate estimated_value correctly for booked lead', async () => {
       const now = new Date().toISOString();
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
@@ -533,12 +551,12 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, ?, 'client1', '+12125551249', 'inbound', 300, 'booked', 8, ?)
       `).run('call_value_booked', 'call_value_booked_id', now);
 
-      const result = getAttribution(db, 'lead_value_booked', 'client1');
+      const result = await getAttribution(db, 'lead_value_booked', 'client1');
 
       expect(result.estimated_value).toBe(5000); // client1's avg_ticket
     });
 
-    it('should return 0 estimated_value for non-booked lead', () => {
+    it('should return 0 estimated_value for non-booked lead', async () => {
       const now = new Date().toISOString();
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
@@ -551,12 +569,12 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, ?, 'client1', '+12125551250', 'inbound', 300, 'not_interested', 3, ?)
       `).run('call_value_new', 'call_value_new_id', now);
 
-      const result = getAttribution(db, 'lead_value_new', 'client1');
+      const result = await getAttribution(db, 'lead_value_new', 'client1');
 
       expect(result.estimated_value).toBe(0);
     });
 
-    it('should handle messages with different channels', () => {
+    it('should handle messages with different channels', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('lead_channels', 'client1', '+12125551251', 8, 'booked', 'Channels Lead', datetime('now'))
@@ -576,7 +594,7 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, 'client1', '+12125551251', 'inbound', 'Email', 'received', 'email', ?)
       `).run('msg_email', now);
 
-      const result = getAttribution(db, 'lead_channels', 'client1');
+      const result = await getAttribution(db, 'lead_channels', 'client1');
 
       expect(result.channel_attribution['sms']).toBeDefined();
       expect(result.channel_attribution['email']).toBeDefined();
@@ -590,15 +608,15 @@ describe('Revenue Attribution Module', () => {
       db.prepare(`DELETE FROM messages WHERE client_id = 'roi_advanced'`).run();
     });
 
-    it('should handle zero ticket price client', () => {
-      const result = getROIMetrics(db, 'client_zero_ticket', 30);
+    it('should handle zero ticket price client', async () => {
+      const result = await getROIMetrics(db, 'client_zero_ticket', 30);
 
       expect(result).not.toBeNull();
       expect(result.total_revenue).toBe(0);
       expect(result.roi_multiplier).toBe(0);
     });
 
-    it('should calculate ROI with high ticket values', () => {
+    it('should calculate ROI with high ticket values', async () => {
       db.prepare(`
         INSERT INTO leads (id, client_id, phone, score, stage, name, created_at)
         VALUES ('ht_lead1', 'client_high_ticket', '+12125552000', 8, 'booked', 'HT Lead', datetime('now'))
@@ -610,13 +628,13 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, ?, 'client_high_ticket', '+12125552000', 'inbound', 300, 'booked', ?)
       `).run('ht_call1', 'ht_call1_id', now);
 
-      const result = getROIMetrics(db, 'client_high_ticket', 30);
+      const result = await getROIMetrics(db, 'client_high_ticket', 30);
 
       expect(result.total_revenue).toBe(50000);
       expect(result.total_bookings).toBe(1);
     });
 
-    it('should calculate cost_per_lead correctly', () => {
+    it('should calculate cost_per_lead correctly', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name, avg_ticket)
         VALUES ('cost_test', 'Cost Test', 'Owner', 1000)
@@ -640,14 +658,14 @@ describe('Revenue Attribution Module', () => {
         `).run(`cost_msg${i}`, `+1212555${2100 + i}`, now);
       }
 
-      const result = getROIMetrics(db, 'cost_test', 30);
+      const result = await getROIMetrics(db, 'cost_test', 30);
 
       // 10 SMS * $0.0075 = $0.075, divided by 10 leads = $0.0075 per lead
       expect(result.total_leads).toBe(10);
       expect(result.cost_per_lead).toBeGreaterThan(0);
     });
 
-    it('should calculate cost_per_booking correctly with multiple bookings', () => {
+    it('should calculate cost_per_booking correctly with multiple bookings', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name, avg_ticket)
         VALUES ('booking_cost', 'Booking Cost', 'Owner', 2000)
@@ -669,13 +687,13 @@ describe('Revenue Attribution Module', () => {
         `).run(`book_call${i}`, `book_call${i}_id`, phone, now);
       }
 
-      const result = getROIMetrics(db, 'booking_cost', 30);
+      const result = await getROIMetrics(db, 'booking_cost', 30);
 
       expect(result.total_bookings).toBe(5);
       expect(result.cost_per_booking).toBeGreaterThanOrEqual(0);
     });
 
-    it('should calculate voice cost from call duration', () => {
+    it('should calculate voice cost from call duration', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name, avg_ticket)
         VALUES ('voice_cost', 'Voice Cost', 'Owner', 5000)
@@ -694,12 +712,12 @@ describe('Revenue Attribution Module', () => {
         VALUES ('voice_lead', 'voice_cost', '+12125552300', 8, 'booked', 'Voice', ?)
       `).run(now);
 
-      const result = getROIMetrics(db, 'voice_cost', 30);
+      const result = await getROIMetrics(db, 'voice_cost', 30);
 
       expect(result.channel_roi.voice.spent).toBeGreaterThan(0);
     });
 
-    it('should calculate email cost separately', () => {
+    it('should calculate email cost separately', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name, avg_ticket)
         VALUES ('email_cost', 'Email Cost', 'Owner', 3000)
@@ -715,12 +733,12 @@ describe('Revenue Attribution Module', () => {
         `).run(`email_msg${i}`, `+1212555${2400 + i}`, now);
       }
 
-      const result = getROIMetrics(db, 'email_cost', 30);
+      const result = await getROIMetrics(db, 'email_cost', 30);
 
       expect(result.channel_roi.email.spent).toBeGreaterThan(0);
     });
 
-    it('should calculate roi_multiplier as total_revenue / totalCost', () => {
+    it('should calculate roi_multiplier as total_revenue / totalCost', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name, avg_ticket)
         VALUES ('roi_mult', 'ROI Mult', 'Owner', 1000)
@@ -739,12 +757,12 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, ?, 'roi_mult', '+12125552500', 'inbound', 60, 'booked', ?)
       `).run('roi_mult_call', 'roi_mult_call_id', now);
 
-      const result = getROIMetrics(db, 'roi_mult', 30);
+      const result = await getROIMetrics(db, 'roi_mult', 30);
 
       expect(result.roi_multiplier).toBeGreaterThanOrEqual(0);
     });
 
-    it('should calculate average time to close for multiple leads', () => {
+    it('should calculate average time to close for multiple leads', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name, avg_ticket)
         VALUES ('time_close', 'Time Close', 'Owner', 2000)
@@ -764,22 +782,22 @@ describe('Revenue Attribution Module', () => {
         VALUES ('tc_lead2', 'time_close', '+12125552601', 8, 'completed', 'Lead2', ?, ?)
       `).run(created.toISOString(), updated2.toISOString());
 
-      const result = getROIMetrics(db, 'time_close', 30);
+      const result = await getROIMetrics(db, 'time_close', 30);
 
       // Average should be 3 hours (may be 0 if leads were created a while ago)
       expect(result.avg_time_to_close).toBeGreaterThanOrEqual(0);
     });
 
-    it('should handle different lookback periods', () => {
-      const result30 = getROIMetrics(db, 'client1', 30);
-      const result7 = getROIMetrics(db, 'client1', 7);
+    it('should handle different lookback periods', async () => {
+      const result30 = await getROIMetrics(db, 'client1', 30);
+      const result7 = await getROIMetrics(db, 'client1', 7);
 
       expect(result30.period_days).toBe(30);
       expect(result7.period_days).toBe(7);
     });
 
-    it('should return 0 for empty client', () => {
-      const result = getROIMetrics(db, 'empty_roi', 30);
+    it('should return 0 for empty client', async () => {
+      const result = await getROIMetrics(db, 'empty_roi', 30);
 
       expect(result).toBeNull();
     });
@@ -792,7 +810,7 @@ describe('Revenue Attribution Module', () => {
       db.prepare(`DELETE FROM messages WHERE client_id = 'channel_adv'`).run();
     });
 
-    it('should determine primary channel correctly', () => {
+    it('should determine primary channel correctly', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('channel_adv', 'Channel Advanced', 'Owner')
@@ -818,14 +836,14 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, ?, 'channel_adv', '+12125552700', 'inbound', 300, 'not_interested', ?)
       `).run('ch_adv_call_sms', 'ch_adv_call_sms_id', now);
 
-      const result = getChannelPerformance(db, 'channel_adv');
+      const result = await getChannelPerformance(db, 'channel_adv');
       const smsChannel = result.channels.find(c => c.name === 'sms');
 
       expect(smsChannel).toBeDefined();
       expect(smsChannel.leads).toBe(1);
     });
 
-    it('should calculate conversion rate as percentage', () => {
+    it('should calculate conversion rate as percentage', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('channel_conv', 'Channel Conv', 'Owner')
@@ -849,7 +867,7 @@ describe('Revenue Attribution Module', () => {
         `).run(`ch_conv_call_v${i}`, `ch_conv_call_v${i}_id`, phone, stage, now);
       }
 
-      const result = getChannelPerformance(db, 'channel_conv');
+      const result = await getChannelPerformance(db, 'channel_conv');
       const voiceChannel = result.channels.find(c => c.name === 'voice');
 
       expect(voiceChannel).toBeDefined();
@@ -857,7 +875,7 @@ describe('Revenue Attribution Module', () => {
       expect(voiceChannel.conversion_rate).toBeGreaterThanOrEqual(0);
     });
 
-    it('should handle leads with equal touches across channels', () => {
+    it('should handle leads with equal touches across channels', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('channel_equal', 'Channel Equal', 'Owner')
@@ -881,13 +899,13 @@ describe('Revenue Attribution Module', () => {
         VALUES (?, 'channel_equal', '+12125552900', 'outbound', 'Email', 'sent', 'email', ?)
       `).run('ch_equal_msg_eq2', now);
 
-      const result = getChannelPerformance(db, 'channel_equal');
+      const result = await getChannelPerformance(db, 'channel_equal');
 
       expect(result.channels).toBeDefined();
       expect(result.channels.length).toBeGreaterThan(0);
     });
 
-    it('should calculate avg_touches correctly', () => {
+    it('should calculate avg_touches correctly', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('channel_touches', 'Channel Touches', 'Owner')
@@ -912,7 +930,7 @@ describe('Revenue Attribution Module', () => {
         }
       }
 
-      const result = getChannelPerformance(db, 'channel_touches');
+      const result = await getChannelPerformance(db, 'channel_touches');
       const voiceChannel = result.channels.find(c => c.name === 'voice');
 
       expect(voiceChannel).toBeDefined();
@@ -920,13 +938,13 @@ describe('Revenue Attribution Module', () => {
       expect(voiceChannel.avg_touches).toBeCloseTo(2, 1);
     });
 
-    it('should return all three channels even with no data', () => {
+    it('should return all three channels even with no data', async () => {
       db.prepare(`
         INSERT INTO clients (id, name, owner_name)
         VALUES ('channel_empty', 'Channel Empty', 'Owner')
       `).run();
 
-      const result = getChannelPerformance(db, 'channel_empty');
+      const result = await getChannelPerformance(db, 'channel_empty');
 
       expect(result.channels.length).toBe(3);
       expect(result.channels.map(c => c.name)).toContain('sms');

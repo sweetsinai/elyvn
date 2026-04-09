@@ -155,10 +155,12 @@ describe('monitoring', () => {
       const err = new Error('Test error');
       captureException(err);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Test error'),
-        expect.any(Object)
-      );
+      // logger.error formats output as a single JSON string (or colorised dev string)
+      // passed to console.error as one argument — verify it was called at least once
+      // and that the first call's first argument contains the error message.
+      expect(consoleSpy).toHaveBeenCalled();
+      const firstArg = consoleSpy.mock.calls[0][0];
+      expect(firstArg).toEqual(expect.stringContaining('Test error'));
 
       consoleSpy.mockRestore();
     });

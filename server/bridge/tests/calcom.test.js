@@ -17,6 +17,12 @@ describe('calcom', () => {
     delete require.cache[require.resolve('../utils/calcom')];
     jest.clearAllMocks();
     global.fetch = jest.fn();
+
+    // Reset calcom circuit breaker so failures from previous tests don't bleed in
+    const { _calcomBreaker } = require('../utils/calcom');
+    if (_calcomBreaker && typeof _calcomBreaker.reset === 'function') {
+      _calcomBreaker.reset();
+    }
   });
 
   afterEach(() => {

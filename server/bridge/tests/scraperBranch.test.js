@@ -24,6 +24,13 @@ describe('scraper branch coverage', () => {
     global.fetch = jest.fn();
     db = new Database(':memory:');
     runMigrations(db);
+    // Add async db.query() shim so source code using db.query() works with better-sqlite3
+    db.query = (sql, params = [], mode = 'all') => {
+      const stmt = db.prepare(sql);
+      if (mode === 'get') return Promise.resolve(stmt.get(...params));
+      if (mode === 'run') return Promise.resolve(stmt.run(...params));
+      return Promise.resolve(stmt.all(...params));
+    };
     process.env.GOOGLE_MAPS_API_KEY = 'test-api-key';
   });
 

@@ -23,6 +23,13 @@ jest.mock('../utils/businessHours', () => ({
 jest.mock('../utils/smartScheduler', () => ({
   getOptimalContactTime: jest.fn(() => null),
 }));
+jest.mock('../utils/eventStore', () => ({
+  appendEvent: jest.fn().mockResolvedValue('event-id'),
+  Events: {
+    FollowupScheduled: 'FollowupScheduled',
+    LeadCreated: 'LeadCreated',
+  },
+}));
 
 describe('speed-to-lead', () => {
   let triggerSpeedSequence;
@@ -33,21 +40,31 @@ describe('speed-to-lead', () => {
 
   function buildDb() {
     const inserts = { messages: [], followups: [] };
-    return {
+    const db = {
       _inserts: inserts,
       prepare: jest.fn((sql) => {
-        if (sql.includes('INSERT INTO messages')) {
-          return { run: jest.fn((...args) => inserts.messages.push(args)) };
-        }
-        if (sql.includes('INSERT INTO followups')) {
-          return { run: jest.fn((...args) => inserts.followups.push(args)) };
-        }
-        if (sql.includes("SELECT id FROM followups WHERE lead_id")) {
-          return { get: jest.fn(() => null) }; // No existing followups
-        }
+        // Legacy prepare support (for tests that still use db.prepare directly)
         return { get: jest.fn(() => null), run: jest.fn(), all: jest.fn(() => []) };
       }),
     };
+    // Unified async query helper — tracks inserts for verification
+    // Source uses INSERT OR IGNORE INTO followups and checks result.changes > 0
+    db.query = async function query(sql, params = [], mode = 'all') {
+      // Track INSERT OR IGNORE INTO followups — return changes:1 to signal success
+      if (sql.includes('INSERT OR IGNORE INTO followups') && mode === 'run') {
+        inserts.followups.push(params);
+        return { changes: 1 };
+      }
+      if (sql.includes('INSERT INTO messages') && mode === 'run') {
+        inserts.messages.push(params);
+        return { changes: 1 };
+      }
+      // Default
+      if (mode === 'get') return null;
+      if (mode === 'run') return { changes: 0 };
+      return [];
+    };
+    return db;
   }
 
   const baseClient = {
@@ -136,27 +153,32 @@ describe('speed-to-lead', () => {
   });
 
   test('dedup prevents duplicate touch_number inserts', async () => {
-    // Make touch 4 already exist
-    mockDb.prepare = jest.fn((sql) => {
-      if (sql.includes('INSERT INTO messages')) {
-        return { run: jest.fn() };
-      }
-      if (sql.includes("SELECT id FROM followups WHERE lead_id = ? AND touch_number = 4")) {
-        return { get: jest.fn(() => ({ id: 'existing-4' })) };
-      }
-      if (sql.includes("SELECT id FROM followups WHERE lead_id = ? AND touch_number = 5")) {
-        return { get: jest.fn(() => null) };
-      }
-      if (sql.includes('INSERT INTO followups')) {
-        return { run: jest.fn((...args) => mockDb._inserts.followups.push(args)) };
-      }
-      return { get: jest.fn(() => null), run: jest.fn(), all: jest.fn(() => []) };
-    });
-
+    // Simulate touch 4 already existing by returning changes:0 for its INSERT OR IGNORE
+    // (SQLite returns changes:0 when INSERT OR IGNORE finds a conflict)
     mockDb._inserts.followups = [];
+    let followupInsertCallCount = 0;
+    mockDb.query = async function(sql, params = [], mode = 'all') {
+      if (sql.includes('INSERT OR IGNORE INTO followups') && mode === 'run') {
+        followupInsertCallCount++;
+        if (followupInsertCallCount === 1) {
+          // First INSERT OR IGNORE: touch_number=4 — simulate conflict (already exists)
+          return { changes: 0 };
+        }
+        // Second INSERT OR IGNORE: touch_number=5 — insert succeeds
+        mockDb._inserts.followups.push(params);
+        return { changes: 1 };
+      }
+      if (sql.includes('INSERT INTO messages') && mode === 'run') {
+        return { changes: 1 };
+      }
+      if (mode === 'get') return null;
+      if (mode === 'run') return { changes: 0 };
+      return [];
+    };
+
     await triggerSpeedSequence(mockDb, baseLeadData);
 
-    // Only touch 5 inserted (touch 4 already exists)
+    // Only touch 5 inserted (touch 4 had conflict → changes:0)
     expect(mockDb._inserts.followups.length).toBe(1);
   });
 

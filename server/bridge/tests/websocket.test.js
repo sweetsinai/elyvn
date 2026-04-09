@@ -306,7 +306,7 @@ describe('websocket', () => {
       cryptoSpy.mockRestore();
     });
 
-    test('should check client API keys against database', () => {
+    test('should check client API keys against database', async () => {
       const { initWebSocket: init } = require('../utils/websocket');
       const WebSocket = require('ws');
       const crypto = require('crypto');
@@ -314,9 +314,7 @@ describe('websocket', () => {
       process.env.ELYVN_API_KEY = 'server-key';
 
       const mockDb = {
-        prepare: jest.fn(() => ({
-          get: jest.fn().mockReturnValue({ id: 'key-123' })
-        }))
+        query: jest.fn().mockResolvedValue({ id: 'key-123', client_id: 'tenant-1' }),
       };
 
       const mockWss = { on: jest.fn() };
@@ -351,8 +349,12 @@ describe('websocket', () => {
           messageHandler(authMsg);
 
           // Verify DB was queried for client API key hash
-          expect(mockDb.prepare).toHaveBeenCalledWith(
-            expect.stringContaining('client_api_keys')
+          // Allow microtasks to run (db.query is async in websocket.js)
+          await new Promise(r => setTimeout(r, 10));
+          expect(mockDb.query).toHaveBeenCalledWith(
+            expect.stringContaining('client_api_keys'),
+            expect.any(Array),
+            'get'
           );
         }
       }
