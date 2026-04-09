@@ -649,7 +649,7 @@ const migrations = [
             outcome TEXT,
             analysis_data TEXT
           );
-          INSERT INTO calls_new SELECT * FROM calls;
+          INSERT OR IGNORE INTO calls_new SELECT * FROM calls;
           DROP TABLE calls;
           ALTER TABLE calls_new RENAME TO calls;
           CREATE INDEX idx_calls_call_id ON calls(call_id);
