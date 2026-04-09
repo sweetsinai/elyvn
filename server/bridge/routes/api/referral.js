@@ -10,8 +10,15 @@ const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 const { success } = require('../../utils/response');
-const { validateParams } = require('../../middleware/validateRequest');
+const { validateParams, validateBody } = require('../../middleware/validateRequest');
 const { ClientParamsSchema } = require('../../utils/schemas/client');
+const { z } = require('zod');
+const { UUIDSchema } = require('../../utils/schemas/common');
+
+const ReferralApplySchema = z.object({
+  referral_code: z.string().min(1).max(50),
+  new_client_id: UUIDSchema,
+});
 router.param('clientId', clientIsolationParam);
 
 const REFERRAL_CREDIT_CENTS = 5000; // $50 credit per successful referral
@@ -61,14 +68,10 @@ router.get('/referral/:clientId', validateParams(ClientParamsSchema), async (req
 
 // POST /referral/apply — Apply a referral code during signup (internal only — called from auth/signup)
 // Protected by apiAuth at the route mount level in config/routes.js
-router.post('/referral/apply', async (req, res, next) => {
+router.post('/referral/apply', validateBody(ReferralApplySchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { referral_code, new_client_id } = req.body;
-
-    if (!referral_code || !new_client_id || !isValidUUID(new_client_id)) {
-      return next(new AppError('VALIDATION_ERROR', 'referral_code and new_client_id required', 400));
-    }
 
     // Find referrer by code
     const referrer = await db.query('SELECT id FROM clients WHERE referral_code = ?', [referral_code], 'get');
