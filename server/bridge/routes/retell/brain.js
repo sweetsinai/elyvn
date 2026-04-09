@@ -17,6 +17,14 @@ const config = require('../../utils/config');
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
 const RETELL_BASE = 'https://api.retellai.com/v2';
 
+const SUMMARY_PROMPT_VERSION = 'retell-summary-v1';
+const SCORE_PROMPT_VERSION = 'retell-score-v1';
+
+function sanitizeTranscript(text, maxLen = 3000) {
+  if (!text) return '';
+  return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').slice(0, maxLen);
+}
+
 const anthropic = new Anthropic();
 
 // Circuit breaker for Retell REST API
@@ -78,14 +86,16 @@ async function generateCallSummary(transcriptText, callAnalysis) {
       model: config.ai.model,
       max_tokens: 150,
       messages: [{ role: 'user', content: hasTranscript
-        ? `Summarize this phone call transcript in exactly 2 lines. Be specific about what was discussed and any outcomes:\n\n${transcriptText}`
-        : `Rewrite this call summary in 2 clear lines for a business owner:\n\n${analysisSummary}` }]
+        ? `Summarize this phone call transcript in exactly 2 lines. Be specific about what was discussed and any outcomes:\n\n${sanitizeTranscript(transcriptText)}`
+        : `Rewrite this call summary in 2 clear lines for a business owner:\n\n${sanitizeTranscript(analysisSummary)}` }]
     });
     if (summaryResp.fallback) {
       logger.warn('[retell] Anthropic circuit breaker fallback for summary generation');
       return analysisSummary || 'Summary unavailable';
     }
-    return summaryResp.content[0]?.text || analysisSummary || 'Summary unavailable';
+    const summaryText = summaryResp.content[0]?.text || analysisSummary || 'Summary unavailable';
+    logger.debug('[retell] prompt_version=%s summary_len=%d', SUMMARY_PROMPT_VERSION, summaryText.length);
+    return summaryText;
   } catch (err) {
     logger.error('[retell] Summary generation failed:', err.message);
     return analysisSummary || 'Summary unavailable';
@@ -103,15 +113,18 @@ async function scoreCall(transcriptText, callAnalysis) {
     const scoreResp = await anthropicBreaker.call({
       model: config.ai.model,
       max_tokens: 10,
-      messages: [{ role: 'user', content: `Score this lead 1-10 based on their interest, urgency, and qualification from this call ${hasTranscript ? 'transcript' : 'summary'}. Reply with ONLY a single number:\n\n${scoringText}` }]
+      system: 'You are a call quality scorer. Output ONLY a single integer between 1 and 10. No other text.',
+      messages: [{ role: 'user', content: `Score this lead 1-10 based on their interest, urgency, and qualification from this call ${hasTranscript ? 'transcript' : 'summary'}. Reply with ONLY a single number:\n\n${sanitizeTranscript(scoringText)}` }]
     });
     if (scoreResp.fallback) {
       logger.warn('[retell] Anthropic circuit breaker fallback for lead scoring');
       return 5;
     }
-    const parsed = parseInt(scoreResp.content[0]?.text?.trim(), 10);
-    if (parsed >= 1 && parsed <= 10) return parsed;
-    return 5;
+    const response = scoreResp.content[0]?.text?.trim() ?? '';
+    const match = response.match(/\b([1-9]|10)\b/);
+    const score = match ? parseInt(match[1], 10) : 5;
+    logger.debug('[retell] prompt_version=%s score=%d', SCORE_PROMPT_VERSION, score);
+    return score;
   } catch (err) {
     logger.error('[retell] Lead scoring failed:', err.message);
     return 5;

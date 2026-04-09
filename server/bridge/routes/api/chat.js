@@ -15,11 +15,13 @@ const { ANTHROPIC_TIMEOUT } = require('../../config/timing');
 const anthropic = new Anthropic();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const sanitize = (s, max) => String(s || '').replace(/[\r\n\t<>{}]/g, ' ').substring(0, max);
+
 // POST /chat — Anthropic API proxy for dashboard AI features — 20/min per client
 router.post('/chat', emailSendLimit, async (req, res, next) => {
   try {
     const db = req.app.locals.db;
-    const { messages, clientId } = req.body;
+    let { messages, clientId } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
       return next(new AppError('VALIDATION_ERROR', 'messages array is required', 422));
@@ -54,7 +56,7 @@ router.post('/chat', emailSendLimit, async (req, res, next) => {
       const clientId = resolvedClientId; // shadow body var so rest of block uses auth value
       const client = await db.query('SELECT id, business_name FROM clients WHERE id = ?', [clientId], 'get');
       if (client) {
-        systemPrompt += `\n\nYou are assisting with ${client.business_name}.`;
+        systemPrompt += `\n\nYou are assisting with ${sanitize(client.business_name, 200)}.`;
       }
 
       if (isValidUUID(clientId)) {
@@ -67,7 +69,7 @@ router.post('/chat', emailSendLimit, async (req, res, next) => {
             logger.error('[api] KB path traversal attempted');
           } else {
             const kbData = await fs.promises.readFile(kbPath, 'utf8');
-            systemPrompt += `\n\nBusiness Knowledge Base:\n${kbData}`;
+            systemPrompt += `\n\nBusiness Knowledge Base:\n${sanitize(kbData, 4000)}`;
           }
         } catch (err) {
           logger.error('[api] Failed to load knowledge base:', err.message);
@@ -84,6 +86,13 @@ router.post('/chat', emailSendLimit, async (req, res, next) => {
       } catch (err) {
         logger.error('[api] Failed to load stats:', err.message);
       }
+    }
+
+    // Token estimation — trim history to prevent context overflow
+    const estimatedTokens = messages.reduce((acc, m) => acc + (String(m.content || '').length / 4), 0);
+    if (estimatedTokens > 8000) {
+      // Keep only last 20 messages to prevent context overflow
+      messages = messages.slice(-20);
     }
 
     // Stream response

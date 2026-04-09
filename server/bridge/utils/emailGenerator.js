@@ -1,8 +1,16 @@
 const Anthropic = require('@anthropic-ai/sdk');
+const { z } = require('zod');
 const config = require('./config');
 const { logger } = require('./logger');
 
 const anthropic = new Anthropic();
+
+const EmailOutputSchema = z.object({
+  subject_a: z.string().max(100).optional(),
+  subject_b: z.string().max(100).optional(),
+  subject: z.string().max(100).optional(),
+  body: z.string().min(10).max(1500),
+});
 
 // P1: Sanitize prospect fields before prompt interpolation
 function sanitizeField(str, maxLen = 100) {
@@ -57,7 +65,7 @@ Return JSON only: {"subject_a": "...", "subject_b": "...", "body": "..."}`,
 Business: ${business_name}
 Industry: ${industry || 'service business'}
 City: ${city}${state ? ', ' + state : ''}
-Rating: ${rating || 'N/A'}/5 (${review_count || 0} reviews)
+Rating: ${sanitizeField(String(rating || '')) || 'N/A'}/5 (${sanitizeField(String(review_count || ''))} reviews)
 Website: ${website || 'N/A'}
 
 The email should mention how AI answering can help them never miss a call and convert more leads. Include the booking link: ${BOOKING_LINK}
@@ -68,7 +76,10 @@ Generate two different subject lines (subject_a and subject_b) for A/B testing. 
 
     const text = resp.content[0]?.text || '';
     const cleaned = text.replace(/```json|```/g, '').trim();
-    const result = JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+    const validation = EmailOutputSchema.safeParse(parsed);
+    if (!validation.success) throw new Error(`emailGenerator: schema validation failed — ${validation.error.message}`);
+    const result = validation.data;
 
     // P1: body is required — missing body is caught and falls to error fallback
     if (typeof result.body !== 'string') throw new Error('emailGenerator: body missing from Claude response');
