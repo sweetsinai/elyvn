@@ -165,7 +165,9 @@ async function apiAuth(req, res, next) {
  * @returns {{ rateLimiterInterval: NodeJS.Timer }} cleanup handles
  */
 function mountRoutes(app) {
-  const db = app.locals.db;
+  // db is resolved lazily at request time — NOT captured at mount time.
+  // initializeDatabase() is async and may not have completed when mountRoutes() is called.
+  const getDb = () => app.locals.db;
 
   // Apply general rate limiter to all routes
   app.use(generalRateLimiter);
@@ -184,6 +186,7 @@ function mountRoutes(app) {
     let dbCounts = {};
     let dbHealth = { status: 'disconnected' };
 
+    const db = getDb();
     try {
       await db.query('SELECT 1', [], 'get');
       dbOk = true;
@@ -394,6 +397,7 @@ function mountRoutes(app) {
 
       let jobQueueDepth = { pending: 0, running: 0, failed: 0 };
       try {
+        const db = getDb();
         const [pending, running, failed] = await Promise.all([
           db.query("SELECT COUNT(*) as c FROM job_queue WHERE status = 'pending'", [], 'get'),
           db.query("SELECT COUNT(*) as c FROM job_queue WHERE status = 'processing'", [], 'get'),
