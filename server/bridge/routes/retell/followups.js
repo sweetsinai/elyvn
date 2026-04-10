@@ -326,6 +326,14 @@ async function handleTransfer(db, call, correlationId) {
       UPDATE calls SET outcome = 'transferred', summary = ?, updated_at = ? WHERE call_id = ?
     `, [summary, new Date().toISOString(), callId], 'run');
 
+    // Broadcast transfer event for real-time dashboard
+    try {
+      const { broadcast } = require('../../utils/websocket');
+      broadcast('call_transfer', { id: callId, phone: callerPhone, status: 'transferring', summary });
+    } catch (err) {
+      logger.warn('[retell] call_transfer broadcast error:', err.message);
+    }
+
     // --- Step 3: Resolve transfer target ---
     const callRecord = await db.query('SELECT client_id FROM calls WHERE call_id = ?', [callId], 'get');
     if (!callRecord?.client_id) {

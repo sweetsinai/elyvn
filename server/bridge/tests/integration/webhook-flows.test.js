@@ -49,6 +49,7 @@ function createTestDb() {
       retell_agent_id TEXT,
       twilio_phone TEXT,
       telnyx_phone TEXT,
+      phone_number TEXT,
       owner_phone TEXT,
       transfer_phone TEXT,
       telegram_chat_id TEXT,
@@ -143,6 +144,7 @@ function seedClient(db, overrides = {}) {
     retell_agent_id: 'agent_test_001',
     twilio_phone: '+14155550101',
     telnyx_phone: null,
+    phone_number: '+14155550100',
     owner_phone: '+19999999999',
     transfer_phone: null,
     telegram_chat_id: null,
@@ -153,12 +155,12 @@ function seedClient(db, overrides = {}) {
   db.prepare(`
     INSERT OR REPLACE INTO clients
       (id, owner_email, business_name, retell_phone, retell_agent_id, twilio_phone,
-       telnyx_phone, owner_phone, transfer_phone, telegram_chat_id, calcom_booking_link, niche)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+       telnyx_phone, phone_number, owner_phone, transfer_phone, telegram_chat_id, calcom_booking_link, niche)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     client.id, client.owner_email, client.business_name,
     client.retell_phone, client.retell_agent_id, client.twilio_phone,
-    client.telnyx_phone, client.owner_phone, client.transfer_phone,
+    client.telnyx_phone, client.phone_number, client.owner_phone, client.transfer_phone,
     client.telegram_chat_id, client.calcom_booking_link, client.niche
   );
   return client;
@@ -826,7 +828,7 @@ describe('Retell webhook integration — webhook flows', () => {
     });
 
     test('falls back to retell_agent_id match when phone not in DB', async () => {
-      seedClient(db, { retell_phone: '+10000000000' }); // different phone
+      seedClient(db, { phone_number: '+10000000000', retell_phone: '+10000000000' }); // different phone
 
       const callId = 'call_started_agentid_002';
       await request(app)

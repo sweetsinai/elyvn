@@ -16,6 +16,7 @@ import ClientDetail from './pages/ClientDetail';
 import Provision from './pages/Provision';
 import Bookings from './pages/Bookings';
 import Onboard from './pages/Onboard';
+import Integrations from './pages/Integrations';
 
 export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -67,6 +68,7 @@ export default function App() {
                 <Route path="/provision" element={<Provision />} />
                 <Route path="/bookings" element={<Bookings />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/integrations" element={<Integrations />} />
                 <Route path="/onboard" element={<Onboard />} />
               </Routes>
             </ErrorBoundary>

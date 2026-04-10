@@ -158,4 +158,63 @@ router.get('/calls/:clientId/:callId/transcript/download', async (req, res, next
   }
 });
 
+// POST /calls/:clientId/:callId/transfer — initiate call transfer from dashboard
+router.post('/calls/:clientId/:callId/transfer', async (req, res, next) => {
+  try {
+    const db = req.app.locals.db;
+    const { clientId, callId } = req.params;
+    const { transfer_phone } = req.body || {};
+
+    if (!isValidUUID(clientId)) {
+      return next(new AppError('INVALID_INPUT', 'Invalid client ID format', 400));
+    }
+
+    // Resolve transfer target: explicit body param, or client's configured transfer_phone/owner_phone
+    const client = await db.query(
+      'SELECT transfer_phone, owner_phone, phone_number FROM clients WHERE id = ?',
+      [clientId], 'get'
+    );
+    if (!client) return next(new AppError('NOT_FOUND', 'Client not found', 404));
+
+    const target = transfer_phone || client.transfer_phone || client.owner_phone;
+    if (!target) {
+      return next(new AppError('VALIDATION_ERROR', 'No transfer phone configured. Set transfer_phone in Settings.', 422));
+    }
+
+    // Attempt warm transfer via Retell
+    const { warmTransfer, coldTransfer } = require('../../utils/callTransfer');
+
+    const warmResult = await warmTransfer(callId, target, 'Dashboard-initiated transfer.');
+    if (warmResult.success) {
+      // Broadcast transfer event
+      try {
+        const { broadcast } = require('../../utils/websocket');
+        broadcast('call_transfer', { id: callId, status: 'transferred', target }, clientId);
+      } catch (_) {}
+
+      return success(res, { method: 'warm', target, callId });
+    }
+
+    // Fallback: try cold transfer if Twilio SID is available
+    const callRecord = await db.query('SELECT twilio_call_sid FROM calls WHERE call_id = ?', [callId], 'get');
+    if (callRecord?.twilio_call_sid) {
+      const coldResult = await coldTransfer(callRecord.twilio_call_sid, target);
+      if (coldResult.success) {
+        try {
+          const { broadcast } = require('../../utils/websocket');
+          broadcast('call_transfer', { id: callId, status: 'transferred', target }, clientId);
+        } catch (_) {}
+
+        return success(res, { method: 'cold', target, callId });
+      }
+      return next(new AppError('TRANSFER_FAILED', `Both warm and cold transfer failed. Cold: ${coldResult.error}`, 502));
+    }
+
+    return next(new AppError('TRANSFER_FAILED', `Warm transfer failed: ${warmResult.error}. No Twilio SID for cold fallback.`, 502));
+  } catch (err) {
+    logger.error('[api] transfer error:', err);
+    return next(new AppError('INTERNAL_ERROR', 'Transfer failed', 500));
+  }
+});
+
 module.exports = router;

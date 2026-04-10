@@ -243,7 +243,7 @@ async function handleBookingCreated(db, payload) {
       const startDate = new Date(startTime);
       const timeStr = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }).format(startDate);
       const smsText = `Confirmed! Your appointment with ${client.business_name} is on ${timeStr}. We'll send you a reminder beforehand. Reply CANCEL to reschedule.`;
-      await sendSMS(phone, smsText, client.twilio_phone, db, client.id);
+      await sendSMS(phone, smsText, client.phone_number, db, client.id);
       logger.info(`[calcom-webhook] Confirmation SMS sent to ${(phone || '').replace(/\d(?=\d{4})/g, '*')}`);
     } catch (err) {
       logger.error('[calcom-webhook] Confirmation SMS failed:', err.message);
@@ -281,7 +281,7 @@ async function handleBookingCreated(db, payload) {
           appointmentId,
           businessName: client.business_name || client.name,
           googleReviewLink: client.google_review_link,
-          from: client.twilio_phone,
+          from: client.phone_number,
         },
         reviewAt,
         `review_${appointmentId}`
@@ -419,7 +419,7 @@ async function handleBookingRescheduled(db, payload) {
               appointmentId: appt.id,
               businessName: client.business_name || client.name,
               googleReviewLink: client.google_review_link,
-              from: client.twilio_phone,
+              from: client.phone_number,
             }, reviewAt, `review_${appt.id}`);
           }
         } catch (_) {}

@@ -47,7 +47,7 @@ async function triggerSpeedSequence(db, leadData) {
   const safeName = (name || '').replace(/[\r\n\t<>{}]/g, '').substring(0, 50);
   const firstName = safeName.split(' ')[0] || '';
   const bookingLink = client.calcom_booking_link || '';
-  const fromNumber = client.telnyx_phone || client.twilio_phone; // Use telnyx_phone, fallback to twilio_phone for backwards compat
+  const fromNumber = client.phone_number;
 
   // === TOUCH 1: Instant SMS (0 seconds, but respect business hours) ===
   try {
@@ -228,7 +228,7 @@ async function scheduleFollowUpSMS(db, options) {
     const safeName = (name || '').replace(/[\r\n\t<>{}]/g, '').substring(0, 50);
     const firstName = safeName.split(' ')[0] || '';
     const bookingLink = client.calcom_booking_link || '';
-    const fromNumber = client.telnyx_phone || client.twilio_phone; // Use telnyx_phone, fallback to twilio_phone for backwards compat
+    const fromNumber = client.phone_number;
 
     const followUpText = `Hi${firstName ? ' ' + firstName : ''}, I just tried reaching you from ${client.business_name}. ` +
       `No worries if now's not a good time! ` +

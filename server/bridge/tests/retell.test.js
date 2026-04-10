@@ -185,7 +185,7 @@ describe('Retell Route', () => {
       expect(res.status).toBe(200);
     });
 
-    test('matches client by retell_phone', async () => {
+    test('matches client by phone_number', async () => {
       const mockClient = { id: 'client-123' };
       mockDb.prepare = jest.fn((sql) => {
         const mock = {
@@ -193,7 +193,7 @@ describe('Retell Route', () => {
           run: jest.fn().mockReturnValue({ changes: 1 })
         };
 
-        if (sql.includes('SELECT id FROM clients WHERE retell_phone')) {
+        if (sql.includes('SELECT id FROM clients WHERE phone_number')) {
           mock.get.mockReturnValue(mockClient);
         }
 
@@ -1449,7 +1449,7 @@ describe('Retell Route', () => {
 
         if (sql.includes('retell_agent_id')) {
           mock.get.mockReturnValue(mockClient);
-        } else if (sql.includes('retell_phone')) {
+        } else if (sql.includes('phone_number')) {
           mock.get.mockReturnValue(null);
         }
 

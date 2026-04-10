@@ -118,7 +118,7 @@ async function processDueReminders(db, sendSMSFn) {
 
   try {
     const due = await db.query(`
-      SELECT f.*, l.phone, c.telnyx_phone, c.twilio_phone
+      SELECT f.*, l.phone, c.phone_number
       FROM followups f
       JOIN leads l ON f.lead_id = l.id
       JOIN clients c ON f.client_id = c.id
@@ -132,7 +132,7 @@ async function processDueReminders(db, sendSMSFn) {
     let sent = 0;
     for (const reminder of due) {
       try {
-        const fromPhone = reminder.telnyx_phone || reminder.twilio_phone;
+        const fromPhone = reminder.phone_number;
         const result = await sendSMSFn(reminder.phone, reminder.content, fromPhone);
 
         if (result && result.success) {

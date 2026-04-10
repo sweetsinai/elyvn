@@ -46,8 +46,8 @@ describe('actionExecutor.executeActions', () => {
 
     // Create test data
     db.prepare(`
-      INSERT INTO clients (id, name, twilio_phone, telegram_chat_id, is_active)
-      VALUES ('client1', 'Test Co', '+15551234567', '123456', 1)
+      INSERT INTO clients (id, name, twilio_phone, phone_number, telegram_chat_id, is_active)
+      VALUES ('client1', 'Test Co', '+15551234567', '+15551234567', '123456', 1)
     `).run();
 
     db.prepare(`
@@ -68,6 +68,7 @@ describe('actionExecutor.executeActions', () => {
         id: 'client1',
         name: 'Test Co',
         twilio_phone: '+15551234567',
+        phone_number: '+15551234567',
         telegram_chat_id: '123456',
         is_active: 1,
       },

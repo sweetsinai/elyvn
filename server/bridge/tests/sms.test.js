@@ -37,14 +37,14 @@ describe('sms.js', () => {
 
       const mockQuery = jest.fn().mockResolvedValue({
         owner_phone: '+1555555555',
-        twilio_phone: '+1666666666'
+        phone_number: '+1666666666'
       });
 
       const db = { query: mockQuery };
       await sendSMSToOwner(db, 'client-456', 'Test');
 
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT owner_phone, twilio_phone FROM clients'),
+        expect.stringContaining('SELECT owner_phone, phone_number FROM clients'),
         expect.anything(),
         'get'
       );
@@ -60,7 +60,7 @@ describe('sms.js', () => {
 
       const db = {
         query: jest.fn().mockResolvedValue({
-          twilio_phone: '+1666666666'
+          phone_number: '+1666666666'
         })
       };
 
@@ -70,7 +70,7 @@ describe('sms.js', () => {
       expect(result.error).toBe('No owner phone number');
     }, 10000);
 
-    test('should use twilio_phone from client record', async () => {
+    test('should use phone_number from client record', async () => {
       jest.resetModules();
       jest.doMock('../utils/optOut', () => optOut);
       jest.doMock('../utils/jobQueue', () => jobQueue);
@@ -81,7 +81,7 @@ describe('sms.js', () => {
       const db = {
         query: jest.fn().mockResolvedValue({
           owner_phone: '+1555555555',
-          twilio_phone: null
+          phone_number: null
         })
       };
 

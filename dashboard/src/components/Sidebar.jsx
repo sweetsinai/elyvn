@@ -11,6 +11,7 @@ import {
   Users,
   Calendar,
   PlusCircle,
+  Webhook,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -24,6 +25,7 @@ const navItems = [
   { path: '/bookings', label: 'Bookings', icon: Calendar },
   { path: '/clients', label: 'Clients', icon: Users },
   { path: '/provision', label: 'Provision', icon: PlusCircle },
+  { path: '/integrations', label: 'Integrations', icon: Webhook },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 

@@ -73,6 +73,14 @@ async function handleCallStarted(db, call, correlationId) {
       ON CONFLICT(call_id) DO UPDATE SET updated_at = datetime('now')
     `, [randomUUID(), callId, clientId, callerPhone, direction, new Date().toISOString()], 'run');
 
+    // Broadcast call_started for real-time dashboard updates
+    try {
+      const { broadcast } = require('../../utils/websocket');
+      broadcast('call_started', { id: callId, phone: callerPhone, direction, status: 'ringing' }, clientId);
+    } catch (err) {
+      logger.warn('[retell] call_started broadcast error:', err.message);
+    }
+
     logger.info(`[retell] call_started: ${callId} client=${clientId} from=${callerPhone ? callerPhone.replace(/\d(?=\d{4})/g, '*') : '?'}`, { correlationId });
   } catch (err) {
     logger.error('[retell] call_started error:', { correlationId, error: err.message, stack: err.stack });

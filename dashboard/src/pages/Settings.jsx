@@ -9,13 +9,14 @@ import {
   Zap,
   Phone,
   PhoneForwarded,
+  PhoneCall,
   Calendar,
   Mail,
   Webhook,
   Download,
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
-import { getClients, createClient, updateClient, getHealth } from '../lib/api';
+import { getClients, createClient, updateClient, getHealth, getSettings } from '../lib/api';
 
 const INITIAL_CLIENT = {
   business_name: '',
@@ -40,6 +41,7 @@ export default function Settings() {
   const [kbError, setKbError] = useState('');
   const [health, setHealth] = useState({});
   const [copied, setCopied] = useState('');
+  const [phoneSettings, setPhoneSettings] = useState({});
 
   const loadClients = useCallback(() => {
     setLoading(true);
@@ -58,10 +60,19 @@ export default function Settings() {
       .catch(() => setHealth({}));
   }, []);
 
+  const loadPhoneSettings = useCallback(() => {
+    const currentClient = localStorage.getItem('elyvn_client');
+    if (!currentClient) return;
+    getSettings(currentClient)
+      .then(data => setPhoneSettings(data))
+      .catch(() => setPhoneSettings({}));
+  }, []);
+
   useEffect(() => {
     loadClients();
     loadHealth();
-  }, [loadClients, loadHealth]);
+    loadPhoneSettings();
+  }, [loadClients, loadHealth, loadPhoneSettings]);
 
   const handleCreate = async () => {
     if (!newClient.business_name) return;
@@ -382,6 +393,60 @@ export default function Settings() {
           </div>
         )}
       </section>
+
+      {/* ========== PHONE NUMBER MANAGEMENT ========== */}
+      {phoneSettings.phone && (
+        <section style={{ marginBottom: 40 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Phone Number Management</h2>
+          <div className="card" style={{ padding: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <PhoneCall size={16} color="#C9A84C" />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#e0d8c8' }}>Unified Phone Number</span>
+                </div>
+                <code style={{ fontSize: 15, color: '#C9A84C', fontFamily: 'monospace', display: 'block', marginBottom: 4 }}>
+                  {phoneSettings.phone?.phone_number || 'Not provisioned'}
+                </code>
+                <div style={{ fontSize: 11, color: '#555' }}>
+                  Single number for inbound calls + outbound SMS (SIP trunk to Retell)
+                </div>
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <PhoneForwarded size={16} color="#3B82F6" />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#e0d8c8' }}>Call Transfer</span>
+                </div>
+                <code style={{ fontSize: 15, color: '#3B82F6', fontFamily: 'monospace', display: 'block', marginBottom: 4 }}>
+                  {phoneSettings.voice?.transfer_phone || 'Not configured'}
+                </code>
+                <div style={{ fontSize: 11, color: '#555' }}>
+                  Forwarding destination when callers request transfer or press *
+                </div>
+              </div>
+            </div>
+            {phoneSettings.voice && (
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #141414' }}>
+                <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>Voice Configuration</div>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 12, color: '#888' }}>
+                    Agent: <span style={{ color: '#e0d8c8' }}>{phoneSettings.voice.retell_agent_id ? 'Active' : 'Not set'}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#888' }}>
+                    Voice: <span style={{ color: '#e0d8c8' }}>{phoneSettings.voice.retell_voice}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#888' }}>
+                    Language: <span style={{ color: '#e0d8c8' }}>{phoneSettings.voice.retell_language}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div style={{ marginTop: 12, fontSize: 11, color: '#555' }}>
+              Phone numbers are provisioned via the Provision page. Edit transfer_phone in a client's settings above.
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ========== CONNECTION STATUS ========== */}
       <section style={{ marginBottom: 40 }}>

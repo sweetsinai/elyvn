@@ -179,6 +179,7 @@ describe('Provision Route', () => {
           business_name: 'Test Business',
           owner_phone: '+14155551234',
           twilio_phone: null,
+          phone_number: null,
           retell_agent_id: null,
           created_at: new Date().toISOString(),
         }),

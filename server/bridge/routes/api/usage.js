@@ -116,7 +116,7 @@ router.get('/onboarding/:clientId', async (req, res, next) => {
     if (!isValidUUID(clientId)) return next(new AppError('INVALID_INPUT', 'Invalid client ID', 400));
 
     const client = await db.query(
-      'SELECT onboarding_step, onboarding_completed, business_name, industry, twilio_phone, retell_agent_id, telegram_chat_id, calcom_booking_link, google_review_link FROM clients WHERE id = ?',
+      'SELECT onboarding_step, onboarding_completed, business_name, industry, phone_number, retell_agent_id, telegram_chat_id, calcom_booking_link, google_review_link FROM clients WHERE id = ?',
       [clientId], 'get'
     );
     if (!client) return next(new AppError('NOT_FOUND', 'Client not found', 404));
@@ -124,7 +124,7 @@ router.get('/onboarding/:clientId', async (req, res, next) => {
     // 3 essential steps (minimum to go live) + 4 optional (improve experience)
     const essentialSteps = [
       { id: 1, name: 'business_info', label: 'Business name + industry', done: !!(client.business_name && client.industry), required: true },
-      { id: 2, name: 'phone_number', label: 'Connect phone number', done: !!client.twilio_phone, required: true },
+      { id: 2, name: 'phone_number', label: 'Connect phone number', done: !!client.phone_number, required: true },
       { id: 3, name: 'notifications', label: 'Connect Telegram', done: !!client.telegram_chat_id, required: true },
     ];
     const optionalSteps = [

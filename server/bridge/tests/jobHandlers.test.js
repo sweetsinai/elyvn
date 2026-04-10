@@ -434,6 +434,7 @@ describe('speedToLeadCallback', () => {
     retell_agent_id: 'agent1',
     retell_phone: '+10005550001',
     telnyx_phone: '+10005550002',
+    phone_number: '+10005550001',
     calcom_booking_link: 'https://cal.com/test',
     transfer_phone: '',
     owner_phone: '+15005550003',

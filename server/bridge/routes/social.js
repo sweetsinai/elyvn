@@ -119,7 +119,7 @@ async function handleSocialMessage(db, { senderId, text, channel, pageId }) {
 
   // Use parameterized query with known-safe column name
   const client = await db.query(
-    `SELECT id, business_name, telegram_chat_id, twilio_phone, telnyx_phone FROM clients WHERE ${field} = ? AND is_active = 1`,
+    `SELECT id, business_name, telegram_chat_id, phone_number FROM clients WHERE ${field} = ? AND is_active = 1`,
     [pageId], 'get'
   );
 

@@ -521,6 +521,7 @@ describe('Speed-to-lead sequence dedup', () => {
     is_active: 1,
     calcom_booking_link: 'https://cal.com/stl',
     telnyx_phone: '+15550009999',
+    phone_number: '+15550009999',
     telegram_chat_id: null,
     notification_mode: 'instant',
     retell_agent_id: null,

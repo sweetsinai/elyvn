@@ -339,9 +339,10 @@ describe('API Routes - Comprehensive Coverage', () => {
         owner_phone: params[3], owner_email: params[4],
         retell_agent_id: params[5], retell_phone: params[6],
         twilio_phone: params[7], transfer_phone: params[8],
-        industry: params[9], timezone: params[10],
-        calcom_event_type_id: params[11], calcom_booking_link: params[12],
-        avg_ticket: params[13], created_at: params[14], updated_at: params[15]
+        phone_number: params[9],
+        industry: params[10], timezone: params[11],
+        calcom_event_type_id: params[12], calcom_booking_link: params[13],
+        avg_ticket: params[14], created_at: params[15], updated_at: params[16]
       };
       clients.push(newClient);
       return { changes: 1 };

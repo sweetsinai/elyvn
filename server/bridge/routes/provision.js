@@ -153,12 +153,13 @@ router.post('/', async (req, res, next) => {
 
     // Step 2: Save client to database
     try {
+      const twilioPhone = process.env.TWILIO_PHONE_NUMBER || null;
       await db.query(`
         INSERT INTO clients (
           id, business_name, owner_name, owner_phone, owner_email,
-          retell_agent_id, twilio_phone, industry, timezone,
+          retell_agent_id, twilio_phone, phone_number, industry, timezone,
           avg_ticket, plan, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         clientId,
         business_name,
@@ -166,7 +167,8 @@ router.post('/', async (req, res, next) => {
         owner_phone,
         owner_email || null,
         retellAgentId || null,
-        process.env.TWILIO_PHONE_NUMBER || null,
+        twilioPhone,
+        twilioPhone,
         industry || null,
         timezone || 'UTC',
         avg_ticket || 0,
@@ -207,7 +209,7 @@ router.post('/', async (req, res, next) => {
     }
 
     // Retrieve the full client record
-    const client = await db.query('SELECT id, business_name, owner_name, owner_email, owner_phone, industry, timezone, plan, retell_agent_id, retell_phone, twilio_phone, is_active, created_at FROM clients WHERE id = ?', [clientId], 'get');
+    const client = await db.query('SELECT id, business_name, owner_name, owner_email, owner_phone, industry, timezone, plan, retell_agent_id, retell_phone, twilio_phone, phone_number, is_active, created_at FROM clients WHERE id = ?', [clientId], 'get');
 
     // Generate Telegram onboarding link
     const telegram_link = getOnboardingLink(clientId);

@@ -67,11 +67,11 @@ describe('twilio routes', () => {
         if (sql.includes('SELECT id FROM messages WHERE message_sid')) {
           return { get: jest.fn(() => overrides.duplicateMsg ? { id: 'existing' } : null) };
         }
-        if (sql.includes('FROM clients WHERE telnyx_phone') || sql.includes('SELECT * FROM clients WHERE twilio_phone')) {
+        if (sql.includes('FROM clients WHERE phone_number')) {
           return {
             get: jest.fn(() => overrides.client || {
               id: 'client-1', name: 'TestBiz', business_name: 'TestBiz',
-              twilio_phone: '+18005551234', telnyx_phone: null,
+              phone_number: '+18005551234', twilio_phone: '+18005551234', telnyx_phone: null,
               is_active: 1, telegram_chat_id: null,
               notification_mode: 'instant',
               calcom_booking_link: 'https://cal.com/test',
@@ -201,7 +201,7 @@ describe('twilio routes', () => {
       if (sql.includes('SELECT id FROM messages WHERE message_sid')) {
         return { get: jest.fn(() => null) };
       }
-      if (sql.includes('SELECT * FROM clients WHERE twilio_phone')) {
+      if (sql.includes('SELECT * FROM clients WHERE phone_number')) {
         return { get: jest.fn(() => null) };
       }
       return { get: jest.fn(() => null), run: jest.fn(), all: jest.fn(() => []) };

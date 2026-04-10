@@ -61,6 +61,7 @@ function makeClient(overrides = {}) {
     owner_email: 'owner@testbiz.com',
     is_active: 1,
     twilio_phone: '+15005550006',
+    phone_number: '+15005550006',
     telegram_chat_id: '12345',
     google_review_link: null,
     booking_webhook_url: null,

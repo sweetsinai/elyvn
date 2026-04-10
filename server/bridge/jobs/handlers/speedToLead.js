@@ -87,7 +87,7 @@ async function speedToLeadCallback(db, sendSMS, captureException, payload) {
     logger.warn(`[jobQueue] speed_to_lead_callback — missing agent_id (${agentId}), from (${fromPhone}), or to (${payload.phone})`);
     // Fallback: send SMS instead
     const smsMsg = `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried calling you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back when you can!'}`.slice(0, SMS_MAX_LENGTH);
-    const fallbackPhone = client.telnyx_phone || client.twilio_phone;
+    const fallbackPhone = client.phone_number;
     await sendSMS(payload.phone, smsMsg, fallbackPhone, db, client.id);
     return;
   }
@@ -118,7 +118,7 @@ async function speedToLeadCallback(db, sendSMS, captureException, payload) {
     if (resp.fallback) {
       logger.warn('[jobQueue] Retell circuit open — falling back to SMS for speed callback');
       const fallbackMsg = `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried to reach you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back!'}`.slice(0, SMS_MAX_LENGTH);
-      const fallbackPhone = client.telnyx_phone || client.twilio_phone;
+      const fallbackPhone = client.phone_number;
       await sendSMS(payload.phone, fallbackMsg, fallbackPhone, db, client.id);
     } else {
       const data = await resp.json();
@@ -132,7 +132,7 @@ async function speedToLeadCallback(db, sendSMS, captureException, payload) {
     // Fallback SMS on any unexpected error
     try {
       const fallbackMsg = `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried to reach you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back!'}`.slice(0, SMS_MAX_LENGTH);
-      const fallbackPhone = client.telnyx_phone || client.twilio_phone;
+      const fallbackPhone = client.phone_number;
       await sendSMS(payload.phone, fallbackMsg, fallbackPhone, db, client.id);
     } catch (_) {}
   }

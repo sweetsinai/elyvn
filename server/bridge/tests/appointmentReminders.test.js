@@ -29,8 +29,8 @@ describe('appointmentReminders', () => {
 
     // Create test data
     db.prepare(`
-      INSERT INTO clients (id, name, business_name, twilio_phone, is_active)
-      VALUES ('client1', 'Test Co', 'Test Business', '+15551234567', 1)
+      INSERT INTO clients (id, name, business_name, twilio_phone, phone_number, is_active)
+      VALUES ('client1', 'Test Co', 'Test Business', '+15551234567', '+15551234567', 1)
     `).run();
 
     db.prepare(`

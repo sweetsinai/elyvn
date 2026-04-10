@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS clients (
   transfer_phone          TEXT,
   retell_agent_id         TEXT,
   retell_phone            TEXT,
+  phone_number            TEXT,
   knowledge_base          TEXT,
   google_review_link      TEXT,
   business_hours          TEXT,
@@ -59,6 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_clients_twilio_phone       ON clients(twilio_phon
 CREATE INDEX IF NOT EXISTS idx_clients_telnyx_phone       ON clients(telnyx_phone);
 CREATE INDEX IF NOT EXISTS idx_clients_retell_phone       ON clients(retell_phone);
 CREATE INDEX IF NOT EXISTS idx_clients_retell_agent       ON clients(retell_agent_id);
+CREATE INDEX IF NOT EXISTS idx_clients_phone_number       ON clients(phone_number);
 CREATE INDEX IF NOT EXISTS idx_clients_verification_token ON clients(verification_token);
 
 -- ============================================================

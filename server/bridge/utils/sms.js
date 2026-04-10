@@ -200,14 +200,14 @@ async function sendSMS(to, body, from, db, clientId) {
  */
 async function sendSMSToOwner(db, clientId, body) {
   try {
-    const client = await db.query('SELECT owner_phone, twilio_phone FROM clients WHERE id = ?', [clientId], 'get');
+    const client = await db.query('SELECT owner_phone, phone_number FROM clients WHERE id = ?', [clientId], 'get');
 
     if (!client?.owner_phone) {
       logger.error(`[sms] No owner_phone for client ${clientId}`);
       return { success: false, error: 'No owner phone number' };
     }
 
-    const fromPhone = client.twilio_phone;
+    const fromPhone = client.phone_number;
     return sendSMS(client.owner_phone, body, fromPhone);
   } catch (err) {
     logger.error('[sms] sendSMSToOwner error:', err);

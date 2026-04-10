@@ -37,10 +37,10 @@ async function handleInboundSMS(db, { from, to, body, messageId }) {
     }
 
     // Identify client by matching To number
-    // First try telnyx_phone, then fall back to twilio_phone for backwards compat
+    // Unified phone lookup — single number for calls + SMS
     const client = await db.query(
-      'SELECT * FROM clients WHERE telnyx_phone = ? OR twilio_phone = ? OR retell_phone = ?',
-      [to, to, to],
+      'SELECT * FROM clients WHERE phone_number = ?',
+      [to],
       'get'
     );
 

@@ -942,7 +942,7 @@ export default function Provision() {
                   gap: '8px'
                 }}>
                   <Phone size={18} />
-                  {provisionData.client.twilio_phone}
+                  {provisionData.client.phone_number || provisionData.client.twilio_phone}
                 </p>
               </div>
 

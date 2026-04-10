@@ -72,6 +72,7 @@ describe('speed-to-lead', () => {
     business_name: 'TestBiz',
     telnyx_phone: '+18001234567',
     twilio_phone: '+18009876543',
+    phone_number: '+18009876543',
     calcom_booking_link: 'https://cal.com/test',
     retell_agent_id: 'agent-1',
     retell_phone: '+18001111111',

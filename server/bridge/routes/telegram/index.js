@@ -28,7 +28,7 @@ async function handleReply(db, message) {
 
   // Find the client linked to this Telegram chat
   const client = await db.query(
-    'SELECT id, twilio_phone, telnyx_phone, business_name FROM clients WHERE telegram_chat_id = ?',
+    'SELECT id, phone_number, business_name FROM clients WHERE telegram_chat_id = ?',
     [chatId], 'get'
   );
   if (!client) {
@@ -50,7 +50,7 @@ async function handleReply(db, message) {
 
   try {
     const { sendSMS } = require('../../utils/sms');
-    const fromPhone = client.twilio_phone || client.telnyx_phone;
+    const fromPhone = client.phone_number;
     await sendSMS(phone, ownerText, fromPhone, db, client.id);
 
     const escaped = ownerText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

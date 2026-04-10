@@ -29,18 +29,18 @@ describe('Revenue Attribution Module', () => {
 
     // Insert test clients with different avg_tickets
     db.prepare(`
-      INSERT INTO clients (id, name, owner_name, avg_ticket, retell_phone, twilio_phone)
-      VALUES ('client1', 'Test Business', 'John Owner', 5000, '+15551111111', '+15552222222')
+      INSERT INTO clients (id, name, owner_name, avg_ticket, retell_phone, twilio_phone, phone_number)
+      VALUES ('client1', 'Test Business', 'John Owner', 5000, '+15551111111', '+15552222222', '+15552222222')
     `).run();
 
     db.prepare(`
-      INSERT INTO clients (id, name, owner_name, avg_ticket, retell_phone, twilio_phone)
-      VALUES ('client_zero_ticket', 'Zero Ticket Client', 'Owner', 0, '+15553333333', '+15554444444')
+      INSERT INTO clients (id, name, owner_name, avg_ticket, retell_phone, twilio_phone, phone_number)
+      VALUES ('client_zero_ticket', 'Zero Ticket Client', 'Owner', 0, '+15553333333', '+15554444444', '+15554444444')
     `).run();
 
     db.prepare(`
-      INSERT INTO clients (id, name, owner_name, avg_ticket, retell_phone, twilio_phone)
-      VALUES ('client_high_ticket', 'High Ticket Client', 'Owner', 50000, '+15555555555', '+15556666666')
+      INSERT INTO clients (id, name, owner_name, avg_ticket, retell_phone, twilio_phone, phone_number)
+      VALUES ('client_high_ticket', 'High Ticket Client', 'Owner', 50000, '+15555555555', '+15556666666', '+15556666666')
     `).run();
   });
 

@@ -52,7 +52,7 @@ async function executeOne(db, action, lead, client) {
           await enqueueJob(db, 'followup_sms', {
             phone: to,
             message: action.message,
-            from: client?.telnyx_phone || client?.twilio_phone,
+            from: client?.phone_number,
             clientId: client?.id,
             leadId: lead?.id,
           }, scheduledAt);
@@ -62,7 +62,7 @@ async function executeOne(db, action, lead, client) {
           result = { success: false, error: 'Failed to queue SMS' };
         }
       } else {
-        result = await sendSMS(to, action.message, client?.telnyx_phone || client?.twilio_phone, db, client?.id);
+        result = await sendSMS(to, action.message, client?.phone_number, db, client?.id);
       }
 
       // Log in messages table
@@ -211,7 +211,7 @@ async function executeOne(db, action, lead, client) {
       const bookingLink = client?.calcom_booking_link || process.env.CALCOM_BOOKING_LINK;
       if (phone && bookingLink) {
         const smsText = `Hi ${leadName.split(' ')[0]}! Here's your booking link for ${client?.business_name || 'us'}: ${bookingLink}`;
-        await sendSMS(phone, smsText, client?.telnyx_phone || client?.twilio_phone, db, client?.id);
+        await sendSMS(phone, smsText, client?.phone_number, db, client?.id);
         return { booked: false, fallback: 'sms_link_sent', booking_link: bookingLink };
       }
 

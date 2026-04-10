@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Phone, Clock, Target, TrendingUp, X, Search, ChevronLeft, ChevronRight, Filter, RefreshCw, ChevronDown } from 'lucide-react';
-import { getCalls, getTranscript } from '../lib/api';
+import { Phone, PhoneForwarded, Clock, Target, TrendingUp, X, Search, ChevronLeft, ChevronRight, Filter, RefreshCw, ChevronDown } from 'lucide-react';
+import { getCalls, getTranscript, transferCall } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
 import { formatPhone, formatDuration, timeAgo } from '../lib/utils';
 
@@ -15,6 +15,8 @@ export default function Calls() {
   const [selectedCall, setSelectedCall] = useState(null);
   const [transcript, setTranscript] = useState(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
+  const [activeCalls, setActiveCalls] = useState([]);
+  const [transferring, setTransferring] = useState(null);
 
   // WebSocket integration
   const { isConnected, lastEvent } = useWebSocket(apiKey);
@@ -58,10 +60,40 @@ export default function Calls() {
 
   // Listen for WebSocket updates
   useEffect(() => {
-    if (lastEvent && lastEvent.type === 'new_call') {
+    if (!lastEvent) return;
+
+    if (lastEvent.type === 'call_started') {
+      setActiveCalls(prev => {
+        if (prev.some(c => c.id === lastEvent.data?.id)) return prev;
+        return [...prev, { id: lastEvent.data?.id, phone: lastEvent.data?.phone, direction: lastEvent.data?.direction, startedAt: new Date().toISOString() }];
+      });
+    }
+
+    if (lastEvent.type === 'new_call') {
+      // Call ended — remove from active, refresh list
+      setActiveCalls(prev => prev.filter(c => c.id !== lastEvent.data?.id));
       setTimeout(() => loadCalls(), 500);
     }
+
+    if (lastEvent.type === 'call_transfer') {
+      setActiveCalls(prev => prev.map(c =>
+        c.id === lastEvent.data?.id ? { ...c, status: 'transferring' } : c
+      ));
+      setTimeout(() => loadCalls(), 1000);
+    }
   }, [lastEvent, loadCalls]);
+
+  const handleTransfer = async (callId) => {
+    if (!clientId || !callId) return;
+    setTransferring(callId);
+    try {
+      await transferCall(clientId, callId);
+    } catch (err) {
+      console.error('[transfer]', err);
+    } finally {
+      setTransferring(null);
+    }
+  };
 
   const handleFilter = () => {
     setPage(1);
@@ -194,6 +226,51 @@ export default function Calls() {
           </div>
         </div>
       </div>
+
+      {/* Active Calls Banner */}
+      {activeCalls.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#22C55E', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{
+              width: 8, height: 8, borderRadius: '50%', background: '#22C55E',
+              animation: 'pulse 2s infinite',
+            }} />
+            {activeCalls.length} Active Call{activeCalls.length > 1 ? 's' : ''}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {activeCalls.map(ac => (
+              <div key={ac.id} className="card" style={{
+                padding: '12px 16px',
+                borderLeft: `3px solid ${ac.status === 'transferring' ? '#3B82F6' : '#22C55E'}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                minWidth: 220,
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#e0d8c8', fontFamily: 'monospace' }}>
+                    {formatPhone(ac.phone)}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#555' }}>
+                    {ac.status === 'transferring' ? 'Transferring...' : ac.direction === 'outbound' ? 'Outbound' : 'Ringing'}
+                    {' '}&middot; {timeAgo(ac.startedAt)}
+                  </div>
+                </div>
+                <button
+                  className="btn-ghost"
+                  onClick={(e) => { e.stopPropagation(); handleTransfer(ac.id); }}
+                  disabled={transferring === ac.id || ac.status === 'transferring'}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#3B82F6' }}
+                  title="Transfer call"
+                >
+                  <PhoneForwarded size={14} />
+                  {transferring === ac.id ? 'Transferring...' : 'Transfer'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filters Card */}
       <div className="card" style={{ padding: 20, marginBottom: 24 }}>
@@ -570,22 +647,35 @@ export default function Calls() {
               <h2 style={{ fontSize: 18, fontWeight: 700, color: '#e0d8c8' }}>
                 Call Details
               </h2>
-              <button
-                onClick={closeDetail}
-                aria-label="Close call details"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#888',
-                  padding: 4,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <X size={20} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {activeCalls.some(ac => ac.id === (selectedCall.id || selectedCall.call_id)) && (
+                  <button
+                    className="btn-primary"
+                    onClick={() => handleTransfer(selectedCall.id || selectedCall.call_id)}
+                    disabled={transferring === (selectedCall.id || selectedCall.call_id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '6px 12px' }}
+                  >
+                    <PhoneForwarded size={14} />
+                    {transferring === (selectedCall.id || selectedCall.call_id) ? 'Transferring...' : 'Transfer Call'}
+                  </button>
+                )}
+                <button
+                  onClick={closeDetail}
+                  aria-label="Close call details"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#888',
+                    padding: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Modal Content */}
