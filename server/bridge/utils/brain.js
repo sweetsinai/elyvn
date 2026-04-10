@@ -66,6 +66,40 @@ function estimateTokens(text) {
 }
 
 /**
+ * Load and format knowledge base for a client (shared by legacy and multi-agent paths).
+ */
+async function _loadKnowledgeBase(client) {
+  const MAX_KB_SIZE = 5000;
+  if (!client) return '';
+  try {
+    const { loadKnowledgeBase } = require('./kbCache');
+    const raw = await loadKnowledgeBase(client.id);
+    if (!raw) return '';
+    const kbData = JSON.parse(raw);
+    let kb = '';
+    if (typeof kbData === 'object' && kbData !== null) {
+      const parts = [];
+      if (kbData.business_name) parts.push(`Business: ${kbData.business_name}`);
+      if (kbData.services?.length) parts.push(`Services: ${kbData.services.join(', ')}`);
+      if (kbData.business_hours) parts.push(`Hours: ${kbData.business_hours}`);
+      if (kbData.booking_info) parts.push(`Booking: ${kbData.booking_info}`);
+      if (kbData.faq?.length) {
+        parts.push('FAQ:');
+        kbData.faq.forEach(f => parts.push(`Q: ${f.question}\nA: ${f.answer}`));
+      }
+      if (kbData.escalation_phrases?.length) parts.push(`Escalate on: ${kbData.escalation_phrases.join(', ')}`);
+      kb = parts.join('\n');
+    } else {
+      kb = typeof kbData === 'string' ? kbData : JSON.stringify(kbData);
+    }
+    return kb.length > MAX_KB_SIZE ? kb.substring(0, MAX_KB_SIZE) + '\n[...truncated]' : kb;
+  } catch (err) {
+    logger.warn(`[brain] KB load failed for client ${client.id}:`, err.message);
+    return '';
+  }
+}
+
+/**
  * @param {string} eventType - call_ended | sms_received | form_submitted | followup_due | no_response_timeout | daily_review
  * @param {object} eventData - Raw event payload
  * @param {object} leadMemory - Output of getLeadMemory()
@@ -118,6 +152,25 @@ async function think(eventType, eventData, leadMemory, db) {
 
 async function _think(eventType, eventData, leadMemory, db) {
   const { lead, client, timeline, insights } = leadMemory;
+
+  // ── Multi-agent path (opt-in via ELYVN_MANAGED_AGENTS=true) ──
+  try {
+    const { isEnabled, newLeadPipeline } = require('./agents/orchestrator');
+    if (isEnabled()) {
+      const knowledgeBase = await _loadKnowledgeBase(client);
+      const guardrails = await checkGuardrails(db, lead, client);
+      const result = await newLeadPipeline({
+        db, client, lead, eventType, eventData, timeline, insights, knowledgeBase, guardrails,
+      });
+      if (result && result.decision) {
+        logger.info('[Brain] Multi-agent pipeline returned decision');
+        return result.decision;
+      }
+      // If pipeline returns null, fall through to legacy single-call path
+    }
+  } catch (agentErr) {
+    logger.warn('[Brain] Multi-agent pipeline failed, falling through to legacy:', agentErr.message);
+  }
 
   // Load knowledge base (capped at 5000 chars to avoid Claude token overflow)
   const MAX_KB_SIZE = 5000;

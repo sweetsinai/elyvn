@@ -19,5 +19,6 @@ router.use(require('./exports'));
 router.use(require('./usage'));
 router.use(require('./settings'));
 router.use(require('./referral'));
+router.use(require('./agents'));
 
 module.exports = router;
