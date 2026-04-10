@@ -110,25 +110,31 @@ NODE_ENV=test ANTHROPIC_API_KEY=test-key JWT_SECRET=test-jwt-secret-that-is-at-l
 - AES-256-GCM encryption for PII (phone_encrypted, email_encrypted)
 - ENCRYPTION_KEY hard-fails in production if missing
 
-## Phone Number Architecture (CURRENT — needs unification)
+## Phone Number Architecture (UNIFIED — Phase 1 complete)
 
-| Field | Purpose | Provider |
+| Field | Purpose | Status |
 |---|---|---|
-| `retell_phone` | Inbound calls (Retell AI agent) | Retell |
-| `twilio_phone` | Outbound SMS | Twilio |
-| `telnyx_phone` | Alternative SMS (migration 020) | Telnyx |
-| `transfer_phone` | Call forwarding destination (UNUSED) | N/A |
-| `owner_phone` | Business owner's personal phone | N/A |
+| `phone_number` | **Unified number** — calls + SMS, single Twilio number with SIP trunk to Retell | ACTIVE |
+| `retell_phone` | Legacy inbound calls field | DEPRECATED (kept for backward compat) |
+| `twilio_phone` | Legacy outbound SMS field | DEPRECATED (kept for backward compat) |
+| `telnyx_phone` | Legacy alternative SMS (migration 020) | DEPRECATED |
+| `transfer_phone` | Call forwarding destination | UNUSED (Phase 2) |
+| `owner_phone` | Business owner's personal phone | ACTIVE |
 
-**Problem:** Customers call one number but receive texts from a different one. Confusing.
-**Solution:** Unified Twilio number → SIP trunk to Retell for calls, same number for SMS.
+**Migration 042** added `phone_number` and backfilled from `COALESCE(twilio_phone, retell_phone)`.
+All runtime code now uses `phone_number` exclusively. Legacy columns remain for data preservation.
+`utils/twilioProvisioning.js` provides SIP trunk + number purchase API (Twilio REST, no SDK).
 
-## Call Transfer (NOT YET IMPLEMENTED)
+## Call Transfer (Phase 2 — IMPLEMENTED)
 
-`transfer_phone` exists in DB (migration 019) but is dead code. Retell webhook detects `agent_transfer` and `transfer_requested` events but there's no handler. Needs:
-- Warm transfer (AI introduces caller to owner)
-- Cold transfer (direct forward)
-- Fallback to voicemail if owner doesn't answer
+`transfer_phone` in clients table. `handleTransfer()` in `routes/retell/followups.js` implements a 3-step cascade:
+1. **Warm transfer**: Retell API `POST /v2/transfer-call/{call_id}` with AI-generated summary as intro
+2. **Cold transfer**: Twilio REST API updates the call with inline TwiML (`<Dial timeout="30">` to transfer_phone)
+3. **Fallback**: SMS + Telegram notification to owner with "call them back ASAP" urgency
+
+`utils/callTransfer.js` — circuit-breaker-protected Retell and Twilio transfer functions.
+Triggered by: `agent_transfer`, `transfer_requested`, `dtmf` (star key) webhook events.
+Dashboard Settings page shows and edits `transfer_phone` per client.
 
 ## Webhook / External Data Push
 
@@ -177,21 +183,26 @@ Remaining gaps: sanitizers don't strip semantic prompt delimiters (`Human:`, `--
 
 ## Implementation Plan — Next Features
 
-### Phase 1: Unified Phone Number
-- Provision Twilio number with voice + SMS capability
-- Configure Twilio SIP trunk → Retell for inbound calls
-- Route outbound SMS through same Twilio number
-- Migrate `retell_phone` + `twilio_phone` → single `phone_number` field
-- Update Retell agent config to use SIP endpoint
-- Migration: backfill existing clients
+### Phase 1: Unified Phone Number (DONE)
+- [x] Migration 042: `phone_number` column + backfill from `COALESCE(twilio_phone, retell_phone)`
+- [x] All lookups (calls.js, handlers.js, sms.js, telegram, social, calcom, speed-to-lead, actionExecutor, appointmentReminders) use `phone_number`
+- [x] `utils/twilioProvisioning.js`: search, purchase, SIP trunk, origination URI, number-trunk association
+- [x] Provision route sets `phone_number` for new clients
+- [x] Dashboard shows `phone_number` in provisioning success
+- [x] Settings API exposes `phone_number` in response
+- [x] 2320 tests passing (5 pre-existing scheduler timeouts)
 
-### Phase 2: Call Transfer
-- Implement `handleTransfer()` in Retell webhook handler
-- Warm transfer: Retell API `transfer_call` with intro message
-- Cold transfer: Twilio `<Dial>` to `transfer_phone`
-- Fallback: if no answer in 30s → voicemail → notify owner via Telegram
-- Add transfer_phone config to Settings page
-- Tests for all transfer paths
+### Phase 2: Call Transfer (DONE)
+- [x] `utils/callTransfer.js`: warm transfer via Retell `POST /v2/transfer-call/{call_id}`, cold transfer via Twilio inline TwiML
+- [x] `handleTransfer()` rewritten with 3-step cascade: warm → cold → fallback (voicemail + Telegram/SMS)
+- [x] Fixed `calls.js` re-export of `handleTransfer` (was `undefined` — webhook events were silently failing)
+- [x] Cold transfer uses inline TwiML with `<Dial timeout="30">` + `<Record>` voicemail fallback
+- [x] `notifyTransferSuccess()` + `notifyTransferFallback()` — SMS + Telegram alerts to owner
+- [x] Dashboard Settings: `transfer_phone` field (edit + display with PhoneForwarded icon)
+- [x] `timing.js`: `TRANSFER_DIAL_TIMEOUT_S: 30`, `TRANSFER_VOICEMAIL_MAX_LENGTH_S: 120`
+- [x] Settings API already had `transfer_phone` in ALLOWED whitelist (no changes needed)
+- [x] 17 new tests in `callTransfer.test.js` — warm, cold, fallback, edge cases
+- [x] 2342 tests passing (commit 6a3b48a)
 
 ### Phase 3: Webhook Events + Google Sheets
 - Define event schema: `{ event, timestamp, client_id, data }`
