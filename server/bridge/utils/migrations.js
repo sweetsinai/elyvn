@@ -1387,6 +1387,88 @@ const migrations = [
       getLogger().info('[migrations] 043: webhook event columns added (lead, call, sms, stage_change)');
     },
   },
+  {
+    id: '044_conversations_and_delivery_status',
+    description: 'Create conversations table for unified messaging, add delivery_status to messages, backfill conversations from existing messages',
+    down(db) {
+      // Drop new indexes and table; leave columns on messages (SQLite can't drop them)
+      db.exec('DROP INDEX IF EXISTS idx_conversations_client_last_msg');
+      db.exec('DROP INDEX IF EXISTS idx_conversations_lead');
+      db.exec('DROP INDEX IF EXISTS idx_conversations_phone');
+      db.exec('DROP INDEX IF EXISTS idx_messages_conversation');
+      db.exec('DROP TABLE IF EXISTS conversations');
+    },
+    up(db) {
+      // 1. Create conversations table — one conversation per (client_id, lead_phone)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS conversations (
+          id TEXT PRIMARY KEY,
+          client_id TEXT NOT NULL,
+          lead_id TEXT,
+          lead_phone TEXT NOT NULL,
+          lead_name TEXT,
+          last_message_at TEXT,
+          last_message_preview TEXT,
+          unread_count INTEGER DEFAULT 0,
+          status TEXT DEFAULT 'active' CHECK(status IN ('active','archived','spam')),
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_conversations_client_last_msg ON conversations(client_id, last_message_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversations_lead ON conversations(lead_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_phone ON conversations(client_id, lead_phone);
+      `);
+
+      // 2. Add conversation_id and delivery_status to messages
+      const msgCols = db.prepare("PRAGMA table_info('messages')").all().map(c => c.name);
+      if (!msgCols.includes('conversation_id')) {
+        db.exec('ALTER TABLE messages ADD COLUMN conversation_id TEXT');
+        db.exec('CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at)');
+      }
+      if (!msgCols.includes('delivery_status')) {
+        db.exec("ALTER TABLE messages ADD COLUMN delivery_status TEXT DEFAULT 'sent'");
+      }
+      if (!msgCols.includes('delivered_at')) {
+        db.exec('ALTER TABLE messages ADD COLUMN delivered_at TEXT');
+      }
+      if (!msgCols.includes('read_at')) {
+        db.exec('ALTER TABLE messages ADD COLUMN read_at TEXT');
+      }
+
+      // 3. Backfill: create conversations from existing messages grouped by (client_id, phone)
+      const groups = db.prepare(`
+        SELECT m.client_id, m.phone, l.id as lead_id, l.name as lead_name,
+               MAX(m.created_at) as last_msg_at,
+               (SELECT body FROM messages m2 WHERE m2.client_id = m.client_id AND m2.phone = m.phone ORDER BY m2.created_at DESC LIMIT 1) as preview
+        FROM messages m
+        LEFT JOIN leads l ON l.client_id = m.client_id AND l.phone = m.phone
+        WHERE m.client_id IS NOT NULL AND m.phone IS NOT NULL
+        GROUP BY m.client_id, m.phone
+      `).all();
+
+      const { randomUUID } = require('crypto');
+      const insertConv = db.prepare(`
+        INSERT OR IGNORE INTO conversations (id, client_id, lead_id, lead_phone, lead_name, last_message_at, last_message_preview)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      const updateMsgs = db.prepare(`
+        UPDATE messages SET conversation_id = ? WHERE client_id = ? AND phone = ? AND conversation_id IS NULL
+      `);
+
+      for (const g of groups) {
+        const convId = randomUUID();
+        const preview = g.preview ? g.preview.substring(0, 100) : null;
+        insertConv.run(convId, g.client_id, g.lead_id, g.phone, g.lead_name, g.last_msg_at, preview);
+        updateMsgs.run(convId, g.client_id, g.phone);
+      }
+
+      // 4. Set delivery_status for existing outbound messages
+      db.exec("UPDATE messages SET delivery_status = 'sent' WHERE direction = 'outbound' AND delivery_status IS NULL");
+      db.exec("UPDATE messages SET delivery_status = 'received' WHERE direction = 'inbound' AND delivery_status IS NULL");
+
+      getLogger().info(`[migrations] 044: conversations table created, ${groups.length} conversations backfilled, delivery_status added`);
+    },
+  },
 ];
 
 /**

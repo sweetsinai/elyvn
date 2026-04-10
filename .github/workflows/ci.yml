@@ -55,7 +55,6 @@ jobs:
       - name: Check for hardcoded secrets
         run: |
           echo "Scanning for hardcoded secrets..."
-          # Exclude test files and logger redaction patterns
           if grep -rn "ghp_\|sk_live_\|AKIA" server/ dashboard/src/ \
             --include="*.js" --include="*.jsx" \
             --exclude="*test*" --exclude="*logger*" 2>/dev/null; then
@@ -92,19 +91,18 @@ jobs:
       - name: Install dependencies
         run: cd server/bridge && npm ci
 
-      - name: Audit dependencies
+      - name: Audit dependencies (critical)
         run: |
           cd server/bridge
-          # node-imap has unfixable high vulns (unmaintained) — use critical level
           npm audit --audit-level=critical --omit=dev 2>&1 || true
           echo "Dependency audit complete."
 
-      - name: Check for hardcoded secrets
+      - name: Check for hardcoded secrets (extended patterns)
         run: |
           echo "Scanning for hardcoded secrets..."
-          if grep -rEn "(sk_live_|sk_test_|ghp_|AKIA|AIza[0-9A-Za-z_-]{35})" \
+          if grep -rEn "(sk_live_|sk_test_|ghp_|AKIA|AIza[0-9A-Za-z_-]{35}|whsec_[a-zA-Z0-9]+)" \
             --include="*.js" --include="*.jsx" \
-            --exclude="*test*" --exclude="*logger*" \
+            --exclude="*test*" --exclude="*logger*" --exclude="*ci.yml" \
             server/ dashboard/ 2>/dev/null; then
             echo "::error::Potential hardcoded secrets found!"
             exit 1
@@ -114,11 +112,33 @@ jobs:
       - name: Check for dangerous patterns
         run: |
           echo "Checking for dangerous code patterns..."
-          grep -rn "eval(" --include="*.js" server/bridge/routes/ server/bridge/utils/ 2>/dev/null && \
-            echo "::warning::eval() usage found" || true
-          grep -rn "rejectUnauthorized.*false" --include="*.js" server/bridge/ 2>/dev/null && \
-            echo "::warning::SSL verification disabled" || true
+          WARN=0
+          # eval() in production code
+          if grep -rn "eval(" --include="*.js" server/bridge/routes/ server/bridge/utils/ 2>/dev/null; then
+            echo "::warning::eval() usage found — review for injection risk"
+            WARN=1
+          fi
+          # SSL verification disabled
+          if grep -rn "rejectUnauthorized.*false" --include="*.js" server/bridge/ 2>/dev/null; then
+            echo "::warning::SSL verification disabled found"
+            WARN=1
+          fi
+          # Unparameterized SQL (string concat with user input)
+          if grep -rEn '(query|exec|prepare)\(.*\$\{' --include="*.js" server/bridge/routes/ 2>/dev/null; then
+            echo "::warning::Potential SQL injection — template literal in query"
+            WARN=1
+          fi
+          # Sensitive data in logs
+          if grep -rn "password\|secret\|token" --include="*.js" server/bridge/utils/logger.js 2>/dev/null | grep -v "redact\|mask\|filter" 2>/dev/null; then
+            echo "::warning::Potential sensitive data logging"
+          fi
           echo "Pattern check complete."
+
+      - name: OWASP dependency check
+        run: |
+          cd server/bridge
+          # Check for known vulnerable packages
+          npx better-npm-audit audit --level critical --production 2>/dev/null || true
 
   build:
     name: Build Check
@@ -139,13 +159,50 @@ jobs:
       - name: Build dashboard
         run: cd dashboard && npm run build
 
-      - name: Verify server starts
+      - name: Install server deps
+        run: cd server/bridge && npm ci
+
+      - name: Verify server syntax
         run: |
-          cd server/bridge && npm ci
-          timeout 10 node -e "
-            process.env.ANTHROPIC_API_KEY = 'test';
-            process.env.JWT_SECRET = 'test-jwt-secret-that-is-at-least-32-chars';
-            process.env.ENCRYPTION_KEY = 'test-encryption-key-at-least-32-chars-long';
-            process.env.ELYVN_API_KEY = 'test-api-key';
-            process.env.NODE_ENV = 'test';
-          " && echo "Server env loads successfully" || true
+          cd server/bridge
+          node --check index.js
+          echo "Server entry point syntax OK"
+
+  deploy:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        run: railway up --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Wait for deployment
+        run: sleep 30
+
+      - name: Verify healthcheck
+        run: |
+          HEALTH_URL="${{ secrets.RAILWAY_URL }}/health"
+          if [ -z "$HEALTH_URL" ] || [ "$HEALTH_URL" = "/health" ]; then
+            echo "RAILWAY_URL secret not set — skipping healthcheck"
+            exit 0
+          fi
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" 2>/dev/null || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Healthcheck passed (attempt $i)"
+              exit 0
+            fi
+            echo "Healthcheck attempt $i: HTTP $STATUS — retrying in 15s..."
+            sleep 15
+          done
+          echo "::error::Healthcheck failed after 5 attempts"
+          exit 1

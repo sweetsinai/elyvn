@@ -1,631 +1,404 @@
-import { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, Zap, AlertTriangle, BarChart3, X, Search, ChevronLeft, ChevronRight, Filter, RefreshCw } from 'lucide-react';
-import { getMessages } from '../lib/api';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  MessageSquare, Send, Search, ChevronLeft, RefreshCw, Phone, Archive,
+  CheckCheck, Check, Clock, AlertTriangle, X
+} from 'lucide-react';
+import {
+  getConversations, getConversationTimeline, sendConversationMessage,
+  markConversationRead, archiveConversation
+} from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
-import { formatPhone, timeAgo, truncate } from '../lib/utils';
+import { formatPhone, timeAgo } from '../lib/utils';
 
 export default function Messages() {
   const clientId = localStorage.getItem('elyvn_client') || '';
   const apiKey = sessionStorage.getItem('elyvn_api_key') || '';
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-
-  // WebSocket integration
   const { isConnected, lastEvent } = useWebSocket(apiKey);
 
-  // Filters
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [status, setStatus] = useState('all');
-  const [direction, setDirection] = useState('all');
+  // Conversations list
+  const [conversations, setConversations] = useState([]);
+  const [loadingConvs, setLoadingConvs] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
 
-  // Detail modal
-  const [selectedMessage, setSelectedMessage] = useState(null);
+  // Active conversation
+  const [activeConv, setActiveConv] = useState(null);
+  const [timeline, setTimeline] = useState([]);
+  const [loadingTimeline, setLoadingTimeline] = useState(false);
 
-  const loadMessages = useCallback(() => {
+  // Compose
+  const [messageInput, setMessageInput] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const timelineEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Load conversations
+  const loadConversations = useCallback(() => {
     if (!clientId) return;
-    setLoading(true);
-    setError(null);
-
-    getMessages(clientId, {
-      page,
-      limit: 20,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined,
-      status: status === 'all' ? undefined : status,
-      direction: direction === 'all' ? undefined : direction,
+    setLoadingConvs(true);
+    getConversations(clientId, {
+      limit: 50,
+      status: statusFilter === 'all' ? undefined : statusFilter,
+      search: searchQuery || undefined,
     })
-      .then(data => {
-        const list = Array.isArray(data) ? data : data.messages || [];
-        setMessages(list);
-        setTotalPages(data.total_pages || Math.ceil((data.total || list.length) / 20) || 1);
-        setLoading(false);
+      .then(res => {
+        setConversations(res.data || []);
+        setLoadingConvs(false);
       })
-      .catch(err => {
-        setError(err.message || 'Failed to load messages');
-        setLoading(false);
-      });
-  }, [clientId, page, startDate, endDate, status, direction]);
+      .catch(() => setLoadingConvs(false));
+  }, [clientId, statusFilter, searchQuery]);
 
-  useEffect(() => {
-    loadMessages();
-  }, [loadMessages]);
+  useEffect(() => { loadConversations(); }, [loadConversations]);
 
-  // Listen for WebSocket updates
-  useEffect(() => {
-    if (lastEvent && lastEvent.type === 'new_message') {
-      setTimeout(() => loadMessages(), 500);
-    }
-  }, [lastEvent, loadMessages]);
-
-  const handleApplyFilters = () => {
-    setPage(1);
-    loadMessages();
-    setShowFilters(false);
-  };
-
-  const handleClearFilters = () => {
-    setStartDate('');
-    setEndDate('');
-    setStatus('all');
-    setDirection('all');
-    setSearchQuery('');
-    setPage(1);
-  };
-
-  // Calculate stats
-  const totalCount = Array.isArray(messages) ? messages.length : 0;
-  const autoRepliedCount = Array.isArray(messages) ? messages.filter(m => m.status === 'auto_replied').length : 0;
-  const escalatedCount = Array.isArray(messages) ? messages.filter(m => m.escalated === true || m.status === 'escalated').length : 0;
-  const responseRate = totalCount > 0 ? Math.round((autoRepliedCount / totalCount) * 100) : 0;
-
-  // Filter messages by search query
-  const filteredMessages = searchQuery && Array.isArray(messages)
-    ? messages.filter(m => {
-        const phone = (m.phone_number || m.phone || '').toLowerCase();
-        const content = (m.message || m.content || '').toLowerCase();
-        const query = searchQuery.toLowerCase();
-        return phone.includes(query) || content.includes(query);
+  // Load timeline for active conversation
+  const loadTimeline = useCallback(() => {
+    if (!clientId || !activeConv) return;
+    setLoadingTimeline(true);
+    getConversationTimeline(clientId, activeConv.id, { limit: 100, include_calls: true })
+      .then(res => {
+        setTimeline(res.data || []);
+        setLoadingTimeline(false);
+        // Mark as read
+        if (activeConv.unread_count > 0) {
+          markConversationRead(clientId, activeConv.id).then(() => {
+            setConversations(prev => prev.map(c =>
+              c.id === activeConv.id ? { ...c, unread_count: 0 } : c
+            ));
+          }).catch(() => {});
+        }
       })
-    : (Array.isArray(messages) ? messages : []);
+      .catch(() => setLoadingTimeline(false));
+  }, [clientId, activeConv]);
 
-  const getStatusBadge = (msg) => {
-    let color = '#555';
-    let icon = null;
-    let label = 'Pending';
+  useEffect(() => { loadTimeline(); }, [loadTimeline]);
 
-    if (msg.status === 'auto_replied' || msg.escalated === false) {
-      color = '#16A34A';
-      label = 'Auto-Replied';
-    } else if (msg.escalated === true || msg.status === 'escalated') {
-      color = '#FBBF24';
-      label = 'Escalated';
-    } else if (msg.status === 'failed') {
-      color = '#DC2626';
-      label = 'Failed';
+  // Auto-scroll timeline
+  useEffect(() => {
+    if (timelineEndRef.current) {
+      timelineEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
+  }, [timeline]);
 
-    return { color, label };
+  // WebSocket: reload on new messages
+  useEffect(() => {
+    if (lastEvent?.type === 'new_message') {
+      loadConversations();
+      if (activeConv && lastEvent.data?.conversationId === activeConv.id) {
+        loadTimeline();
+      }
+    }
+  }, [lastEvent]);
+
+  // Send message
+  const handleSend = async () => {
+    if (!messageInput.trim() || !activeConv || sending) return;
+    setSending(true);
+    try {
+      await sendConversationMessage(clientId, activeConv.id, messageInput.trim());
+      setMessageInput('');
+      loadTimeline();
+      loadConversations();
+    } catch (err) {
+      // Show inline error
+    }
+    setSending(false);
+    inputRef.current?.focus();
   };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  // Archive
+  const handleArchive = async (convId) => {
+    try {
+      await archiveConversation(clientId, convId);
+      setConversations(prev => prev.filter(c => c.id !== convId));
+      if (activeConv?.id === convId) setActiveConv(null);
+    } catch (_) {}
+  };
+
+  // Delivery status icon
+  const DeliveryIcon = ({ status }) => {
+    switch (status) {
+      case 'delivered': return <CheckCheck size={12} style={{ color: '#16A34A' }} />;
+      case 'read': return <CheckCheck size={12} style={{ color: '#3B82F6' }} />;
+      case 'failed': return <AlertTriangle size={12} style={{ color: '#DC2626' }} />;
+      case 'sent': return <Check size={12} style={{ color: '#888' }} />;
+      default: return <Clock size={12} style={{ color: '#555' }} />;
+    }
+  };
+
+  const totalUnread = conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
 
   return (
-    <div style={{ background: '#0a0a0a', minHeight: '100vh', paddingBottom: 40 }}>
+    <div style={{ background: '#0a0a0a', height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ padding: '24px 24px 0', background: '#0a0a0a' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 700, color: '#e0d8c8', margin: 0 }}>Messages</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              className="btn-ghost"
-              onClick={loadMessages}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#888' }}
-            >
-              <RefreshCw size={16} /> Refresh
+      <div style={{ padding: '16px 24px', borderBottom: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {activeConv && (
+            <button onClick={() => setActiveConv(null)} className="btn-ghost" style={{ padding: 4 }}>
+              <ChevronLeft size={20} color="#888" />
             </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: isConnected ? '#16A34A' : '#DC2626' }}>
-              <div style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background: isConnected ? '#16A34A' : '#DC2626',
-                boxShadow: isConnected ? '0 0 8px #16A34A' : 'none',
-              }} />
-              {isConnected ? 'Live' : 'Offline'}
-            </div>
-          </div>
-        </div>
-
-        {/* Stats Bar */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
-          {/* Total Messages */}
-          <div className="card" style={{ background: '#0d0d0d', border: '1px solid #222', padding: 16, borderRadius: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-              <div style={{ background: '#C9A84C', padding: 8, borderRadius: 6, color: '#0a0a0a' }}>
-                <MessageSquare size={16} />
-              </div>
-              <span style={{ fontSize: 12, color: '#888' }}>Total Messages</span>
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#e0d8c8' }}>{totalCount}</div>
-          </div>
-
-          {/* Auto-Replied */}
-          <div className="card" style={{ background: '#0d0d0d', border: '1px solid #222', padding: 16, borderRadius: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-              <div style={{ background: '#16A34A', padding: 8, borderRadius: 6, color: '#0a0a0a' }}>
-                <Zap size={16} />
-              </div>
-              <span style={{ fontSize: 12, color: '#888' }}>Auto-Replied</span>
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#e0d8c8' }}>{autoRepliedCount}</div>
-          </div>
-
-          {/* Escalated */}
-          <div className="card" style={{ background: '#0d0d0d', border: '1px solid #222', padding: 16, borderRadius: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-              <div style={{ background: '#FBBF24', padding: 8, borderRadius: 6, color: '#0a0a0a' }}>
-                <AlertTriangle size={16} />
-              </div>
-              <span style={{ fontSize: 12, color: '#888' }}>Escalated</span>
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#e0d8c8' }}>{escalatedCount}</div>
-          </div>
-
-          {/* Response Rate */}
-          <div className="card" style={{ background: '#0d0d0d', border: '1px solid #222', padding: 16, borderRadius: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-              <div style={{ background: '#8B5CF6', padding: 8, borderRadius: 6, color: '#0a0a0a' }}>
-                <BarChart3 size={16} />
-              </div>
-              <span style={{ fontSize: 12, color: '#888' }}>Response Rate</span>
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#e0d8c8' }}>{responseRate}%</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Search Bar */}
-      <div style={{ padding: '0 24px', marginBottom: 20 }}>
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-          <Search size={16} style={{ position: 'absolute', left: 12, color: '#555', pointerEvents: 'none' }} />
-          <input
-            type="text"
-            placeholder="Search by phone or message..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              paddingLeft: 40,
-              paddingRight: 12,
-              paddingTop: 10,
-              paddingBottom: 10,
-              background: '#0d0d0d',
-              border: '1px solid #222',
-              borderRadius: 8,
-              color: '#e0d8c8',
-              fontSize: 13,
-              outline: 'none',
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Filters Card */}
-      <div style={{ padding: '0 24px', marginBottom: 24 }}>
-        <div className="card" style={{ background: '#0d0d0d', border: '1px solid #222', borderRadius: 8, overflow: 'hidden' }}>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              background: '#0d0d0d',
-              border: 'none',
-              color: '#e0d8c8',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              transition: 'background 0.2s',
-            }}
-            onMouseEnter={e => e.target.style.background = '#141414'}
-            onMouseLeave={e => e.target.style.background = '#0d0d0d'}
-          >
-            <Filter size={16} />
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
-          </button>
-
-          {showFilters && (
-            <div style={{ padding: 16, borderTop: '1px solid #222', background: '#0a0a0a' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 16 }}>
-                {/* Date Range */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, color: '#888', marginBottom: 6 }}>From Date</label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={e => setStartDate(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      background: '#141414',
-                      border: '1px solid #222',
-                      borderRadius: 6,
-                      color: '#e0d8c8',
-                      fontSize: 12,
-                      outline: 'none',
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, color: '#888', marginBottom: 6 }}>To Date</label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={e => setEndDate(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      background: '#141414',
-                      border: '1px solid #222',
-                      borderRadius: 6,
-                      color: '#e0d8c8',
-                      fontSize: 12,
-                      outline: 'none',
-                    }}
-                  />
-                </div>
-
-                {/* Status Filter */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, color: '#888', marginBottom: 6 }}>Status</label>
-                  <select
-                    value={status}
-                    onChange={e => setStatus(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      background: '#141414',
-                      border: '1px solid #222',
-                      borderRadius: 6,
-                      color: '#e0d8c8',
-                      fontSize: 12,
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="all">All Status</option>
-                    <option value="auto_replied">Auto Replied</option>
-                    <option value="escalated">Escalated</option>
-                    <option value="failed">Failed</option>
-                  </select>
-                </div>
-
-                {/* Direction Filter */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, color: '#888', marginBottom: 6 }}>Direction</label>
-                  <select
-                    value={direction}
-                    onChange={e => setDirection(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      background: '#141414',
-                      border: '1px solid #222',
-                      borderRadius: 6,
-                      color: '#e0d8c8',
-                      fontSize: 12,
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="all">All Directions</option>
-                    <option value="inbound">Inbound</option>
-                    <option value="outbound">Outbound</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Filter Actions */}
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button
-                  className="btn-ghost"
-                  onClick={handleClearFilters}
-                  style={{ fontSize: 12, color: '#888' }}
-                >
-                  Clear Filters
-                </button>
-                <button
-                  className="btn-primary"
-                  onClick={handleApplyFilters}
-                  style={{ fontSize: 12 }}
-                >
-                  Apply Filters
-                </button>
-              </div>
-            </div>
+          )}
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#e0d8c8', margin: 0 }}>
+            {activeConv ? formatPhone(activeConv.lead_phone) : 'Messages'}
+          </h1>
+          {activeConv?.lead_name && (
+            <span style={{ fontSize: 13, color: '#888' }}>{activeConv.lead_name}</span>
+          )}
+          {!activeConv && totalUnread > 0 && (
+            <span style={{ background: '#C9A84C', color: '#0a0a0a', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10 }}>
+              {totalUnread}
+            </span>
           )}
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {activeConv && (
+            <button onClick={() => handleArchive(activeConv.id)} className="btn-ghost" style={{ fontSize: 12, color: '#888', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Archive size={14} /> Archive
+            </button>
+          )}
+          <button onClick={activeConv ? loadTimeline : loadConversations} className="btn-ghost" style={{ padding: 4 }}>
+            <RefreshCw size={16} color="#888" />
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: isConnected ? '#16A34A' : '#DC2626' }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: isConnected ? '#16A34A' : '#DC2626', boxShadow: isConnected ? '0 0 8px #16A34A' : 'none' }} />
+            {isConnected ? 'Live' : 'Offline'}
+          </div>
+        </div>
       </div>
 
-      {/* Error */}
-      {error && (
+      {/* Main content */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Conversation list */}
         <div style={{
-          margin: '0 24px 20px',
-          padding: '12px 16px',
-          background: 'rgba(220,38,38,0.1)',
-          border: '1px solid rgba(220,38,38,0.2)',
-          borderRadius: 8,
-          color: '#DC2626',
-          fontSize: 13,
+          width: activeConv ? 0 : '100%',
+          maxWidth: activeConv ? 0 : '100%',
+          minWidth: activeConv ? 0 : undefined,
+          overflow: 'hidden',
+          transition: 'width 0.2s, max-width 0.2s',
+          borderRight: '1px solid #222',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          flexDirection: 'column',
+          ...(typeof window !== 'undefined' && window.innerWidth >= 768 ? {
+            width: activeConv ? 340 : '100%',
+            maxWidth: activeConv ? 340 : '100%',
+            minWidth: activeConv ? 340 : undefined,
+          } : {}),
         }}>
-          <span>{error}</span>
-          <button className="btn-ghost" onClick={loadMessages} style={{ color: '#DC2626', fontSize: 12 }}>Retry</button>
-        </div>
-      )}
+          {/* Search + Filter */}
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #222' }}>
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <Search size={14} style={{ position: 'absolute', left: 10, top: 9, color: '#555' }} />
+              <input
+                type="text"
+                placeholder="Search conversations..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ width: '100%', paddingLeft: 32, padding: '8px 12px 8px 32px', background: '#141414', border: '1px solid #222', borderRadius: 6, color: '#e0d8c8', fontSize: 12, outline: 'none' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {['all', 'active', 'archived'].map(s => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  style={{
+                    padding: '4px 10px', fontSize: 11, borderRadius: 4, border: 'none', cursor: 'pointer',
+                    background: statusFilter === s ? '#C9A84C' : '#141414',
+                    color: statusFilter === s ? '#0a0a0a' : '#888',
+                    fontWeight: statusFilter === s ? 600 : 400,
+                  }}
+                >
+                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
 
-      {/* Content */}
-      <div style={{ padding: '0 24px' }}>
-        {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 40, color: '#555', justifyContent: 'center' }}>
-            <div className="spinner" />
-            <span>Loading messages...</span>
+          {/* Conversation rows */}
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {loadingConvs ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#555' }}>
+                <div className="spinner" style={{ margin: '0 auto 8px' }} />
+                Loading...
+              </div>
+            ) : conversations.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#555', fontSize: 13 }}>
+                No conversations yet
+              </div>
+            ) : conversations.map(conv => (
+              <div
+                key={conv.id}
+                onClick={() => setActiveConv(conv)}
+                style={{
+                  padding: '12px 16px', borderBottom: '1px solid #1a1a1a', cursor: 'pointer',
+                  background: activeConv?.id === conv.id ? '#141414' : 'transparent',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => { if (activeConv?.id !== conv.id) e.currentTarget.style.background = '#0f0f0f'; }}
+                onMouseLeave={e => { if (activeConv?.id !== conv.id) e.currentTarget.style.background = 'transparent'; }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#e0d8c8' }}>
+                      {conv.lead_name || formatPhone(conv.lead_phone)}
+                    </span>
+                    {conv.unread_count > 0 && (
+                      <span style={{ background: '#C9A84C', color: '#0a0a0a', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8, minWidth: 16, textAlign: 'center' }}>
+                        {conv.unread_count}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap' }}>
+                    {conv.last_message_at ? timeAgo(new Date(conv.last_message_at)) : ''}
+                  </span>
+                </div>
+                {conv.lead_name && (
+                  <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>
+                    {formatPhone(conv.lead_phone)}
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: conv.unread_count > 0 ? '#e0d8c8' : '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: conv.unread_count > 0 ? 500 : 400 }}>
+                  {conv.last_message_preview || 'No messages'}
+                </div>
+                {conv.lead_stage && (
+                  <span style={{ fontSize: 10, color: '#888', background: '#1a1a1a', padding: '2px 6px', borderRadius: 3, marginTop: 4, display: 'inline-block' }}>
+                    {conv.lead_stage}
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
-        ) : filteredMessages.length === 0 ? (
-          <div className="card" style={{ background: '#0d0d0d', border: '1px solid #222', padding: 40, textAlign: 'center', color: '#555', borderRadius: 8 }}>
-            {searchQuery ? 'No messages match your search' : 'No messages found'}
-          </div>
-        ) : (
-          <div className="card" style={{ background: '#0d0d0d', border: '1px solid #222', borderRadius: 8, overflow: 'hidden' }}>
-            {/* Table Header */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '80px 120px 1fr 1fr 100px 90px',
-              gap: 12,
-              padding: '12px 16px',
-              background: '#141414',
-              borderBottom: '1px solid #222',
-              fontSize: 11,
-              color: '#888',
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
-            }}>
-              <div>Time</div>
-              <div>Phone</div>
-              <div>Message</div>
-              <div>Reply</div>
-              <div>Status</div>
-              <div>Source</div>
+        </div>
+
+        {/* Timeline + Compose */}
+        {activeConv ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            {/* Timeline */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+              {loadingTimeline ? (
+                <div style={{ padding: 40, textAlign: 'center', color: '#555' }}>
+                  <div className="spinner" style={{ margin: '0 auto 8px' }} />
+                  Loading timeline...
+                </div>
+              ) : timeline.length === 0 ? (
+                <div style={{ padding: 40, textAlign: 'center', color: '#555', fontSize: 13 }}>
+                  No messages in this conversation
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {timeline.map((entry, i) => {
+                    // Call entry
+                    if (entry.entry_type === 'call') {
+                      return (
+                        <div key={entry.id || i} style={{
+                          alignSelf: 'center', background: '#141414', border: '1px solid #222',
+                          padding: '8px 16px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 8,
+                          fontSize: 12, color: '#888', margin: '8px 0',
+                        }}>
+                          <Phone size={12} />
+                          <span>{entry.direction === 'inbound' ? 'Incoming' : 'Outgoing'} call</span>
+                          {entry.duration != null && <span>({Math.round(entry.duration / 60)}m {entry.duration % 60}s)</span>}
+                          {entry.outcome && <span style={{ color: entry.outcome === 'booked' ? '#16A34A' : '#e0d8c8', fontWeight: 500 }}>- {entry.outcome}</span>}
+                          {entry.score != null && <span style={{ color: '#C9A84C' }}>{entry.score}pts</span>}
+                          <span style={{ color: '#555' }}>{entry.created_at ? timeAgo(new Date(entry.created_at)) : ''}</span>
+                        </div>
+                      );
+                    }
+
+                    // Message entry
+                    const isOutbound = entry.direction === 'outbound';
+                    return (
+                      <div key={entry.id || i} style={{ alignSelf: isOutbound ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
+                        <div style={{
+                          background: isOutbound ? 'rgba(201, 168, 76, 0.12)' : '#141414',
+                          border: isOutbound ? '1px solid rgba(201, 168, 76, 0.25)' : '1px solid #222',
+                          padding: '10px 14px', borderRadius: 12,
+                          borderBottomRightRadius: isOutbound ? 2 : 12,
+                          borderBottomLeftRadius: isOutbound ? 12 : 2,
+                        }}>
+                          {!isOutbound && entry.status === 'auto_replied' && (
+                            <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>Customer</div>
+                          )}
+                          {isOutbound && (
+                            <div style={{ fontSize: 10, color: '#C9A84C', marginBottom: 4, fontWeight: 600 }}>
+                              {entry.status === 'manual_reply' ? 'You' : 'Elyvn AI'}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 13, color: '#e0d8c8', lineHeight: 1.5, wordBreak: 'break-word' }}>
+                            {entry.body || '(empty)'}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, justifyContent: isOutbound ? 'flex-end' : 'flex-start' }}>
+                            <span style={{ fontSize: 10, color: '#555' }}>
+                              {entry.created_at ? new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                            </span>
+                            {entry.channel && entry.channel !== 'sms' && (
+                              <span style={{ fontSize: 10, color: '#555', background: '#1a1a1a', padding: '1px 4px', borderRadius: 3 }}>
+                                {entry.channel}
+                              </span>
+                            )}
+                            {isOutbound && <DeliveryIcon status={entry.delivery_status} />}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div ref={timelineEndRef} />
+                </div>
+              )}
             </div>
 
-            {/* Message Rows */}
-            {filteredMessages.map((msg, i) => {
-              const badge = getStatusBadge(msg);
-              const msgTime = msg.timestamp ? timeAgo(new Date(msg.timestamp)) : '—';
-              const phone = formatPhone(msg.phone_number || msg.phone || '');
-              const msgContent = truncate(msg.message || msg.content || '', 60);
-              const replyContent = msg.ai_reply ? truncate(msg.ai_reply, 60) : (msg.reply ? truncate(msg.reply, 60) : '—');
-              const source = msg.source || 'SMS';
-
-              return (
-                <div
-                  key={msg.id || msg.message_id || i}
-                  onClick={() => setSelectedMessage(msg)}
+            {/* Compose bar */}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #222', background: '#0d0d0d' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <textarea
+                  ref={inputRef}
+                  value={messageInput}
+                  onChange={e => setMessageInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Type a message..."
+                  rows={1}
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: '80px 120px 1fr 1fr 100px 90px',
-                    gap: 12,
-                    padding: '12px 16px',
-                    borderBottom: '1px solid #222',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    transition: 'background 0.2s',
-                    background: '#0d0d0d',
+                    flex: 1, padding: '10px 14px', background: '#141414', border: '1px solid #222',
+                    borderRadius: 8, color: '#e0d8c8', fontSize: 13, outline: 'none', resize: 'none',
+                    lineHeight: 1.4, minHeight: 40, maxHeight: 120, fontFamily: 'inherit',
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#141414'}
-                  onMouseLeave={e => e.currentTarget.style.background = '#0d0d0d'}
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={!messageInput.trim() || sending}
+                  style={{
+                    padding: '10px 16px', background: messageInput.trim() ? '#C9A84C' : '#222',
+                    border: 'none', borderRadius: 8, cursor: messageInput.trim() ? 'pointer' : 'default',
+                    display: 'flex', alignItems: 'center', gap: 6, color: messageInput.trim() ? '#0a0a0a' : '#555',
+                    fontWeight: 600, fontSize: 13, transition: 'background 0.15s',
+                    opacity: sending ? 0.5 : 1,
+                  }}
                 >
-                  <div style={{ fontSize: 12, color: '#888' }}>{msgTime}</div>
-                  <div style={{ fontSize: 12, color: '#e0d8c8', fontWeight: 500 }}>{phone}</div>
-                  <div style={{ fontSize: 12, color: '#e0d8c8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {msgContent}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {replyContent}
-                  </div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: badge.color }}>
-                    {badge.label}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#888', background: '#141414', padding: '4px 8px', borderRadius: 4, textAlign: 'center' }}>
-                    {source}
-                  </div>
-                </div>
-              );
-            })}
+                  <Send size={14} />
+                  {sending ? 'Sending...' : 'Send'}
+                </button>
+              </div>
+              <div style={{ fontSize: 10, color: '#444', marginTop: 4 }}>
+                {messageInput.length}/1600 chars  |  Press Enter to send
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333' }}>
+            <div style={{ textAlign: 'center' }}>
+              <MessageSquare size={48} style={{ marginBottom: 16, opacity: 0.3 }} />
+              <div style={{ fontSize: 14, color: '#555' }}>Select a conversation</div>
+            </div>
           </div>
         )}
       </div>
-
-      {/* Pagination */}
-      {!loading && filteredMessages.length > 0 && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 16,
-          marginTop: 24,
-          padding: '0 24px',
-        }}>
-          <button
-            className="btn-ghost"
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            style={{ opacity: page <= 1 ? 0.3 : 1, cursor: page <= 1 ? 'default' : 'pointer' }}
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <span style={{ fontSize: 13, color: '#888' }}>
-            Page <span style={{ color: '#e0d8c8', fontWeight: 600 }}>{page}</span> of <span style={{ color: '#e0d8c8', fontWeight: 600 }}>{totalPages}</span>
-          </span>
-          <button
-            className="btn-ghost"
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            style={{ opacity: page >= totalPages ? 0.3 : 1, cursor: page >= totalPages ? 'default' : 'pointer' }}
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      )}
-
-      {/* Detail Modal */}
-      {selectedMessage && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 50,
-          padding: 20,
-        }}>
-          <div style={{
-            background: '#0d0d0d',
-            border: '1px solid #222',
-            borderRadius: 12,
-            maxWidth: 600,
-            width: '100%',
-            maxHeight: '90vh',
-            overflow: 'auto',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
-          }}>
-            {/* Modal Header */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '16px 20px',
-              borderBottom: '1px solid #222',
-              background: '#141414',
-            }}>
-              <h2 style={{ fontSize: 16, fontWeight: 700, color: '#e0d8c8', margin: 0 }}>
-                Conversation
-              </h2>
-              <button
-                onClick={() => setSelectedMessage(null)}
-                className="btn-ghost"
-                style={{ fontSize: 0, padding: 4, color: '#888' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div style={{ padding: 20 }}>
-              {/* Contact Info */}
-              <div style={{
-                background: '#141414',
-                padding: 12,
-                borderRadius: 8,
-                marginBottom: 20,
-                border: '1px solid #222',
-              }}>
-                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Phone</div>
-                <div style={{ fontSize: 16, fontWeight: 600, color: '#e0d8c8', marginBottom: 12 }}>
-                  {formatPhone(selectedMessage.phone_number || selectedMessage.phone || '')}
-                </div>
-                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Received</div>
-                <div style={{ fontSize: 13, color: '#e0d8c8', marginBottom: 12 }}>
-                  {selectedMessage.timestamp ? new Date(selectedMessage.timestamp).toLocaleString() : '—'}
-                </div>
-                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Status</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: getStatusBadge(selectedMessage).color }}>
-                  {getStatusBadge(selectedMessage).label}
-                </div>
-              </div>
-
-              {/* Conversation Thread */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-                {/* Inbound Message */}
-                <div style={{
-                  alignSelf: 'flex-start',
-                  maxWidth: '85%',
-                  background: '#141414',
-                  border: '1px solid #222',
-                  padding: 12,
-                  borderRadius: 8,
-                  borderBottomLeftRadius: 2,
-                }}>
-                  <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>Customer</div>
-                  <div style={{ fontSize: 13, color: '#e0d8c8', lineHeight: 1.5 }}>
-                    {selectedMessage.message || selectedMessage.content || '(no content)'}
-                  </div>
-                </div>
-
-                {/* AI Reply */}
-                {(selectedMessage.ai_reply || selectedMessage.reply) && (
-                  <div style={{
-                    alignSelf: 'flex-end',
-                    maxWidth: '85%',
-                    background: 'rgba(201, 168, 76, 0.15)',
-                    border: '1px solid rgba(201, 168, 76, 0.3)',
-                    padding: 12,
-                    borderRadius: 8,
-                    borderBottomRightRadius: 2,
-                  }}>
-                    <div style={{ fontSize: 11, color: '#C9A84C', marginBottom: 6, fontWeight: 600 }}>Elyvn AI</div>
-                    <div style={{ fontSize: 13, color: '#e0d8c8', lineHeight: 1.5 }}>
-                      {selectedMessage.ai_reply || selectedMessage.reply}
-                    </div>
-                  </div>
-                )}
-
-                {/* Escalation Note */}
-                {(selectedMessage.escalated === true || selectedMessage.status === 'escalated') && (
-                  <div style={{
-                    background: 'rgba(251, 191, 36, 0.1)',
-                    border: '1px solid rgba(251, 191, 36, 0.3)',
-                    padding: 12,
-                    borderRadius: 8,
-                    marginTop: 8,
-                  }}>
-                    <div style={{ fontSize: 12, color: '#FBBF24', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <AlertTriangle size={14} />
-                      Escalated for Manual Review
-                    </div>
-                    {selectedMessage.escalation_reason && (
-                      <div style={{ fontSize: 12, color: '#888', marginTop: 6 }}>
-                        {selectedMessage.escalation_reason}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Close Button */}
-              <button
-                onClick={() => setSelectedMessage(null)}
-                className="btn-primary"
-                style={{ width: '100%', padding: '10px 16px', fontSize: 13 }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

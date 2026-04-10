@@ -166,3 +166,64 @@ export const provisionClient = (data) =>
     headers: jsonHeaders(),
     body: JSON.stringify(data),
   });
+
+// Transfer
+export const transferCall = (clientId, callId, transferPhone) =>
+  apiFetch(`${API_BASE}/calls/${clientId}/${callId}/transfer`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(transferPhone ? { transfer_phone: transferPhone } : {}),
+  });
+
+// Integrations
+export const getWebhookLog = (clientId) =>
+  apiFetch(`${API_BASE}/integrations/${clientId}/webhook-log`);
+
+export const testWebhook = (clientId, eventType) =>
+  apiFetch(`${API_BASE}/integrations/${clientId}/webhook-test`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ event_type: eventType }),
+  });
+
+export const getIntegrationStatus = (clientId) =>
+  apiFetch(`${API_BASE}/integrations/${clientId}/status`);
+
+// Conversations (Phase 5 — unified messaging)
+export const getConversations = (clientId, params = {}) =>
+  apiFetch(`${API_BASE}/conversations/${clientId}${buildQueryString(params)}`);
+
+export const getConversationTimeline = (clientId, conversationId, params = {}) =>
+  apiFetch(`${API_BASE}/conversations/${clientId}/${conversationId}/timeline${buildQueryString(params)}`);
+
+export const sendConversationMessage = (clientId, conversationId, body) =>
+  apiFetch(`${API_BASE}/conversations/${clientId}/${conversationId}/send`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ body }),
+  });
+
+export const markConversationRead = (clientId, conversationId) =>
+  apiFetch(`${API_BASE}/conversations/${clientId}/${conversationId}/read`, {
+    method: 'PUT',
+    headers: jsonHeaders(),
+    body: JSON.stringify({}),
+  });
+
+export const archiveConversation = (clientId, conversationId) =>
+  apiFetch(`${API_BASE}/conversations/${clientId}/${conversationId}/archive`, {
+    method: 'PUT',
+    headers: jsonHeaders(),
+    body: JSON.stringify({}),
+  });
+
+// Settings
+export const getSettings = (clientId) =>
+  apiFetch(`${API_BASE}/settings/${clientId}`);
+
+export const updateSettings = (clientId, data) =>
+  apiFetch(`${API_BASE}/settings/${clientId}`, {
+    method: 'PUT',
+    headers: jsonHeaders(),
+    body: JSON.stringify(data),
+  });

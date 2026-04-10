@@ -38,7 +38,7 @@ elyvn/
       telegram.js         ← Telegram Bot API client
       encryption.js       ← AES-256-GCM for PII columns
       ...
-    tests/                ← 83 test files, 2325 tests
+    tests/                ← 85 test files, 2409 tests
   dashboard/              ← React 18 SPA (Vite), builds into server/bridge/public/
     src/pages/            ← 12 pages (Dashboard, Clients, Calls, Messages, etc.)
   Dockerfile              ← Multi-stage (builder + runtime), runs as root (Railway constraint)
@@ -158,14 +158,16 @@ Falls back to legacy single-call brain.js when disabled or on failure.
 
 ## Dashboard Pages (React 18 + Vite)
 
-Dashboard.jsx, Clients.jsx, ClientDetail.jsx, Calls.jsx, Messages.jsx, Bookings.jsx, Pipeline.jsx, Intelligence.jsx, Settings.jsx, Outreach.jsx, Onboard.jsx, Provision.jsx.
+Dashboard.jsx, Clients.jsx, ClientDetail.jsx, Calls.jsx, Messages.jsx, Bookings.jsx, Pipeline.jsx, Intelligence.jsx, Settings.jsx, Outreach.jsx, Onboard.jsx, Provision.jsx, Integrations.jsx.
 
-**Missing:** Agent transfer settings, webhook config UI, unified number management, Google Sheets export view.
+**Added in Phase 4:** Integrations page (webhook log, test button, Sheets guide), unified phone number display in Settings, real-time active call indicators + transfer controls in Calls.
+
+**Added in Phase 5:** Messages page rewritten as unified inbox — conversation list with unread badges, unified timeline (SMS + calls merged), two-way SMS compose bar, delivery status icons, archive controls.
 
 ## Deployment
 
 - **Railway** (`joyful-trust`): Dockerfile builder, `/data` volume for SQLite, healthcheck `/health` with 300s timeout
-- **GitHub CI**: Jest tests on push, all 2325 passing
+- **GitHub CI**: Jest tests + security scans + build + Railway auto-deploy on push, all 2409 passing
 - Deploy: `cd elyvn && railway up` (or push to main for auto-deploy)
 - Env vars: managed via `railway variables set KEY=VALUE`
 
@@ -217,17 +219,41 @@ Remaining gaps: sanitizers don't strip semantic prompt delimiters (`Human:`, `--
 - [x] 17 new tests in `webhookEvents.test.js` — event helpers, migration, settings, export
 - [x] 2359 tests passing (83 suites)
 
-### Phase 4: Dashboard Upgrade
-- Settings: unified number management, transfer phone, webhook URL config
-- Calls: real-time call status, transfer controls
-- New page: Integrations (webhook log, test button, Sheets setup guide)
-- WebSocket: push call events to dashboard in real-time
+### Phase 4: Dashboard Upgrade (DONE)
+- [x] Settings: unified phone number display (phone_number, transfer_phone, voice config from /api/settings)
+- [x] Settings: already had webhook URL config + transfer_phone editing (Phase 3)
+- [x] Calls: real-time active call indicators via `call_started` WebSocket event (green pulsing banner)
+- [x] Calls: transfer controls — button on active calls + button in call detail modal
+- [x] `POST /api/calls/:clientId/:callId/transfer` — warm transfer via Retell, cold fallback via Twilio
+- [x] New page: Integrations (`/integrations`) — service status grid, inbound/outbound webhook URLs, test webhook button, delivery log table, Google Sheets setup guide (Zapier + Make + CSV)
+- [x] `GET /api/integrations/:clientId/webhook-log` — filtered delivery log from webhook queue
+- [x] `POST /api/integrations/:clientId/webhook-test` — send test event to configured URL
+- [x] `GET /api/integrations/:clientId/status` — aggregated integration status
+- [x] WebSocket: `call_started` broadcast on call begin (retell/calls.js handleCallStarted)
+- [x] WebSocket: `call_transfer` broadcast on transfer (retell/followups.js handleTransfer)
+- [x] WebSocket: existing `new_call` broadcast on call end (Phase 2) removes call from active list
+- [x] Sidebar: Integrations nav item (Webhook icon) between Provision and Settings
+- [x] 12 new tests in `integrations.test.js` — webhook log filtering, test payload, transfer cascade, WS events
+- [x] 2371 tests passing (84 suites)
 
-### Phase 5: Messaging Unification
-- Single conversation thread per lead (calls + SMS + email in one timeline)
-- Dashboard Messages page: unified inbox view
-- Two-way SMS from dashboard (not just Telegram)
-- Read receipts / delivery status tracking
+### Phase 5: Messaging Unification (DONE)
+- [x] Migration 044: `conversations` table (id, client_id, lead_id, lead_phone, lead_name, last_message_at, last_message_preview, unread_count, status) with UNIQUE(client_id, lead_phone)
+- [x] Migration 044: `conversation_id`, `delivery_status`, `delivered_at`, `read_at` columns on messages table
+- [x] Migration 044: Backfill — existing messages grouped by (client_id, phone) create conversations, all messages linked
+- [x] `routes/api/conversations.js`: 5 endpoints — list, timeline, send, mark-read, archive
+- [x] `GET /conversations/:clientId` — inbox view with search, status filter, lead score/stage join, sorted by last_message_at
+- [x] `GET /conversations/:clientId/:conversationId/timeline` — unified timeline merging messages + calls sorted chronologically
+- [x] `POST /conversations/:clientId/:conversationId/send` — two-way SMS from dashboard (sendSMS + record + WS broadcast + webhook)
+- [x] `PUT /conversations/:clientId/:conversationId/read` — mark inbound messages as read, reset unread_count
+- [x] `PUT /conversations/:clientId/:conversationId/archive` — archive conversation
+- [x] `normalMessage.js` updated: `ensureConversation()` creates/updates conversations on every inbound SMS (all 3 paths: normal, rate-limited, AI-paused)
+- [x] Outbound messages record `conversation_id`, `delivery_status`, conversation preview updated on send
+- [x] WebSocket broadcasts include `conversationId` field for targeted UI updates
+- [x] Dashboard Messages page: full rewrite — conversation list (left), unified timeline with call bubbles (right), compose bar with Enter-to-send, delivery status icons (sent/delivered/read/failed), unread badges, archive controls
+- [x] Validation schemas: `ConversationQuerySchema`, `ConversationDetailParamsSchema`, `SendMessageBodySchema` with XSS-safe safeString + min(1)
+- [x] 38 new tests in `conversations.test.js` — schema validation, timeline merge, delivery status, read receipts, send flow, backfill logic
+- [x] GitHub CI/CD: enhanced with Railway auto-deploy job, SQL injection pattern scan, OWASP dep check, healthcheck verification
+- [x] 2409 tests passing (85 suites)
 
 ## Session Workflow for Future Claude Code Sessions
 

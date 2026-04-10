@@ -37,10 +37,16 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
       logger.info(`[telnyx] Rate limited outbound to ${from} — already replied within 5 min`);
       const existingLead2 = await db.query('SELECT id FROM leads WHERE phone = ? AND client_id = ?', [from, client.id], 'get');
       if (existingLead2) {
+        const convId = await ensureConversation(db, client.id, from, existingLead2.id);
         await db.query(`
-          INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, created_at)
-          VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, datetime('now'))
-        `, [randomUUID(), client.id, existingLead2.id, from, body, messageId || null], 'run');
+          INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, conversation_id, delivery_status, created_at)
+          VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, 'received', datetime('now'))
+        `, [randomUUID(), client.id, existingLead2.id, from, body, messageId || null, convId], 'run');
+        // Update conversation preview
+        try {
+          const preview = (body || '').substring(0, 100);
+          await db.query("UPDATE conversations SET last_message_at = datetime('now'), last_message_preview = ?, updated_at = datetime('now') WHERE id = ?", [preview, convId], 'run');
+        } catch (_) {}
       }
       return;
     }
@@ -61,6 +67,24 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
       clientId: client.id, from, body, messageId, confidence: finalConfidence, inboundId
     });
 
+    // Ensure conversation exists for this (client, phone) pair
+    const conversationId = await ensureConversation(db, client.id, from, leadId);
+
+    // Link the inbound message (inserted by upsertLead) to the conversation
+    if (conversationId) {
+      try {
+        await db.query(
+          "UPDATE messages SET conversation_id = ?, delivery_status = 'received' WHERE id = ?",
+          [conversationId, inboundId], 'run'
+        );
+        const preview = (body || '').substring(0, 100);
+        await db.query(
+          "UPDATE conversations SET last_message_at = datetime('now'), last_message_preview = ?, updated_at = datetime('now') WHERE id = ?",
+          [preview, conversationId], 'run'
+        );
+      } catch (_) { /* linking must not break request */ }
+    }
+
     // Fire-and-forget event emission
     try {
       if (isNewLead) {
@@ -79,11 +103,20 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
     const truncatedReply = finalReply.slice(0, SMS_MAX_LENGTH);
     await sendSMS(from, truncatedReply, to);
 
-    // Record outbound message
+    // Record outbound message (with conversation_id + delivery_status)
     await db.query(`
-      INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, confidence, created_at)
-      VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'auto_replied', ?, datetime('now'))
-    `, [outboundId, client.id, leadId, from, finalReply, finalConfidence], 'run');
+      INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, confidence, conversation_id, delivery_status, created_at)
+      VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'auto_replied', ?, ?, 'sent', datetime('now'))
+    `, [outboundId, client.id, leadId, from, finalReply, finalConfidence, conversationId], 'run');
+
+    // Update conversation with latest message
+    try {
+      const preview = finalReply.substring(0, 100);
+      await db.query(`
+        UPDATE conversations SET last_message_at = datetime('now'), last_message_preview = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `, [preview, conversationId], 'run');
+    } catch (_) { /* conversation update must not break request */ }
 
     try { appendEvent(db, leadId, 'message', Events.SMSSent, { phone: from, channel: 'sms', messageId: outboundId }, client.id); } catch (_) {}
 
@@ -96,7 +129,7 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
     // Broadcast real-time update
     try {
       const { broadcast } = require('../../utils/websocket');
-      broadcast('new_message', { id: inboundId, phone: from, direction: 'inbound', body, confidence: finalConfidence, lead_id: leadId });
+      broadcast('new_message', { id: inboundId, conversationId, phone: from, direction: 'inbound', body, confidence: finalConfidence, lead_id: leadId });
     } catch (err) {
       logger.warn('[telnyx] WebSocket broadcast error:', err.message);
     }
@@ -158,10 +191,15 @@ async function handleAiPaused(db, client, from, to, body, messageId) {
     try { await db.query('UPDATE leads SET phone_encrypted = ? WHERE id = ?', [encrypt(from), leadId], 'run'); } catch (encErr) { logger.warn('[telnyx] phone encryption failed:', encErr.message); }
     try { appendEvent(db, leadId, 'lead', Events.LeadCreated, { phone: from, source: 'sms_inbound', ai_paused: true }, client.id); } catch (_) {}
   }
+  const convId = await ensureConversation(db, client.id, from, leadId);
   await db.query(`
-    INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, created_at)
-    VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, datetime('now'))
-  `, [randomUUID(), client.id, leadId, from, body, messageId || null], 'run');
+    INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, conversation_id, delivery_status, created_at)
+    VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, 'received', datetime('now'))
+  `, [randomUUID(), client.id, leadId, from, body, messageId || null, convId], 'run');
+  try {
+    const preview = (body || '').substring(0, 100);
+    await db.query("UPDATE conversations SET last_message_at = datetime('now'), last_message_preview = ?, updated_at = datetime('now') WHERE id = ?", [preview, convId], 'run');
+  } catch (_) {}
 
   if (client.telegram_chat_id) {
     const tg = require('../../utils/telegram');
@@ -265,6 +303,49 @@ async function sendTelegramNotification(db, client, from, body, reply, confidenc
     }
   } catch (tgErr) {
     logger.error('[telnyx] Telegram notification failed:', tgErr.message);
+  }
+}
+
+/**
+ * Ensure a conversation row exists for (client_id, phone). Returns conversation ID.
+ * On new inbound, also increments unread_count.
+ */
+async function ensureConversation(db, clientId, phone, leadId) {
+  try {
+    const existing = await db.query(
+      'SELECT id FROM conversations WHERE client_id = ? AND lead_phone = ?',
+      [clientId, phone], 'get'
+    );
+    if (existing) {
+      // Increment unread count for inbound
+      await db.query(
+        "UPDATE conversations SET unread_count = unread_count + 1, updated_at = datetime('now') WHERE id = ?",
+        [existing.id], 'run'
+      );
+      // Update lead_id if it was null and we now have one
+      if (leadId) {
+        await db.query(
+          'UPDATE conversations SET lead_id = COALESCE(lead_id, ?) WHERE id = ?',
+          [leadId, existing.id], 'run'
+        );
+      }
+      return existing.id;
+    }
+    // Create new conversation
+    const convId = randomUUID();
+    let leadName = null;
+    if (leadId) {
+      const lead = await db.query('SELECT name FROM leads WHERE id = ?', [leadId], 'get');
+      leadName = lead?.name || null;
+    }
+    await db.query(`
+      INSERT INTO conversations (id, client_id, lead_id, lead_phone, lead_name, unread_count, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
+    `, [convId, clientId, leadId, phone, leadName], 'run');
+    return convId;
+  } catch (err) {
+    logger.warn('[telnyx] ensureConversation error:', err.message);
+    return null;
   }
 }
 
