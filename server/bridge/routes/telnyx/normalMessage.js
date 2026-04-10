@@ -69,6 +69,12 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
       appendEvent(db, leadId, 'message', Events.ReplyReceived, { phone: from, channel: 'sms', direction: 'inbound' }, client.id);
     } catch (_evtErr) { /* event emission must not break request */ }
 
+    // Outbound webhook: fire sms.received
+    try {
+      const { fireSmsReceived } = require('../../utils/webhookEvents');
+      await fireSmsReceived(client, { from, to, body, messageId, leadId });
+    } catch (_whErr) { /* webhook fire must not break request */ }
+
     // Send reply via Telnyx REST API (max SMS_MAX_LENGTH chars = 10 concatenated segments)
     const truncatedReply = finalReply.slice(0, SMS_MAX_LENGTH);
     await sendSMS(from, truncatedReply, to);
@@ -80,6 +86,12 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
     `, [outboundId, client.id, leadId, from, finalReply, finalConfidence], 'run');
 
     try { appendEvent(db, leadId, 'message', Events.SMSSent, { phone: from, channel: 'sms', messageId: outboundId }, client.id); } catch (_) {}
+
+    // Outbound webhook: fire sms.sent
+    try {
+      const { fireSmsSent } = require('../../utils/webhookEvents');
+      await fireSmsSent(client, { to: from, from: to, body: finalReply, messageId: outboundId, leadId });
+    } catch (_whErr) { /* webhook fire must not break request */ }
 
     // Broadcast real-time update
     try {

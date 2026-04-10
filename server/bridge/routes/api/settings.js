@@ -22,14 +22,16 @@ router.get('/settings/:clientId', async (req, res, next) => {
     const client = await db.query(`
       SELECT business_name, owner_name, owner_email, owner_phone, industry, timezone,
              twilio_phone, retell_agent_id, retell_phone, retell_voice, retell_language,
-             transfer_phone, whatsapp_phone,
+             transfer_phone, whatsapp_phone, phone_number,
              calcom_booking_link, calcom_event_type_id, google_review_link,
              telegram_chat_id, notification_mode,
              plan, subscription_status, avg_ticket,
              is_active, auto_followup_enabled,
              facebook_page_id, instagram_user_id,
              onboarding_step, onboarding_completed,
-             referral_code
+             referral_code,
+             lead_webhook_url, booking_webhook_url, call_webhook_url,
+             sms_webhook_url, stage_change_webhook_url
       FROM clients WHERE id = ?
     `, [clientId], 'get');
 
@@ -44,6 +46,9 @@ router.get('/settings/:clientId', async (req, res, next) => {
         industry: client.industry,
         timezone: client.timezone,
         avg_ticket: client.avg_ticket,
+      },
+      phone: {
+        phone_number: client.phone_number,
       },
       voice: {
         retell_agent_id: client.retell_agent_id,
@@ -82,6 +87,13 @@ router.get('/settings/:clientId', async (req, res, next) => {
       referral: {
         code: client.referral_code,
       },
+      webhooks: {
+        lead_webhook_url: client.lead_webhook_url || null,
+        booking_webhook_url: client.booking_webhook_url || null,
+        call_webhook_url: client.call_webhook_url || null,
+        sms_webhook_url: client.sms_webhook_url || null,
+        stage_change_webhook_url: client.stage_change_webhook_url || null,
+      },
     });
   } catch (err) {
     logger.error('[settings] Error:', err);
@@ -102,6 +114,8 @@ router.put('/settings/:clientId', async (req, res, next) => {
       'retell_voice', 'retell_language', 'transfer_phone', 'whatsapp_phone',
       'calcom_booking_link', 'calcom_event_type_id', 'google_review_link',
       'notification_mode', 'is_active', 'auto_followup_enabled',
+      'lead_webhook_url', 'booking_webhook_url', 'call_webhook_url',
+      'sms_webhook_url', 'stage_change_webhook_url',
     ]);
 
     // Fields that require encryption before storage

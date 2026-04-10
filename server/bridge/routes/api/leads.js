@@ -183,6 +183,16 @@ router.put('/leads/:clientId/:leadId', validateBody(LeadUpdateSchema), async (re
     // Fire-and-forget: emit LeadStageChanged if stage actually changed
     if (stage && oldStage && oldStage !== stage) {
       try { appendEvent(db, leadId, 'lead', Events.LeadStageChanged, { from: oldStage, to: stage, trigger: 'api' }, clientId); } catch (_) {}
+
+      // Outbound webhook: notify client's configured stage_change_webhook_url
+      try {
+        const { fireLeadStageChanged } = require('../../utils/webhookEvents');
+        const client = await db.query('SELECT id, stage_change_webhook_url FROM clients WHERE id = ?', [clientId], 'get');
+        if (client) {
+          const lead = await db.query('SELECT name, phone, email, score FROM leads WHERE id = ?', [leadId], 'get');
+          await fireLeadStageChanged(client, { leadId, oldStage, newStage: stage, leadData: lead || {} });
+        }
+      } catch (_whErr) { /* webhook fire must not break request */ }
     }
 
     // Fire-and-forget: audit trail for lead mutation

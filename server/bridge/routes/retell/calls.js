@@ -278,6 +278,23 @@ async function handleCallEnded(db, call, correlationId) {
     await generateAndSendNotifications(db, callRecord, callData, call, analysis, correlationId);
 
     logger.info(`[retell] call_ended processed: ${callId} outcome=${analysis.outcome} score=${analysis.score}`, { correlationId });
+
+    // Outbound webhook: notify client's configured call_webhook_url
+    try {
+      const { fireCallEnded } = require('../../utils/webhookEvents');
+      const client = await db.query('SELECT id, call_webhook_url FROM clients WHERE id = ?', [callRecord.client_id], 'get');
+      if (client) {
+        await fireCallEnded(client, {
+          callId,
+          phone: callRecord.caller_phone,
+          duration: analysis.duration,
+          outcome: analysis.outcome,
+          score: analysis.score,
+          summary: analysis.summary,
+          sentiment: analysis.sentiment,
+        });
+      }
+    } catch (_whErr) { /* webhook fire must not break request */ }
   } catch (err) {
     logger.error('[retell] call_ended error:', { correlationId, error: err.message, stack: err.stack });
   }

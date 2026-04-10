@@ -1351,6 +1351,42 @@ const migrations = [
       getLogger().info('[migrations] 041: leads(client_id, phone) UNIQUE index restored');
     },
   },
+  {
+    id: '042_unified_phone_number',
+    description: 'Add phone_number column to unify retell_phone + twilio_phone into a single field',
+    down(db) {
+      // SQLite cannot drop columns — phone_number stays harmlessly; drop index
+      db.exec('DROP INDEX IF EXISTS idx_clients_phone_number');
+    },
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+      if (!cols.includes('phone_number')) {
+        db.exec('ALTER TABLE clients ADD COLUMN phone_number TEXT');
+      }
+      // Backfill: prefer twilio_phone (the one actually assigned at provisioning), fall back to retell_phone
+      db.exec("UPDATE clients SET phone_number = COALESCE(twilio_phone, retell_phone) WHERE phone_number IS NULL");
+      db.exec('CREATE INDEX IF NOT EXISTS idx_clients_phone_number ON clients(phone_number)');
+      getLogger().info('[migrations] 042: unified phone_number column added and backfilled');
+    },
+  },
+  {
+    id: '043_webhook_event_columns',
+    description: 'Add webhook URL columns for call, SMS, and stage-change outbound events',
+    down(db) {
+      // SQLite cannot drop columns — these stay harmlessly
+    },
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+      const newCols = ['lead_webhook_url', 'call_webhook_url', 'sms_webhook_url', 'stage_change_webhook_url'];
+      // booking_webhook_url already exists (migration 038)
+      for (const col of newCols) {
+        if (!cols.includes(col)) {
+          db.exec(`ALTER TABLE clients ADD COLUMN ${col} TEXT`);
+        }
+      }
+      getLogger().info('[migrations] 043: webhook event columns added (lead, call, sms, stage_change)');
+    },
+  },
 ];
 
 /**

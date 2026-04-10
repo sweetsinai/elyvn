@@ -204,12 +204,18 @@ Remaining gaps: sanitizers don't strip semantic prompt delimiters (`Human:`, `--
 - [x] 17 new tests in `callTransfer.test.js` — warm, cold, fallback, edge cases
 - [x] 2342 tests passing (commit 6a3b48a)
 
-### Phase 3: Webhook Events + Google Sheets
-- Define event schema: `{ event, timestamp, client_id, data }`
-- Fire webhooks on: `call_ended`, `lead_created`, `lead_stage_changed`, `booking_confirmed`, `sms_received`, `sms_sent`
-- Add webhook URL config to client settings (DB + API + dashboard)
-- Write Zapier/Make template docs for Sheets integration
-- Add CSV/Sheets export endpoint (`GET /api/exports/sheets`)
+### Phase 3: Webhook Events + Google Sheets (DONE)
+- [x] Migration 043: `lead_webhook_url`, `call_webhook_url`, `sms_webhook_url`, `stage_change_webhook_url` columns on clients (`booking_webhook_url` from 038)
+- [x] `utils/webhookEvents.js`: centralized helpers — `fireCallEnded`, `fireLeadStageChanged`, `fireSmsReceived`, `fireSmsSent`
+- [x] Event schema: `{ event, clientId, timestamp, data }` with HMAC-SHA256 signing via `webhookQueue.js`
+- [x] Webhooks fire on: `call_ended` (retell/calls.js), `lead.stage_changed` (leads.js PUT), `sms.received` + `sms.sent` (normalMessage.js)
+- [x] Pre-existing: `lead.created` (forms.js), `booking.created` (calcom-webhook.js)
+- [x] Settings API: webhook URLs in GET response (`webhooks` category) + PUT ALLOWED set
+- [x] Clients API: `CLIENT_SAFE_COLS` + `ALLOWED_CLIENT_FIELDS` updated for webhook columns
+- [x] Dashboard Settings: webhook URL edit fields per client + "Data Export" section with CSV download links
+- [x] `GET /api/exports/:clientId/sheets`: combined leads + calls + messages export (CSV + JSON)
+- [x] 17 new tests in `webhookEvents.test.js` — event helpers, migration, settings, export
+- [x] 2359 tests passing (83 suites)
 
 ### Phase 4: Dashboard Upgrade
 - Settings: unified number management, transfer phone, webhook URL config

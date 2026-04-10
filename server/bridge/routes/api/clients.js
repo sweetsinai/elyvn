@@ -21,7 +21,7 @@ router.param('clientId', clientIsolationParam);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Safe columns to return — never expose password_hash, verification_token, verification_expires
-const CLIENT_SAFE_COLS = 'id, business_name, name, owner_name, owner_email, owner_phone, industry, plan, subscription_status, stripe_customer_id, stripe_subscription_id, retell_agent_id, retell_phone, twilio_phone, telnyx_phone, transfer_phone, calcom_event_type_id, calcom_booking_link, google_review_link, telegram_chat_id, avg_ticket, is_active, notification_mode, whatsapp_phone, created_at, updated_at';
+const CLIENT_SAFE_COLS = 'id, business_name, name, owner_name, owner_email, owner_phone, industry, plan, subscription_status, stripe_customer_id, stripe_subscription_id, retell_agent_id, retell_phone, twilio_phone, telnyx_phone, transfer_phone, phone_number, calcom_event_type_id, calcom_booking_link, google_review_link, telegram_chat_id, avg_ticket, is_active, notification_mode, whatsapp_phone, lead_webhook_url, booking_webhook_url, call_webhook_url, sms_webhook_url, stage_change_webhook_url, created_at, updated_at';
 
 // Whitelist of allowed client fields for updates (prevents SQL injection)
 const ALLOWED_CLIENT_FIELDS = new Set([
@@ -30,11 +30,13 @@ const ALLOWED_CLIENT_FIELDS = new Set([
   'booking_link', 'industry', 'auto_followup_enabled',
   'owner_name', 'owner_phone', 'owner_email',
   'retell_agent_id', 'retell_phone', 'retell_voice', 'retell_language',
-  'twilio_phone', 'transfer_phone',
+  'twilio_phone', 'transfer_phone', 'phone_number',
   'calcom_event_type_id', 'calcom_booking_link', 'telegram_chat_id',
   'avg_ticket', 'is_active', 'plan',
   'notification_mode', 'whatsapp_phone',
   'facebook_page_id', 'instagram_user_id',
+  'lead_webhook_url', 'booking_webhook_url', 'call_webhook_url',
+  'sms_webhook_url', 'stage_change_webhook_url',
 ]);
 
 // GET /clients — migrated to async db.query() for SQLite + Supabase compatibility
@@ -71,7 +73,7 @@ router.post('/clients', validateBody(ClientCreateSchema), async (req, res, next)
     const db = req.app.locals.db;
     const {
       business_name, owner_name, owner_phone, owner_email,
-      retell_agent_id, retell_phone, twilio_phone, transfer_phone, industry, timezone,
+      retell_agent_id, retell_phone, twilio_phone, transfer_phone, phone_number, industry, timezone,
       calcom_event_type_id, calcom_booking_link,
       avg_ticket, knowledge_base
     } = req.body;
@@ -125,6 +127,13 @@ router.post('/clients', validateBody(ClientCreateSchema), async (req, res, next)
       }
     }
 
+    if (phone_number) {
+      const phoneValidation = validatePhone(phone_number);
+      if (!phoneValidation.valid) {
+        return next(new AppError('VALIDATION_ERROR',`Invalid phone_number: ${phoneValidation.error}`, 422));
+      }
+    }
+
     // Validate optional text fields
     if (owner_name) {
       const validation = validateLength(owner_name, 'owner_name', LENGTH_LIMITS.name);
@@ -150,16 +159,19 @@ router.post('/clients', validateBody(ClientCreateSchema), async (req, res, next)
     const id = randomUUID();
     const now = new Date().toISOString();
 
+    // Unified phone: if phone_number is provided, also populate legacy fields for backward compat
+    const unifiedPhone = phone_number || twilio_phone || retell_phone || null;
+
     await db.query(`
       INSERT INTO clients (
         id, business_name, owner_name, owner_phone, owner_email,
-        retell_agent_id, retell_phone, twilio_phone, transfer_phone, industry, timezone,
+        retell_agent_id, retell_phone, twilio_phone, transfer_phone, phone_number, industry, timezone,
         calcom_event_type_id, calcom_booking_link,
         avg_ticket, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id, business_name, owner_name || null, owner_phone || null, owner_email || null,
-      retell_agent_id || null, retell_phone || null, twilio_phone || null, transfer_phone || null, industry || null, timezone || 'UTC',
+      retell_agent_id || null, retell_phone || null, twilio_phone || null, transfer_phone || null, unifiedPhone, industry || null, timezone || 'UTC',
       calcom_event_type_id || null, calcom_booking_link || null,
       avg_ticket || 0, now, now
     ], 'run');
@@ -226,7 +238,7 @@ router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req,
           }
         }
 
-        if (['phone', 'owner_phone', 'retell_phone', 'twilio_phone', 'transfer_phone'].includes(field) && value) {
+        if (['phone', 'owner_phone', 'retell_phone', 'twilio_phone', 'transfer_phone', 'phone_number'].includes(field) && value) {
           const validation = validatePhone(value);
           if (!validation.valid) {
             return next(new AppError('VALIDATION_ERROR',`Invalid ${field}: ${validation.error}`, 422));

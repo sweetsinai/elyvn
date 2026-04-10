@@ -11,6 +11,8 @@ import {
   PhoneForwarded,
   Calendar,
   Mail,
+  Webhook,
+  Download,
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import { getClients, createClient, updateClient, getHealth } from '../lib/api';
@@ -88,6 +90,11 @@ export default function Settings() {
       industry: client.industry || '',
       avg_ticket: client.avg_ticket || '',
       transfer_phone: client.transfer_phone || '',
+      lead_webhook_url: client.lead_webhook_url || '',
+      booking_webhook_url: client.booking_webhook_url || '',
+      call_webhook_url: client.call_webhook_url || '',
+      sms_webhook_url: client.sms_webhook_url || '',
+      stage_change_webhook_url: client.stage_change_webhook_url || '',
     });
   };
 
@@ -268,7 +275,29 @@ export default function Settings() {
                           </div>
                         ))}
                       </div>
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      <div style={{ marginTop: 16 }}>
+                        <h4 style={{ fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 8 }}>Outbound Webhook URLs</h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        {[
+                          { key: 'lead_webhook_url', label: 'Lead Created', placeholder: 'https://hooks.zapier.com/...' },
+                          { key: 'booking_webhook_url', label: 'Booking Created', placeholder: 'https://hooks.zapier.com/...' },
+                          { key: 'call_webhook_url', label: 'Call Ended', placeholder: 'https://hooks.zapier.com/...' },
+                          { key: 'sms_webhook_url', label: 'SMS Events', placeholder: 'https://hooks.zapier.com/...' },
+                          { key: 'stage_change_webhook_url', label: 'Lead Stage Changed', placeholder: 'https://hooks.zapier.com/...' },
+                        ].map(f => (
+                          <div key={f.key}>
+                            <label style={{ fontSize: 10, color: '#555', display: 'block', marginBottom: 2 }}>{f.label}</label>
+                            <input
+                              type={f.type || 'text'}
+                              value={editData[f.key] || ''}
+                              onChange={e => setEditData(prev => ({ ...prev, [f.key]: e.target.value }))}
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                        ))}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 12 }}>
                         <button className="btn-ghost" onClick={() => setEditingId(null)}>Cancel</button>
                         <button className="btn-primary" onClick={handleSaveEdit} disabled={saving}>
                           {saving ? 'Saving...' : 'Save'}
@@ -415,9 +444,9 @@ export default function Settings() {
         </div>
       </section>
 
-      {/* ========== WEBHOOK URLS ========== */}
-      <section>
-        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Webhook URLs</h2>
+      {/* ========== INBOUND WEBHOOK URLS ========== */}
+      <section style={{ marginBottom: 40 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Inbound Webhook URLs</h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[
             { label: 'Retell Webhook', url: `${baseUrl}/webhooks/retell` },
@@ -446,6 +475,36 @@ export default function Settings() {
               </button>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ========== DATA EXPORT ========== */}
+      <section>
+        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Data Export</h2>
+        <div className="card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>
+            Export leads, calls, and messages as CSV for Google Sheets or CRM import.
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {clients.map(client => {
+              const id = client.id || client.client_id;
+              return (
+                <a
+                  key={id}
+                  href={`${baseUrl}/api/exports/${id}/sheets?format=csv`}
+                  download
+                  className="btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, textDecoration: 'none' }}
+                >
+                  <Download size={12} />
+                  {client.business_name || id.slice(0, 8)} (CSV)
+                </a>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: 12, fontSize: 11, color: '#555' }}>
+            Tip: Use outbound webhook URLs (edit a client above) to push events to Zapier/Make for real-time Google Sheets sync.
+          </div>
         </div>
       </section>
     </div>
