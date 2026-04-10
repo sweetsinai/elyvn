@@ -57,7 +57,8 @@ jobs:
           echo "Scanning for hardcoded secrets..."
           if grep -rn "ghp_\|sk_live_\|AKIA" server/ dashboard/src/ \
             --include="*.js" --include="*.jsx" \
-            --exclude="*test*" --exclude="*logger*" 2>/dev/null; then
+            --exclude="*test*" --exclude="*logger*" \
+            --exclude-dir=node_modules 2>/dev/null; then
             echo "::error::FOUND HARDCODED SECRETS"
             exit 1
           fi
@@ -103,6 +104,7 @@ jobs:
           if grep -rEn "(sk_live_|sk_test_|ghp_|AKIA|AIza[0-9A-Za-z_-]{35}|whsec_[a-zA-Z0-9]+)" \
             --include="*.js" --include="*.jsx" \
             --exclude="*test*" --exclude="*logger*" --exclude="*ci.yml" \
+            --exclude-dir=node_modules \
             server/ dashboard/ 2>/dev/null; then
             echo "::error::Potential hardcoded secrets found!"
             exit 1
