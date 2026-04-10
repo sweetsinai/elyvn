@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Zap,
   Phone,
+  PhoneForwarded,
   Calendar,
   Mail,
 } from 'lucide-react';
@@ -86,6 +87,7 @@ export default function Settings() {
       email: client.email || '',
       industry: client.industry || '',
       avg_ticket: client.avg_ticket || '',
+      transfer_phone: client.transfer_phone || '',
     });
   };
 
@@ -253,6 +255,7 @@ export default function Settings() {
                           { key: 'email', label: 'Email' },
                           { key: 'industry', label: 'Industry' },
                           { key: 'avg_ticket', label: 'Avg Ticket', type: 'number' },
+                          { key: 'transfer_phone', label: 'Transfer Phone', placeholder: '+15551234567' },
                         ].map(f => (
                           <div key={f.key}>
                             <label style={{ fontSize: 10, color: '#555', display: 'block', marginBottom: 2 }}>{f.label}</label>
@@ -304,6 +307,12 @@ export default function Settings() {
                           {client.owner_name && <span>{client.owner_name}</span>}
                           {client.owner_name && client.email && <span> &middot; </span>}
                           {client.email && <span>{client.email}</span>}
+                        </div>
+                      )}
+                      {client.transfer_phone && (
+                        <div style={{ marginTop: 4, fontSize: 12, color: '#888', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <PhoneForwarded size={11} />
+                          <span>Transfer: {client.transfer_phone}</span>
                         </div>
                       )}
 

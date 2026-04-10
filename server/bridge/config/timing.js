@@ -91,6 +91,10 @@ module.exports = {
   // ===== Auto-Classification =====
   AUTO_CLASSIFY_INTERVAL_MS: 5 * 60 * 1000, // Check for unclassified replies every 5 minutes
 
+  // ===== Call Transfer =====
+  TRANSFER_DIAL_TIMEOUT_S: 30,        // Seconds to ring transfer target before voicemail fallback
+  TRANSFER_VOICEMAIL_MAX_LENGTH_S: 120, // Max voicemail recording length (2 minutes)
+
   // ===== Graceful Shutdown =====
   GRACEFUL_SHUTDOWN_TIMEOUT_MS: 5000, // Force shutdown after 5 seconds of waiting
 

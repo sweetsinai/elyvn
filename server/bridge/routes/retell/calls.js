@@ -20,6 +20,7 @@ const {
 const {
   notifyOwnerOfCall,
   processLeadFromCall,
+  handleTransfer,
 } = require('./followups');
 
 const AGENT_CONFIG_TTL = 300 * 1000; // 300 seconds — agent configs rarely change
@@ -50,8 +51,8 @@ async function handleCallStarted(db, call, correlationId) {
     const direction = call.direction || 'inbound';
 
     let client = await db.query(
-      `SELECT id FROM clients WHERE retell_phone = ? OR twilio_phone = ?`,
-      [toNumber, toNumber],
+      `SELECT id FROM clients WHERE phone_number = ?`,
+      [toNumber],
       'get'
     );
 
@@ -117,7 +118,7 @@ async function fetchCallDataFromRetell(db, call, correlationId) {
 
       let client = null;
       if (toNumber) {
-        client = await db.query('SELECT id FROM clients WHERE retell_phone = ? OR twilio_phone = ?', [toNumber, toNumber], 'get');
+        client = await db.query('SELECT id FROM clients WHERE phone_number = ?', [toNumber], 'get');
       }
       if (!client && agentId) {
         client = await lookupClientByAgentId(db, agentId);
@@ -327,4 +328,5 @@ module.exports = {
   handleCallStarted,
   handleCallEnded,
   handleCallAnalyzed,
+  handleTransfer,
 };

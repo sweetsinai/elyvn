@@ -84,7 +84,7 @@ async function handleMissedCall(db, clientId, callerPhone, client) {
     }
 
     const textBackMsg = `Hi! Sorry we missed your call. How can we help you today? — ${client.business_name || 'Our team'}`;
-    const missedCallPhone = client.telnyx_phone || client.twilio_phone;
+    const missedCallPhone = client.phone_number;
     await sendSMS(callerPhone, textBackMsg, missedCallPhone, db, clientId)
       .catch(err => logger.error('[retell] Missed call text-back failed:', err.message));
 
@@ -161,7 +161,7 @@ async function handleVoicemail(db, clientId, callerPhone, voicemailLeadInitial) 
     if (!voicemailClient) return;
 
     const voicemailMsg = generateVoicemailText(voicemailClient, callerPhone);
-    const voicemailPhone = voicemailClient.telnyx_phone || voicemailClient.twilio_phone;
+    const voicemailPhone = voicemailClient.phone_number;
     sendSMS(callerPhone, voicemailMsg, voicemailPhone, db, clientId)
       .catch(err => logger.error('[retell] Voicemail SMS failed:', err.message));
 
@@ -259,9 +259,21 @@ async function processLeadFromCall(db, { callRecord, callId, outcome, summary, s
   }
 }
 
+/**
+ * handleTransfer — Phase 2 call transfer handler.
+ *
+ * Transfer cascade:
+ *   1. Warm transfer via Retell API (AI introduces caller, then connects)
+ *   2. Cold transfer via Twilio (direct dial to transfer_phone)
+ *   3. Fallback: voicemail SMS + Telegram notification to owner
+ *
+ * Triggered by: agent_transfer, transfer_requested, DTMF * events.
+ */
 async function handleTransfer(db, call, correlationId) {
   const { retellBreaker, anthropicBreaker } = require('./brain');
+  const { warmTransfer, coldTransfer } = require('../../utils/callTransfer');
   const RETELL_BASE = 'https://api.retellai.com/v2';
+
   try {
     if (!call || !call.call_id) {
       logger.warn('[retell] transfer missing call or call_id', { correlationId });
@@ -271,21 +283,25 @@ async function handleTransfer(db, call, correlationId) {
     const callerPhone = call.from_number;
     logger.info(`[retell] transfer: ${callId}`, { correlationId });
 
-    let retellResp = null;
+    // --- Step 1: Fetch call data + generate AI summary ---
+    let retellCallData = null;
     try {
-      retellResp = await retellBreaker.call(`${RETELL_BASE}/get-call/${callId}`, {
+      const retellResp = await retellBreaker.call(`${RETELL_BASE}/get-call/${callId}`, {
         headers: addTraceHeaders({ 'Authorization': `Bearer ${process.env.RETELL_API_KEY}` }),
         signal: AbortSignal.timeout(10000),
       });
+      if (retellResp && !retellResp.fallback) {
+        retellCallData = await retellResp.json();
+      }
     } catch (fetchErr) {
       logger.warn(`[retell] handleTransfer: Retell fetch failed for ${callId}:`, { correlationId, error: fetchErr.message });
     }
 
     let summary = 'Transfer requested';
-    if (retellResp && !retellResp.fallback) {
-      const callData = await retellResp.json();
-      const transcript = callData.transcript || '';
-      const transcriptText = typeof transcript === 'string'
+    let transcriptText = '';
+    if (retellCallData) {
+      const transcript = retellCallData.transcript || '';
+      transcriptText = typeof transcript === 'string'
         ? transcript
         : Array.isArray(transcript)
           ? transcript.map(t => `${t.role}: ${t.content}`).join('\n')
@@ -297,9 +313,7 @@ async function handleTransfer(db, call, correlationId) {
           max_tokens: 100,
           messages: [{ role: 'user', content: `Summarize this call in 2 sentences for the business owner who is about to receive a transfer:\n\n${transcriptText}` }]
         });
-        if (summaryResp.fallback) {
-          logger.warn('[retell] Anthropic circuit breaker fallback for transfer summary');
-        } else {
+        if (!summaryResp.fallback) {
           summary = summaryResp.content[0]?.text || summary;
         }
       } catch (err) {
@@ -307,42 +321,127 @@ async function handleTransfer(db, call, correlationId) {
       }
     }
 
+    // --- Step 2: Update call record ---
     await db.query(`
       UPDATE calls SET outcome = 'transferred', summary = ?, updated_at = ? WHERE call_id = ?
     `, [summary, new Date().toISOString(), callId], 'run');
 
+    // --- Step 3: Resolve transfer target ---
     const callRecord = await db.query('SELECT client_id FROM calls WHERE call_id = ?', [callId], 'get');
-    if (callRecord?.client_id) {
-      const client = await db.query('SELECT owner_phone, transfer_phone, telegram_chat_id, business_name FROM clients WHERE id = ?', [callRecord.client_id], 'get');
-      const transferTarget = client?.transfer_phone || client?.owner_phone;
-      if (transferTarget) {
-        await sendSMS(
-          transferTarget,
-          `📞 Transfer incoming from ${callerPhone || 'unknown'} — ${summary}\n\nCall your Retell number and press * to connect.`
-        ).catch(err => logger.error('[retell] Transfer SMS failed:', err.message));
-        if (client?.transfer_phone && client?.owner_phone && client.transfer_phone !== client.owner_phone) {
-          await sendSMS(
-            client.owner_phone,
-            `Transfer routed to ${client.transfer_phone} from ${callerPhone || 'unknown'} — ${summary}`
-          ).catch(err => logger.error('[retell] Owner transfer notify SMS failed:', err.message));
-        }
-      }
-
-      try {
-        if (client?.telegram_chat_id) {
-          const { text } = telegram.formatTransferAlert(
-            { caller_name: callerPhone, caller_phone: callerPhone },
-            summary,
-            client
-          );
-          telegram.sendMessage(client.telegram_chat_id, text);
-        }
-      } catch (tgErr) {
-        logger.error('[retell] Telegram transfer alert failed:', tgErr.message);
-      }
+    if (!callRecord?.client_id) {
+      logger.warn(`[retell] transfer: no call record for ${callId}`, { correlationId });
+      return;
     }
+
+    const client = await db.query(
+      'SELECT owner_phone, transfer_phone, telegram_chat_id, business_name, phone_number FROM clients WHERE id = ?',
+      [callRecord.client_id], 'get'
+    );
+    const transferTarget = client?.transfer_phone || client?.owner_phone;
+
+    if (!transferTarget) {
+      logger.warn(`[retell] transfer: no transfer_phone or owner_phone for client ${callRecord.client_id}`, { correlationId });
+      await notifyTransferFallback(db, client, callRecord.client_id, callerPhone, summary, 'no_target');
+      return;
+    }
+
+    // --- Step 4: Attempt warm transfer via Retell ---
+    const introMessage = `Transferring a caller. Here is a brief summary: ${summary}`;
+    const warmResult = await warmTransfer(callId, transferTarget, introMessage);
+
+    if (warmResult.success) {
+      logger.info(`[retell] Warm transfer succeeded: ${callId} -> ${transferTarget}`, { correlationId });
+      await notifyTransferSuccess(db, client, callRecord.client_id, callerPhone, transferTarget, summary, 'warm');
+      return;
+    }
+
+    logger.warn(`[retell] Warm transfer failed, trying cold: ${warmResult.error}`, { correlationId });
+
+    // --- Step 5: Attempt cold transfer via Twilio ---
+    const twilioCallSid = retellCallData?.twilio_call_id || call.twilio_call_id;
+    if (twilioCallSid) {
+      const coldResult = await coldTransfer(twilioCallSid, transferTarget);
+      if (coldResult.success) {
+        logger.info(`[retell] Cold transfer succeeded: ${twilioCallSid} -> ${transferTarget}`, { correlationId });
+        await notifyTransferSuccess(db, client, callRecord.client_id, callerPhone, transferTarget, summary, 'cold');
+        return;
+      }
+      logger.warn(`[retell] Cold transfer failed: ${coldResult.error}`, { correlationId });
+    } else {
+      logger.warn('[retell] No Twilio Call SID available — cold transfer skipped', { correlationId });
+    }
+
+    // --- Step 6: Fallback — voicemail notification ---
+    logger.info(`[retell] Transfer fallback: notifying owner for ${callId}`, { correlationId });
+    await notifyTransferFallback(db, client, callRecord.client_id, callerPhone, summary, 'transfer_failed');
+
   } catch (err) {
     logger.error('[retell] transfer error:', { correlationId, error: err.message, stack: err.stack });
+  }
+}
+
+/**
+ * Notify owner of successful transfer via SMS + Telegram.
+ */
+async function notifyTransferSuccess(db, client, clientId, callerPhone, transferTarget, summary, method) {
+  // SMS to transfer target
+  if (transferTarget) {
+    await sendSMS(
+      transferTarget,
+      `Incoming transfer from ${callerPhone || 'unknown'} — ${summary}`
+    ).catch(err => logger.error('[retell] Transfer SMS failed:', err.message));
+
+    // If transfer_phone differs from owner_phone, also notify owner
+    if (client?.transfer_phone && client?.owner_phone && client.transfer_phone !== client.owner_phone) {
+      await sendSMS(
+        client.owner_phone,
+        `Transfer routed to ${client.transfer_phone} from ${callerPhone || 'unknown'} — ${summary}`
+      ).catch(err => logger.error('[retell] Owner transfer notify SMS failed:', err.message));
+    }
+  }
+
+  // Telegram alert
+  if (client?.telegram_chat_id) {
+    try {
+      const { text } = telegram.formatTransferAlert(
+        { caller_name: callerPhone, caller_phone: callerPhone },
+        summary,
+        client
+      );
+      await telegram.sendMessage(client.telegram_chat_id, text);
+    } catch (tgErr) {
+      logger.error('[retell] Telegram transfer alert failed:', tgErr.message);
+    }
+  }
+}
+
+/**
+ * Fallback when transfer fails — notify owner via SMS + Telegram with urgency.
+ */
+async function notifyTransferFallback(db, client, clientId, callerPhone, summary, reason) {
+  const ownerPhone = client?.owner_phone;
+
+  // SMS to owner with callback request
+  if (ownerPhone) {
+    await sendSMS(
+      ownerPhone,
+      `[URGENT] Transfer failed for ${callerPhone || 'unknown'} — ${summary}\n\nPlease call them back ASAP.`
+    ).catch(err => logger.error('[retell] Transfer fallback SMS failed:', err.message));
+  }
+
+  // Telegram urgent alert
+  if (client?.telegram_chat_id) {
+    try {
+      const escFn = telegram.esc;
+      const text = `&#128680; <b>TRANSFER FAILED</b>\n\n`
+        + `<b>Caller:</b> ${escFn(callerPhone || 'unknown')}\n`
+        + `<b>Reason:</b> ${escFn(reason)}\n`
+        + `<b>Summary:</b> ${escFn(summary)}\n\n`
+        + `Please call them back immediately!`;
+      await telegram.sendMessage(client.telegram_chat_id, text);
+    } catch (tgErr) {
+      logger.error('[retell] Telegram fallback alert failed:', tgErr.message);
+    }
   }
 }
 
