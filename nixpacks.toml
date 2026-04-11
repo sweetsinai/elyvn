@@ -1,6 +1,6 @@
 # Railway deployment config — Node.js bridge server with SQLite + dashboard build
 [phases.setup]
-nixPkgs = ["nodejs_20", "python3"]
+nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = [

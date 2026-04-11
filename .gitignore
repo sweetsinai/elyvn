@@ -4,17 +4,35 @@ __pycache__/
 .env
 .env.local
 .env.*.local
-elyvn.db
+
+# Database
+*.db
 *.db-wal
 *.db-shm
+
+# Secrets & credentials
+*.pem
+*.key
+*-credentials.json
+*service-account*.json
+
+# Data & backups
+/data/
 data/backups/
+*.backup.*
+
+# Build output
 dashboard/dist/
 server/bridge/public/
+
+# OS & editor
 .DS_Store
-server/mcp/elyvn.db-shm
-server/mcp/elyvn.db-wal
-server/logs/
-*.log
-coverage/
 *.swp
 *.swo
+
+# Logs
+server/logs/
+*.log
+
+# Test
+coverage/
