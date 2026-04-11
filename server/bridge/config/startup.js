@@ -51,8 +51,8 @@ function validateEnv() {
     logger.error('[FATAL] JWT_SECRET must be set and at least 32 characters for security');
     process.exit(1);
   }
-  if (process.env.NODE_ENV === 'production' && !process.env.STRIPE_SECRET_KEY) {
-    logger.warn('[WARN] STRIPE_SECRET_KEY not set — billing features disabled');
+  if (process.env.NODE_ENV === 'production' && !process.env.DODO_API_KEY) {
+    logger.warn('[WARN] DODO_API_KEY not set — billing features disabled');
   }
   if (process.env.NODE_ENV === 'production' && !process.env.TELEGRAM_ADMIN_CHAT_ID) {
     logger.warn('[WARN] TELEGRAM_ADMIN_CHAT_ID not set — critical error alerts to Telegram disabled');

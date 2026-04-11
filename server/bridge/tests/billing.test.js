@@ -1,10 +1,11 @@
 /**
- * Tests for routes/billing.js — Stripe billing plans, webhooks, status
+ * Tests for routes/billing.js — Dodo Payments billing plans, webhooks, status
  */
 
 process.env.JWT_SECRET = 'test-jwt-secret-key-for-unit-tests';
 process.env.NODE_ENV = 'test';
-process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
+process.env.DODO_API_KEY = 'dodo_test_fake';
+process.env.DODO_WEBHOOK_SECRET = 'whsec_test_dodo_secret';
 
 describe('billing routes', () => {
   let app;
@@ -15,17 +16,18 @@ describe('billing routes', () => {
   function buildDb(overrides = {}) {
     const db = {
       prepare: jest.fn((sql) => {
-        if (sql.includes('SELECT id FROM clients WHERE stripe_customer_id') ||
+        if (sql.includes('SELECT id FROM clients WHERE dodo_customer_id') ||
+            sql.includes('SELECT id FROM clients WHERE id') ||
             sql.includes('SELECT id, name, owner_email, password_hash')) {
           return {
-            get: jest.fn(() => overrides.clientByStripe || null),
+            get: jest.fn(() => overrides.clientByDodo || null),
           };
         }
         if (sql.includes('SELECT plan, subscription_status')) {
           return {
             get: jest.fn(() => 'billingStatus' in overrides ? overrides.billingStatus : {
               plan: 'starter', subscription_status: 'active',
-              stripe_customer_id: 'cus_123', stripe_subscription_id: 'sub_1',
+              dodo_customer_id: 'cust_123', dodo_subscription_id: 'sub_1',
               plan_started_at: '2026-01-01',
             }),
           };
@@ -47,30 +49,30 @@ describe('billing routes', () => {
 
   beforeEach(() => {
     jest.resetModules();
-    jest.mock('../utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
-    jest.mock('../utils/auditLog', () => ({ logAudit: jest.fn() }));
+    jest.mock('../utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
+    jest.mock('../utils/auditLog', () => ({ logAudit: jest.fn(), logDataMutation: jest.fn() }));
 
-    // Mock stripe module
-    jest.mock('stripe', () => {
-      return jest.fn(() => ({
-        webhooks: {
-          constructEvent: jest.fn((body, sig, secret) => {
-            if (!sig) throw new Error('No signature');
-            return JSON.parse(typeof body === 'string' ? body : body.toString());
-          }),
-        },
-      }));
-    });
+    // Mock standardwebhooks — verify returns parsed JSON in test mode
+    jest.mock('standardwebhooks', () => ({
+      Webhook: jest.fn().mockImplementation(() => ({
+        verify: jest.fn((body, headers) => {
+          if (!headers['webhook-id'] || !headers['webhook-signature'] || !headers['webhook-timestamp']) {
+            throw new Error('Missing required headers');
+          }
+          // In unit tests, just parse and return the body
+          return JSON.parse(typeof body === 'string' ? body : body.toString());
+        }),
+      })),
+    }));
 
     createToken = require('../routes/auth').createToken;
     const billingRouter = require('../routes/billing');
 
     const express = require('express');
     app = express();
-    // Mirror production: capture rawBody via verify callback
-    app.use(express.json({
-      verify: (req, res, buf) => { req.rawBody = buf.toString(); },
-    }));
+    // Do NOT apply global express.json() — the webhook route uses express.raw()
+    // and a global JSON parser would consume the body before express.raw() can.
+    // GET routes (/plans, /status) don't need body parsing.
     mockDb = buildDb();
     app.locals.db = mockDb;
     app.use('/billing', billingRouter);
@@ -84,21 +86,33 @@ describe('billing routes', () => {
     test('returns plans', async () => {
       const res = await request(app).get('/billing/plans');
       expect(res.status).toBe(200);
-      expect(res.body.plans.length).toBeGreaterThanOrEqual(3);
+      expect(res.body.plans.length).toBe(3);
       const names = res.body.plans.map(p => p.id);
-      expect(names).toEqual(expect.arrayContaining(['starter', 'growth', 'scale']));
+      expect(names).toEqual(expect.arrayContaining(['starter', 'pro', 'premium']));
     });
 
-    test('scale plan shows Unlimited calls', async () => {
+    test('premium plan shows Unlimited calls', async () => {
       const res = await request(app).get('/billing/plans');
-      const scale = res.body.plans.find(p => p.id === 'scale');
-      expect(scale.calls).toBe('Unlimited');
+      const premium = res.body.plans.find(p => p.id === 'premium');
+      expect(premium.calls).toBe('Unlimited');
     });
 
-    test('prices are in dollars not cents', async () => {
+    test('starter price is $199', async () => {
       const res = await request(app).get('/billing/plans');
       const starter = res.body.plans.find(p => p.id === 'starter');
-      expect(starter.price).toBe(299);
+      expect(starter.price).toBe(199);
+    });
+
+    test('pro price is $399', async () => {
+      const res = await request(app).get('/billing/plans');
+      const pro = res.body.plans.find(p => p.id === 'pro');
+      expect(pro.price).toBe(399);
+    });
+
+    test('premium price is $799', async () => {
+      const res = await request(app).get('/billing/plans');
+      const premium = res.body.plans.find(p => p.id === 'premium');
+      expect(premium.price).toBe(799);
     });
   });
 
@@ -106,27 +120,29 @@ describe('billing routes', () => {
 
   describe('POST /billing/webhook', () => {
     function webhookReq(eventType, dataObj, meta = {}) {
-      const event = {
+      const payload = {
         type: eventType,
-        data: { object: dataObj },
+        data: { ...dataObj },
       };
       return request(app)
         .post('/billing/webhook')
         .set('Content-Type', 'application/json')
-        .send(JSON.stringify(event));
+        .set('webhook-id', 'msg_test_123')
+        .set('webhook-signature', 'v1,valid_sig_placeholder')
+        .set('webhook-timestamp', String(Math.floor(Date.now() / 1000)))
+        .send(JSON.stringify(payload));
     }
 
-    test('checkout.session.completed updates client plan', async () => {
+    test('subscription.active updates client plan', async () => {
       const dbWithClient = buildDb({
-        clientByStripe: { id: 'client-1' },
+        clientByDodo: { id: 'client-1' },
       });
       app.locals.db = dbWithClient;
 
-      const res = await webhookReq('checkout.session.completed', {
-        client_reference_id: 'client-1',
-        customer: 'cus_123',
-        subscription: 'sub_456',
-        metadata: { planId: 'growth' },
+      const res = await webhookReq('subscription.active', {
+        metadata: { clientId: 'client-1', planId: 'pro' },
+        customer_id: 'cust_123',
+        subscription_id: 'sub_456',
       });
 
       expect(res.status).toBe(200);
@@ -137,14 +153,15 @@ describe('billing routes', () => {
       expect(updateCalls.length).toBeGreaterThan(0);
     });
 
-    test('invoice.payment_failed marks as past_due', async () => {
+    test('subscription.on_hold marks as past_due', async () => {
       const dbWithClient = buildDb({
-        clientByStripe: { id: 'client-1' },
+        clientByDodo: { id: 'client-1' },
       });
       app.locals.db = dbWithClient;
 
-      const res = await webhookReq('invoice.payment_failed', {
-        customer: 'cus_123',
+      const res = await webhookReq('subscription.on_hold', {
+        customer_id: 'cust_123',
+        metadata: { clientId: 'client-1' },
       });
 
       expect(res.status).toBe(200);
@@ -154,14 +171,33 @@ describe('billing routes', () => {
       expect(updateCalls.length).toBeGreaterThan(0);
     });
 
-    test('customer.subscription.deleted marks as canceled', async () => {
+    test('subscription.failed marks as past_due', async () => {
       const dbWithClient = buildDb({
-        clientByStripe: { id: 'client-1' },
+        clientByDodo: { id: 'client-1' },
       });
       app.locals.db = dbWithClient;
 
-      const res = await webhookReq('customer.subscription.deleted', {
-        customer: 'cus_123',
+      const res = await webhookReq('subscription.failed', {
+        customer_id: 'cust_123',
+        metadata: { clientId: 'client-1' },
+      });
+
+      expect(res.status).toBe(200);
+      const updateCalls = dbWithClient.prepare.mock.calls.filter(c =>
+        c[0].includes('past_due')
+      );
+      expect(updateCalls.length).toBeGreaterThan(0);
+    });
+
+    test('subscription.cancelled marks as canceled', async () => {
+      const dbWithClient = buildDb({
+        clientByDodo: { id: 'client-1' },
+      });
+      app.locals.db = dbWithClient;
+
+      const res = await webhookReq('subscription.cancelled', {
+        customer_id: 'cust_123',
+        metadata: { clientId: 'client-1' },
       });
 
       expect(res.status).toBe(200);
@@ -171,39 +207,101 @@ describe('billing routes', () => {
       expect(updateCalls.length).toBeGreaterThan(0);
     });
 
-    test('missing signature in production returns error', async () => {
-      const origEnv = process.env.NODE_ENV;
-      process.env.NODE_ENV = 'production';
-      process.env.STRIPE_SECRET_KEY = 'sk_test_123';
-      process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    test('subscription.expired marks as canceled', async () => {
+      const dbWithClient = buildDb({
+        clientByDodo: { id: 'client-1' },
+      });
+      app.locals.db = dbWithClient;
 
-      // Need fresh module load with production env
+      const res = await webhookReq('subscription.expired', {
+        customer_id: 'cust_123',
+        metadata: { clientId: 'client-1' },
+      });
+
+      expect(res.status).toBe(200);
+      const updateCalls = dbWithClient.prepare.mock.calls.filter(c =>
+        c[0].includes('canceled')
+      );
+      expect(updateCalls.length).toBeGreaterThan(0);
+    });
+
+    test('subscription.renewed activates subscription', async () => {
+      const dbWithClient = buildDb({
+        clientByDodo: { id: 'client-1' },
+      });
+      app.locals.db = dbWithClient;
+
+      const res = await webhookReq('subscription.renewed', {
+        metadata: { clientId: 'client-1', planId: 'starter' },
+        customer_id: 'cust_123',
+        subscription_id: 'sub_renewed_1',
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.received).toBe(true);
+      const updateCalls = dbWithClient.prepare.mock.calls.filter(c => c[0].includes('UPDATE clients SET'));
+      expect(updateCalls.length).toBeGreaterThan(0);
+    });
+
+    test('subscription.updated updates subscription status', async () => {
+      const dbWithClient = buildDb({
+        clientByDodo: { id: 'client-1' },
+      });
+      app.locals.db = dbWithClient;
+
+      const res = await webhookReq('subscription.updated', {
+        customer_id: 'cust_123',
+        subscription_id: 'sub_upd_1',
+        metadata: { clientId: 'client-1', planId: 'pro' },
+        status: 'active',
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.received).toBe(true);
+    });
+
+    test('subscription.plan_changed updates plan', async () => {
+      const dbWithClient = buildDb({
+        clientByDodo: { id: 'client-1' },
+      });
+      app.locals.db = dbWithClient;
+
+      const res = await webhookReq('subscription.plan_changed', {
+        customer_id: 'cust_123',
+        subscription_id: 'sub_changed_1',
+        metadata: { clientId: 'client-1', planId: 'premium' },
+        status: 'active',
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.received).toBe(true);
+    });
+
+    test('webhook signature verification failure returns 400', async () => {
+      // Reset modules to get a fresh mock that throws
       jest.resetModules();
-      jest.mock('../utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
-      jest.mock('../utils/auditLog', () => ({ logAudit: jest.fn() }));
-      jest.mock('stripe', () => jest.fn(() => ({
-        webhooks: {
-          constructEvent: jest.fn(() => { throw new Error('No signature'); }),
-        },
-      })));
+      jest.mock('../utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
+      jest.mock('../utils/auditLog', () => ({ logAudit: jest.fn(), logDataMutation: jest.fn() }));
+      jest.mock('standardwebhooks', () => ({
+        Webhook: jest.fn().mockImplementation(() => ({
+          verify: jest.fn(() => { throw new Error('Invalid signature'); }),
+        })),
+      }));
 
       const express = require('express');
-      const prodApp = express();
-      prodApp.use(express.json());
-      prodApp.locals.db = buildDb({ clientByStripe: { id: 'c1' } });
-      prodApp.use('/billing', require('../routes/billing'));
+      const failApp = express();
+      failApp.locals.db = buildDb({ clientByDodo: { id: 'c1' } });
+      failApp.use('/billing', require('../routes/billing'));
 
-      const res = await request(prodApp)
+      const res = await request(failApp)
         .post('/billing/webhook')
         .set('Content-Type', 'application/json')
-        .set('stripe-signature', 'bad_sig')
+        .set('webhook-id', 'msg_bad')
+        .set('webhook-signature', 'v1,invalid')
+        .set('webhook-timestamp', '9999999')
         .send('{}');
 
       expect(res.status).toBe(400);
-
-      process.env.NODE_ENV = origEnv;
-      delete process.env.STRIPE_SECRET_KEY;
-      delete process.env.STRIPE_WEBHOOK_SECRET;
     });
   });
 

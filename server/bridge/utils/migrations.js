@@ -1560,4 +1560,44 @@ function rollbackMigration(db, migrationId) {
   }
 }
 
+// ── 045: Stripe → Dodo Payments migration ──
+migrations.push({
+  id: '045_stripe_to_dodo',
+  description: 'Add dodo_customer_id and dodo_subscription_id columns, backfill from Stripe columns',
+  up(db) {
+    const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+
+    if (!cols.includes('dodo_customer_id')) {
+      db.exec('ALTER TABLE clients ADD COLUMN dodo_customer_id TEXT');
+    }
+    if (!cols.includes('dodo_subscription_id')) {
+      db.exec('ALTER TABLE clients ADD COLUMN dodo_subscription_id TEXT');
+    }
+
+    // Backfill: copy stripe IDs to dodo columns for any existing paying clients
+    // (so billing status lookups work during transition)
+    if (cols.includes('stripe_customer_id')) {
+      db.exec(`
+        UPDATE clients
+        SET dodo_customer_id = stripe_customer_id
+        WHERE stripe_customer_id IS NOT NULL AND dodo_customer_id IS NULL
+      `);
+    }
+    if (cols.includes('stripe_subscription_id')) {
+      db.exec(`
+        UPDATE clients
+        SET dodo_subscription_id = stripe_subscription_id
+        WHERE stripe_subscription_id IS NOT NULL AND dodo_subscription_id IS NULL
+      `);
+    }
+
+    // Index for webhook lookups by dodo customer ID
+    db.exec('CREATE INDEX IF NOT EXISTS idx_clients_dodo_customer ON clients(dodo_customer_id)');
+  },
+  down(db) {
+    // SQLite cannot drop columns — just drop the index
+    db.exec('DROP INDEX IF EXISTS idx_clients_dodo_customer');
+  },
+});
+
 module.exports = { runMigrations, rollbackMigration, migrations };

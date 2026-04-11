@@ -1,60 +1,86 @@
 /**
- * Stripe billing routes for ELYVN
- * Handles checkout sessions, webhooks, and billing portal
+ * Dodo Payments billing routes for ELYVN
+ * Handles checkout sessions, webhooks, and billing status
+ *
+ * Replaces Stripe — Dodo is India-friendly with global coverage.
+ * Uses Dodo Checkout API + Standard Webhooks for signature verification.
  */
 const express = require('express');
 const router = express.Router();
-const crypto = require('crypto');
 const { logger } = require('../utils/logger');
 const { verifyToken } = require('./auth');
 const { logDataMutation } = require('../utils/auditLog');
 const { AppError } = require('../utils/AppError');
 const { validateBody } = require('../middleware/validateRequest');
-const { CreateCheckoutSchema } = require('../utils/schemas/billing');
+const { z } = require('zod');
 
-// Stripe plans configuration
+// ─── Plan configuration ─────────────────────────────────────────────────────
+
 const PLANS = {
-  solo: {
-    name: 'Solo',
-    price: 9900, // $99 in cents
-    priceId: process.env.STRIPE_PRICE_SOLO,
-    calls: 100,
-  },
   starter: {
     name: 'Starter',
-    price: 29900, // $299 in cents
-    priceId: process.env.STRIPE_PRICE_STARTER,
+    price: 199,
+    productId: process.env.DODO_PRODUCT_STARTER || 'pdt_0NcSMDfAgPfJcHnUH1H4l',
     calls: 500,
+    sms: 1000,
+    emails: 200,
   },
-  growth: {
-    name: 'Growth',
-    price: 49900, // $499 in cents
-    priceId: process.env.STRIPE_PRICE_GROWTH,
+  pro: {
+    name: 'Pro',
+    price: 399,
+    productId: process.env.DODO_PRODUCT_PRO || 'pdt_0NcSLxjRSsPJST0uTn8kN',
     calls: 1500,
+    sms: 3000,
+    emails: 500,
   },
-  scale: {
-    name: 'Scale',
-    price: 79900, // $799 in cents
-    priceId: process.env.STRIPE_PRICE_SCALE,
+  premium: {
+    name: 'Premium',
+    price: 799,
+    productId: process.env.DODO_PRODUCT_PREMIUM || 'pdt_0NcSMTlJqIJcQsneYDYsi',
     calls: -1, // unlimited
+    sms: -1,
+    emails: -1,
   },
 };
 
-// Lazy-load Stripe (only when keys are configured)
-function getStripe() {
-  if (!process.env.STRIPE_SECRET_KEY) {
-    throw new AppError('INTERNAL_ERROR', 'STRIPE_SECRET_KEY not configured', 500);
+// ─── Dodo API client ────────────────────────────────────────────────────────
+
+const DODO_API_KEY = process.env.DODO_API_KEY;
+const DODO_BASE_URL = process.env.DODO_ENV === 'live'
+  ? 'https://api.dodopayments.com'
+  : 'https://test.dodopayments.com';
+
+async function dodoRequest(method, path, body) {
+  if (!DODO_API_KEY) {
+    throw new AppError('INTERNAL_ERROR', 'DODO_API_KEY not configured', 500);
   }
-  // Dynamic require to avoid crash if stripe not installed
-  try {
-    const Stripe = require('stripe');
-    return new Stripe(process.env.STRIPE_SECRET_KEY);
-  } catch {
-    throw new AppError('INTERNAL_ERROR', 'stripe package not installed — run: npm install stripe', 500);
+  const opts = {
+    method,
+    headers: {
+      'Authorization': `Bearer ${DODO_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    signal: AbortSignal.timeout(15000),
+  };
+  if (body) opts.body = JSON.stringify(body);
+
+  const res = await fetch(`${DODO_BASE_URL}${path}`, opts);
+  const data = await res.json();
+  if (!res.ok) {
+    logger.error(`[billing] Dodo API error: ${res.status}`, JSON.stringify(data));
+    throw new AppError('PAYMENT_ERROR', data.message || 'Payment provider error', res.status >= 500 ? 502 : 400);
   }
+  return data;
 }
 
-// JWT auth middleware for billing routes
+// ─── Schemas ────────────────────────────────────────────────────────────────
+
+const CreateCheckoutSchema = z.object({
+  planId: z.enum(['starter', 'pro', 'premium']),
+});
+
+// ─── Auth middleware ────────────────────────────────────────────────────────
+
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
@@ -69,110 +95,94 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// ─── Routes ─────────────────────────────────────────────────────────────────
+
 // GET /billing/plans — list available plans
 router.get('/plans', (req, res) => {
   const plans = Object.entries(PLANS).map(([key, plan]) => ({
     id: key,
     name: plan.name,
-    price: plan.price / 100,
+    price: plan.price,
     calls: plan.calls === -1 ? 'Unlimited' : plan.calls,
+    sms: plan.sms === -1 ? 'Unlimited' : plan.sms,
+    emails: plan.emails === -1 ? 'Unlimited' : plan.emails,
   }));
   res.json({ plans });
 });
 
-// POST /billing/create-checkout — create Stripe checkout session
+// POST /billing/create-checkout — create Dodo checkout session
 router.post('/create-checkout', requireAuth, validateBody(CreateCheckoutSchema), async (req, res) => {
   const { planId } = req.body;
   const plan = PLANS[planId];
 
   if (!plan) {
-    return res.status(400).json({ error: 'Invalid plan. Choose: starter, growth, or scale' });
+    return res.status(400).json({ error: 'Invalid plan. Choose: starter, pro, or premium' });
   }
 
   try {
-    const stripe = getStripe();
     const db = req.app.locals.db;
-
-    // Get client info
-    const client = await db.query('SELECT id, owner_email, stripe_customer_id FROM clients WHERE id = ?', [req.clientId], 'get');
+    const client = await db.query(
+      'SELECT id, owner_email, business_name, dodo_customer_id FROM clients WHERE id = ?',
+      [req.clientId], 'get'
+    );
     if (!client) {
       return res.status(404).json({ error: 'Account not found' });
     }
 
-    // Create or reuse Stripe customer
-    let customerId = client.stripe_customer_id;
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: client.owner_email,
-        metadata: { clientId: req.clientId },
-      });
-      customerId = customer.id;
-      await db.query('UPDATE clients SET stripe_customer_id = ? WHERE id = ?', [customerId, req.clientId], 'run');
-    }
+    const appUrl = process.env.APP_URL || 'https://api.elyvn.net';
 
-    const sessionParams = {
-      customer: customerId,
-      mode: 'subscription',
-      line_items: [{
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: `ELYVN ${plan.name}`,
-            description: `AI Receptionist — ${plan.calls === -1 ? 'Unlimited' : plan.calls} calls/month`,
-          },
-          unit_amount: plan.price,
-          recurring: { interval: 'month' },
-        },
-        quantity: 1,
-      }],
-      client_reference_id: req.clientId,
-      metadata: { clientId: req.clientId, planId },
-      success_url: `${process.env.APP_URL || 'https://api.elyvn.net'}/dashboard?payment=success`,
-      cancel_url: `${process.env.APP_URL || 'https://api.elyvn.net'}/dashboard?payment=cancelled`,
-      subscription_data: {
-        trial_period_days: 7,
-        metadata: { clientId: req.clientId, planId },
+    // Create Dodo checkout session
+    const session = await dodoRequest('POST', '/checkouts', {
+      product_cart: [{ product_id: plan.productId, quantity: 1 }],
+      customer: {
+        email: client.owner_email || req.email,
+        name: client.business_name || 'ELYVN Customer',
       },
-    };
+      metadata: {
+        clientId: req.clientId,
+        planId,
+      },
+      return_url: `${appUrl}/dashboard?payment=success`,
+    });
 
-    // Use Stripe price ID if configured, otherwise use price_data
-    if (plan.priceId) {
-      sessionParams.line_items = [{ price: plan.priceId, quantity: 1 }];
-    }
-
-    const session = await stripe.checkout.sessions.create(sessionParams);
-
-    logger.info(`[billing] Checkout session created for ${req.email} — plan: ${planId}`);
-    res.json({ url: session.url, sessionId: session.id });
+    logger.info(`[billing] Dodo checkout created for ${req.email} — plan: ${planId}`);
+    res.json({ url: session.checkout_url || session.url, sessionId: session.checkout_id || session.id });
   } catch (err) {
     logger.error('[billing] Checkout error:', err.message);
+    if (err instanceof AppError) throw err;
     res.status(500).json({ error: 'Failed to create checkout session' });
   }
 });
 
-// POST /billing/webhook — Stripe webhook handler
+// POST /billing/webhook — Dodo webhook handler (Standard Webhooks)
 router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const webhookSecret = process.env.DODO_WEBHOOK_SECRET;
 
-  // In production, require webhook signature verification
   if (!webhookSecret) {
     if (process.env.NODE_ENV === 'production') {
-      logger.error('[billing] STRIPE_WEBHOOK_SECRET not set in production — rejecting webhook');
+      logger.error('[billing] DODO_WEBHOOK_SECRET not set in production — rejecting webhook');
       return res.status(500).json({ error: 'Webhook not configured' });
     }
-    logger.warn('[billing] STRIPE_WEBHOOK_SECRET not set — skipping signature verification');
+    logger.warn('[billing] DODO_WEBHOOK_SECRET not set — skipping signature verification');
   }
 
-  let event;
+  // Parse and verify webhook
+  let payload;
+  const rawBody = typeof req.body === 'string' ? req.body : req.body.toString('utf8');
+
   try {
-    const stripe = getStripe();
-    if (webhookSecret && sig) {
-      event = stripe.webhooks.constructEvent(req.rawBody || req.body, sig, webhookSecret);
+    if (webhookSecret) {
+      const { Webhook } = require('standardwebhooks');
+      const wh = new Webhook(webhookSecret);
+      const headers = {
+        'webhook-id': req.headers['webhook-id'],
+        'webhook-signature': req.headers['webhook-signature'],
+        'webhook-timestamp': req.headers['webhook-timestamp'],
+      };
+      payload = wh.verify(rawBody, headers);
     } else if (process.env.NODE_ENV !== 'production') {
-      event = JSON.parse(typeof req.body === 'string' ? req.body : req.rawBody || JSON.stringify(req.body));
+      payload = JSON.parse(rawBody);
     } else {
-      logger.error('[billing] Unsigned webhook rejected in production');
       return res.status(400).json({ error: 'Webhook signature required' });
     }
   } catch (err) {
@@ -180,100 +190,133 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
     try {
       const { logAudit } = require('../utils/auditLog');
       const db = req.app?.locals?.db;
-      if (db) logAudit(db, { action: 'webhook_signature_invalid', ip: req.ip, details: { source: 'stripe', error: err.message } });
+      if (db) logAudit(db, { action: 'webhook_signature_invalid', ip: req.ip, details: { source: 'dodo', error: err.message } });
     } catch (_) {}
     return res.status(400).json({ error: 'Invalid webhook signature' });
   }
 
   const db = req.app.locals.db;
+  const eventType = payload.type || payload.event_type || '';
+  const data = payload.data || payload;
 
   try {
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object;
-        const clientId = session.client_reference_id || session.metadata?.clientId;
-        const planId = session.metadata?.planId || 'starter';
+    switch (eventType) {
+      // ── Subscription activated (checkout complete or renewal success) ──
+      case 'subscription.active':
+      case 'subscription.renewed': {
+        const clientId = data.metadata?.clientId;
+        const planId = data.metadata?.planId;
+        const subscriptionId = data.subscription_id || data.id;
+        const customerId = data.customer_id || data.customer?.customer_id;
 
         if (clientId) {
           await db.query(`
             UPDATE clients SET
-              stripe_customer_id = ?,
-              stripe_subscription_id = ?,
+              dodo_customer_id = ?,
+              dodo_subscription_id = ?,
               plan = ?,
               subscription_status = 'active',
               plan_started_at = datetime('now'),
               updated_at = datetime('now')
             WHERE id = ?
-          `, [session.customer, session.subscription, planId, clientId], 'run');
+          `, [customerId, subscriptionId, planId || 'starter', clientId], 'run');
 
-          logger.info(`[billing] Client ${clientId} activated — plan: ${planId}`);
+          logger.info(`[billing] Client ${clientId} activated — plan: ${planId}, event: ${eventType}`);
           try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: clientId, newValues: { plan: planId, subscription_status: 'active' } }); } catch (_) {}
-        }
-        break;
-      }
-
-      case 'invoice.payment_succeeded': {
-        const invoice = event.data.object;
-        const customerId = invoice.customer;
-        const client = await db.query('SELECT id FROM clients WHERE stripe_customer_id = ?', [customerId], 'get');
-        if (client) {
-          await db.query("UPDATE clients SET subscription_status = 'active', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
-          logger.info(`[billing] Payment succeeded for client ${client.id}`);
-          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'active' } }); } catch (_) {}
         } else {
-          logger.warn(`[billing] ${event.type} — no client found for customerId ${customerId}`);
+          // Fallback: look up by customer ID
+          if (customerId) {
+            const client = await db.query('SELECT id FROM clients WHERE dodo_customer_id = ?', [customerId], 'get');
+            if (client) {
+              await db.query("UPDATE clients SET subscription_status = 'active', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
+              logger.info(`[billing] Payment succeeded for client ${client.id} (via customer lookup)`);
+            }
+          }
         }
         break;
       }
 
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object;
-        const customerId = invoice.customer;
-        const client = await db.query('SELECT id FROM clients WHERE stripe_customer_id = ?', [customerId], 'get');
+      // ── Subscription on hold (payment failed on renewal) ──
+      case 'subscription.on_hold':
+      case 'subscription.failed': {
+        const customerId = data.customer_id || data.customer?.customer_id;
+        const clientId = data.metadata?.clientId;
+
+        const client = clientId
+          ? await db.query('SELECT id FROM clients WHERE id = ?', [clientId], 'get')
+          : customerId
+            ? await db.query('SELECT id FROM clients WHERE dodo_customer_id = ?', [customerId], 'get')
+            : null;
+
         if (client) {
           await db.query("UPDATE clients SET subscription_status = 'past_due', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
-          logger.warn(`[billing] Payment failed for client ${client.id}`);
+          logger.warn(`[billing] Subscription ${eventType} for client ${client.id}`);
           try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'past_due' } }); } catch (_) {}
-        } else {
-          logger.warn(`[billing] ${event.type} — no client found for customerId ${customerId}`);
         }
         break;
       }
 
-      case 'customer.subscription.deleted': {
-        const sub = event.data.object;
-        const customerId = sub.customer;
-        const client = await db.query('SELECT id FROM clients WHERE stripe_customer_id = ?', [customerId], 'get');
+      // ── Subscription cancelled or expired ──
+      case 'subscription.cancelled':
+      case 'subscription.expired': {
+        const customerId = data.customer_id || data.customer?.customer_id;
+        const clientId = data.metadata?.clientId;
+
+        const client = clientId
+          ? await db.query('SELECT id FROM clients WHERE id = ?', [clientId], 'get')
+          : customerId
+            ? await db.query('SELECT id FROM clients WHERE dodo_customer_id = ?', [customerId], 'get')
+            : null;
+
         if (client) {
           await db.query("UPDATE clients SET subscription_status = 'canceled', plan = 'canceled', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
-          logger.info(`[billing] Subscription canceled for client ${client.id}`);
+          logger.info(`[billing] Subscription ${eventType} for client ${client.id}`);
           try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'canceled', plan: 'canceled' } }); } catch (_) {}
-        } else {
-          logger.warn(`[billing] ${event.type} — no client found for customerId ${customerId}`);
         }
         break;
       }
 
-      case 'customer.subscription.updated': {
-        const sub = event.data.object;
-        const customerId = sub.customer;
-        const client = await db.query('SELECT id FROM clients WHERE stripe_customer_id = ?', [customerId], 'get');
+      // ── Plan changed (upgrade/downgrade) ──
+      case 'subscription.plan_changed':
+      case 'subscription.updated': {
+        const customerId = data.customer_id || data.customer?.customer_id;
+        const clientId = data.metadata?.clientId;
+        const subscriptionId = data.subscription_id || data.id;
+        const newPlanId = data.metadata?.planId;
+        const status = data.status || 'active';
+
+        const client = clientId
+          ? await db.query('SELECT id FROM clients WHERE id = ?', [clientId], 'get')
+          : customerId
+            ? await db.query('SELECT id FROM clients WHERE dodo_customer_id = ?', [customerId], 'get')
+            : null;
+
         if (client) {
-          const status = sub.cancel_at_period_end ? 'canceling' : sub.status;
-          await db.query(
-            "UPDATE clients SET subscription_status = ?, stripe_subscription_id = ?, updated_at = datetime('now') WHERE id = ?",
-            [status, sub.id, client.id],
-            'run'
-          );
-          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: status, stripe_subscription_id: sub.id } }); } catch (_) {}
-        } else {
-          logger.warn(`[billing] ${event.type} — no client found for customerId ${customerId}`);
+          const updates = { subscription_status: status, dodo_subscription_id: subscriptionId };
+          let sql = "UPDATE clients SET subscription_status = ?, dodo_subscription_id = ?, updated_at = datetime('now')";
+          const params = [status, subscriptionId];
+
+          if (newPlanId && PLANS[newPlanId]) {
+            sql += ', plan = ?';
+            params.push(newPlanId);
+            updates.plan = newPlanId;
+          }
+
+          sql += ' WHERE id = ?';
+          params.push(client.id);
+
+          await db.query(sql, params, 'run');
+          logger.info(`[billing] Subscription updated for client ${client.id} — status: ${status}`);
+          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: updates }); } catch (_) {}
         }
         break;
       }
+
+      default:
+        logger.debug(`[billing] Unhandled webhook event: ${eventType}`);
     }
   } catch (err) {
-    logger.error(`[billing] Webhook processing error (${event.type}):`, err.message);
+    logger.error(`[billing] Webhook processing error (${eventType}):`, err.message);
   }
 
   res.json({ received: true });
@@ -283,7 +326,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 router.get('/status', requireAuth, async (req, res) => {
   const db = req.app.locals.db;
   const client = await db.query(
-    'SELECT plan, subscription_status, stripe_customer_id, stripe_subscription_id, plan_started_at FROM clients WHERE id = ?',
+    'SELECT plan, subscription_status, dodo_customer_id, dodo_subscription_id, plan_started_at FROM clients WHERE id = ?',
     [req.clientId],
     'get'
   );
@@ -295,31 +338,9 @@ router.get('/status', requireAuth, async (req, res) => {
   res.json({
     plan: client.plan || 'trial',
     status: client.subscription_status || 'active',
-    has_payment: !!client.stripe_customer_id,
+    has_payment: !!client.dodo_customer_id,
     started_at: client.plan_started_at,
   });
-});
-
-// POST /billing/portal — create Stripe billing portal session
-router.post('/portal', requireAuth, async (req, res) => {
-  const db = req.app.locals.db;
-  const client = await db.query('SELECT stripe_customer_id FROM clients WHERE id = ?', [req.clientId], 'get');
-
-  if (!client?.stripe_customer_id) {
-    return res.status(400).json({ error: 'No billing account found. Please subscribe first.' });
-  }
-
-  try {
-    const stripe = getStripe();
-    const session = await stripe.billingPortal.sessions.create({
-      customer: client.stripe_customer_id,
-      return_url: `${process.env.APP_URL || 'https://api.elyvn.net'}/settings`,
-    });
-    res.json({ url: session.url });
-  } catch (err) {
-    logger.error('[billing] Portal error:', err.message);
-    res.status(500).json({ error: 'Failed to create billing portal' });
-  }
 });
 
 module.exports = router;

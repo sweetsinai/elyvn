@@ -15,10 +15,13 @@ router.param('clientId', clientIsolationParam);
 // Plan limits
 const PLAN_LIMITS = {
   trial:   { calls: 50,   sms: 100,  emails: 50  },
-  solo:    { calls: 100,  sms: 300,  emails: 100 },
   starter: { calls: 500,  sms: 1000, emails: 200 },
+  pro:     { calls: 1500, sms: 3000, emails: 500 },
+  premium: { calls: -1,   sms: -1,   emails: -1  }, // unlimited
+  // Legacy plan names (backward compat for existing clients)
+  solo:    { calls: 100,  sms: 300,  emails: 100 },
   growth:  { calls: 1500, sms: 3000, emails: 500 },
-  scale:   { calls: -1,   sms: -1,   emails: -1  }, // unlimited
+  scale:   { calls: -1,   sms: -1,   emails: -1  },
 };
 
 // GET /usage/:clientId — Current month usage + limits + overage
@@ -186,7 +189,7 @@ router.post('/onboarding/:clientId/complete-step', async (req, res, next) => {
   }
 });
 
-// POST /plan/:clientId/upgrade — Self-serve plan upgrade via Stripe
+// POST /plan/:clientId/upgrade — Self-serve plan upgrade via Dodo Payments
 router.post('/plan/:clientId/upgrade', async (req, res, next) => {
   try {
     const db = req.app.locals.db;
@@ -194,55 +197,57 @@ router.post('/plan/:clientId/upgrade', async (req, res, next) => {
     const { planId } = req.body;
     if (!isValidUUID(clientId)) return next(new AppError('INVALID_INPUT', 'Invalid client ID', 400));
 
-    const validPlans = ['starter', 'growth', 'scale'];
+    const validPlans = ['starter', 'pro', 'premium'];
     if (!validPlans.includes(planId)) {
-      return next(new AppError('VALIDATION_ERROR', 'Invalid plan. Choose: starter, growth, or scale', 400));
+      return next(new AppError('VALIDATION_ERROR', 'Invalid plan. Choose: starter, pro, or premium', 400));
     }
 
-    const client = await db.query('SELECT plan, stripe_customer_id FROM clients WHERE id = ?', [clientId], 'get');
+    const client = await db.query('SELECT plan, dodo_customer_id, owner_email, business_name FROM clients WHERE id = ?', [clientId], 'get');
     if (!client) return next(new AppError('NOT_FOUND', 'Client not found', 404));
 
-    // If they have Stripe, redirect to checkout
-    if (process.env.STRIPE_SECRET_KEY) {
+    // If Dodo is configured, redirect to checkout
+    if (process.env.DODO_API_KEY) {
       try {
-        const Stripe = require('stripe');
-        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-        const priceIds = {
-          starter: process.env.STRIPE_PRICE_STARTER,
-          growth: process.env.STRIPE_PRICE_GROWTH,
-          scale: process.env.STRIPE_PRICE_SCALE,
+        const productIds = {
+          starter: process.env.DODO_PRODUCT_STARTER,
+          pro: process.env.DODO_PRODUCT_PRO,
+          premium: process.env.DODO_PRODUCT_PREMIUM,
         };
 
-        if (!priceIds[planId]) {
-          // No Stripe price configured — update plan directly (dev mode)
+        if (!productIds[planId]) {
           await db.query("UPDATE clients SET plan = ?, updated_at = datetime('now') WHERE id = ?", [planId, clientId], 'run');
           try { logDataMutation(db, { action: 'plan_upgrade', table: 'clients', recordId: clientId, newValues: { plan: planId } }); } catch (_) {}
           return res.json({ upgraded: true, plan: planId });
         }
 
-        const sessionParams = {
-          mode: 'subscription',
-          line_items: [{ price: priceIds[planId], quantity: 1 }],
-          client_reference_id: clientId,
-          metadata: { clientId, planId },
-          success_url: `${process.env.APP_URL || 'https://api.elyvn.net'}/dashboard?upgrade=success`,
-          cancel_url: `${process.env.APP_URL || 'https://api.elyvn.net'}/dashboard?upgrade=cancelled`,
-        };
+        const DODO_BASE_URL = process.env.DODO_ENV === 'live'
+          ? 'https://api.dodopayments.com'
+          : 'https://test.dodopayments.com';
 
-        if (client.stripe_customer_id) {
-          sessionParams.customer = client.stripe_customer_id;
-        }
-
-        const session = await stripe.checkout.sessions.create(sessionParams);
-        return res.json({ checkout_url: session.url });
-      } catch (stripeErr) {
-        logger.error('[plan] Stripe error:', stripeErr.message);
+        const resp = await fetch(`${DODO_BASE_URL}/checkouts`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.DODO_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          signal: AbortSignal.timeout(15000),
+          body: JSON.stringify({
+            product_cart: [{ product_id: productIds[planId], quantity: 1 }],
+            customer: { email: client.owner_email, name: client.business_name || 'ELYVN Customer' },
+            metadata: { clientId, planId },
+            return_url: `${process.env.APP_URL || 'https://api.elyvn.net'}/dashboard?upgrade=success`,
+          }),
+        });
+        const session = await resp.json();
+        if (!resp.ok) throw new Error(session.message || 'Dodo checkout failed');
+        return res.json({ checkout_url: session.checkout_url || session.url });
+      } catch (dodoErr) {
+        logger.error('[plan] Dodo error:', dodoErr.message);
         return next(new AppError('INTERNAL_ERROR', 'Failed to create checkout', 500));
       }
     }
 
-    // No Stripe — direct update (dev/test)
+    // No Dodo — direct update (dev/test)
     await db.query("UPDATE clients SET plan = ?, updated_at = datetime('now') WHERE id = ?", [planId, clientId], 'run');
     try { logDataMutation(db, { action: 'plan_upgrade', table: 'clients', recordId: clientId, newValues: { plan: planId } }); } catch (_) {}
     res.json({ upgraded: true, plan: planId });

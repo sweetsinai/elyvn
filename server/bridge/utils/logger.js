@@ -97,8 +97,9 @@ const COLORS = {
 const PII_PATTERNS = [
   // JWT tokens (must precede email — dots in JWTs would partially match email)
   { pattern: /eyJ[\w-]+\.[\w-]+\.[\w-]+/g, replacement: '[JWT]' },
-  // Stripe secret keys (must precede phone — key suffix contains digits)
+  // Payment provider keys (Stripe legacy + Dodo)
   { pattern: /sk_(live|test)_[\w]+/g, replacement: '[STRIPE_KEY]' },
+  { pattern: /whsec_[\w]+/g, replacement: '[WEBHOOK_SECRET]' },
   // Anthropic API keys
   { pattern: /sk-ant-[\w-]+/g, replacement: '[ANTHROPIC_KEY]' },
   // Retell API keys
