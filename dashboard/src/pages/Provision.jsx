@@ -32,23 +32,25 @@ const PLANS = [
   {
     id: 'starter',
     name: 'Starter',
-    price: '$297',
+    price: '$199',
     period: '/month',
     features: [
-      'One Telnyx phone number',
-      'Basic AI agent (5k messages/month)',
+      '500 calls/month',
+      '1,000 SMS/month',
+      '200 emails/month',
       'Telegram bot integration',
       'Email support'
     ]
   },
   {
-    id: 'growth',
-    name: 'Growth',
-    price: '$497',
+    id: 'pro',
+    name: 'Pro',
+    price: '$399',
     period: '/month',
     features: [
-      'Up to 3 Telnyx phone numbers',
-      'Advanced AI agent (25k messages/month)',
+      '1,500 calls/month',
+      '3,000 SMS/month',
+      '500 emails/month',
       'Telegram + Web integration',
       'Priority email & chat support',
       'Custom knowledge base'
@@ -56,13 +58,14 @@ const PLANS = [
     recommended: true
   },
   {
-    id: 'scale',
-    name: 'Scale',
-    price: '$997',
+    id: 'premium',
+    name: 'Premium',
+    price: '$799',
     period: '/month',
     features: [
-      'Unlimited Telnyx phone numbers',
-      'Enterprise AI agent (100k+ messages/month)',
+      'Unlimited calls',
+      'Unlimited SMS',
+      'Unlimited emails',
       'All integrations (Telegram, Web, Slack)',
       '24/7 phone support',
       'Custom knowledge base + fine-tuning',

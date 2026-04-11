@@ -533,7 +533,7 @@ Your business in your pocket:
 | **Bookings** | Calendar view, week navigator, contact details, service type, duration |
 | **Clients** | Multi-tenant overview, sort by name/activity/plan, active/inactive filter |
 | **Client Detail** | Knowledge base JSON editor, business settings, phone config |
-| **Provision** | 3-step wizard: Business info > Plan ($297/$497/$997) > Integrations. Auto-provisions everything |
+| **Provision** | 3-step wizard: Business info > Plan ($199/$399/$799) > Integrations. Auto-provisions everything |
 | **Settings** | Integration status (Retell/Telnyx/Cal.com/SMTP), webhook URLs, global config |
 
 </td></tr>
@@ -1007,33 +1007,34 @@ elyvn/
 <tr>
 <td align="center" width="33%">
 <h3>Starter</h3>
-<h2>$297<sub>/mo</sub></h2>
+<h2>$199<sub>/mo</sub></h2>
 
-1 AI agent
 500 calls
 1,000 SMS
-Basic analytics
+200 emails
+Telegram alerts
+Email support
 
 </td>
 <td align="center" width="33%">
-<h3>Growth ⭐</h3>
-<h2>$497<sub>/mo</sub></h2>
+<h3>Pro ⭐</h3>
+<h2>$399<sub>/mo</sub></h2>
 
-3 AI agents
-2,000 calls
-5,000 SMS
-Full analytics
-Email outreach
-
-</td>
-<td align="center" width="33%">
-<h3>Scale</h3>
-<h2>$997<sub>/mo</sub></h2>
-
-Unlimited agents
-Unlimited calls/SMS
+1,500 calls
+3,000 SMS
+500 emails
 Priority support
-Custom integrations
+Custom knowledge base
+
+</td>
+<td align="center" width="33%">
+<h3>Premium</h3>
+<h2>$799<sub>/mo</sub></h2>
+
+Unlimited everything
+All integrations
+24/7 phone support
+White-label options
 
 </td>
 </tr>

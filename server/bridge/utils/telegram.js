@@ -233,7 +233,7 @@ const PLAN_COMMANDS = {
     { command: 'alerts', description: 'Get every call/SMS alert' },
     { command: 'help', description: 'Show commands' },
   ],
-  growth: [
+  pro: [
     { command: 'today', description: "Today's schedule" },
     { command: 'stats', description: 'Last 7 days stats' },
     { command: 'calls', description: 'Recent calls' },
@@ -247,7 +247,7 @@ const PLAN_COMMANDS = {
     { command: 'alerts', description: 'Get every call/SMS alert' },
     { command: 'help', description: 'Show commands' },
   ],
-  scale: [
+  premium: [
     { command: 'today', description: "Today's schedule" },
     { command: 'stats', description: 'Last 7 days stats' },
     { command: 'calls', description: 'Recent calls' },

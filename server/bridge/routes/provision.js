@@ -172,7 +172,7 @@ router.post('/', async (req, res, next) => {
         industry || null,
         timezone || 'UTC',
         avg_ticket || 0,
-        plan || 'growth',
+        plan || 'pro',
         now,
         now
       ], 'run');

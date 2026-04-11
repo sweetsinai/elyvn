@@ -156,8 +156,8 @@ router.get('/:resellerId/stats', requireReseller, async (req, res, next) => {
       db.query("SELECT COUNT(*) as c FROM clients WHERE reseller_id = ? AND is_active = 1 AND plan != 'trial'", [resellerId], 'get'),
       db.query(`
         SELECT COUNT(*) as paying,
-          SUM(CASE WHEN plan = 'starter' THEN 299 WHEN plan = 'growth' THEN 499 WHEN plan = 'scale' THEN 799 ELSE 0 END) as mrr
-        FROM clients WHERE reseller_id = ? AND subscription_status = 'active' AND plan IN ('starter','growth','scale')
+          SUM(CASE WHEN plan = 'starter' THEN 199 WHEN plan = 'pro' THEN 399 WHEN plan = 'premium' THEN 799 ELSE 0 END) as mrr
+        FROM clients WHERE reseller_id = ? AND subscription_status = 'active' AND plan IN ('starter','pro','premium')
       `, [resellerId], 'get'),
     ]);
 

@@ -177,9 +177,9 @@ Output: Array of autonomous actions
 | **Features Grid** | 8 live features with LIVE badges |
 | **The AI Brain** | 4-step visual flow explaining the autonomous decision engine |
 | **ROI Calculator** | Interactive calculator: enter job value + missed calls → see monthly revenue lost |
-| **Pricing** | 3 tiers: Starter $299/mo, Growth $499/mo, Scale $799/mo |
+| **Pricing** | 3 tiers: Starter $199/mo, Pro $399/mo, Premium $799/mo |
 | **Results Timeline** | Week 1 → Month 1 → Month 2-3 expected outcomes |
-| **Why ELYVN** | Traditional receptionist ($3K/mo) vs ELYVN ($299/mo) comparison |
+| **Why ELYVN** | Traditional receptionist ($3K/mo) vs ELYVN ($199/mo) comparison |
 | **FAQ** | 6 common questions with expandable answers |
 | **Final CTA** | "Book a Free Demo Call" → Cal.com scheduling |
 
@@ -207,9 +207,9 @@ ELYVN-Website/
 
 | Plan | Price | Includes |
 |------|-------|----------|
-| **Starter** | $299/mo | AI Phone Agent, SMS Auto-Reply, Missed Call Text-Back, Telegram Alerts, 500 calls/month |
-| **Growth** | $499/mo | Everything in Starter + Follow-Up Sequences, AI Brain + Lead Scoring, Weekly Revenue Reports, 1,500 calls/month |
-| **Scale** | $799/mo | Everything in Growth + New Customer Finder, Automated Outreach, Unlimited calls, Priority Support |
+| **Starter** | $199/mo | AI Phone Agent, SMS Auto-Reply, Missed Call Text-Back, Telegram Alerts, 500 calls / 1,000 SMS / 200 emails |
+| **Pro** | $399/mo | Everything in Starter + Follow-Up Sequences, AI Brain + Lead Scoring, Weekly Revenue Reports, 1,500 calls / 3,000 SMS / 500 emails |
+| **Premium** | $799/mo | Everything in Pro + New Customer Finder, Automated Outreach, Unlimited everything, Priority Support |
 
 All plans include a 7-day free trial. No contracts. Cancel anytime.
 

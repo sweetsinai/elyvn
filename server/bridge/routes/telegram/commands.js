@@ -633,7 +633,7 @@ async function handleCommand(db, message) {
     // ═══════════════════════════════════════════════════════
     case '/brain': {
       if (!client.plan || client.plan === 'starter') {
-        await telegram.sendMessage(chatId, '🧠 AI Brain is available on Growth and Scale plans. Upgrade to unlock autonomous AI decisions.');
+        await telegram.sendMessage(chatId, '🧠 AI Brain is available on Pro and Premium plans. Upgrade to unlock autonomous AI decisions.');
         break;
       }
 
@@ -688,8 +688,8 @@ async function handleCommand(db, message) {
     // /outreach — Outreach campaign stats (7 days)
     // ═══════════════════════════════════════════════════════
     case '/outreach': {
-      if (!client.plan || client.plan !== 'scale') {
-        await telegram.sendMessage(chatId, '📧 Outreach is available on the Scale plan. Upgrade to unlock automated prospecting.');
+      if (!client.plan || client.plan !== 'premium') {
+        await telegram.sendMessage(chatId, '📧 Outreach is available on the Premium plan. Upgrade to unlock automated prospecting.');
         break;
       }
 
@@ -730,8 +730,8 @@ async function handleCommand(db, message) {
     // /scrape industry city — Find prospects via Google Maps
     // ═══════════════════════════════════════════════════════
     case '/scrape': {
-      if (!client.plan || client.plan !== 'scale') {
-        await telegram.sendMessage(chatId, '🔍 Prospect finder is available on the Scale plan.');
+      if (!client.plan || client.plan !== 'premium') {
+        await telegram.sendMessage(chatId, '🔍 Prospect finder is available on the Premium plan.');
         break;
       }
 
@@ -810,8 +810,8 @@ async function handleCommand(db, message) {
     // /prospects — Top 10 recent prospects
     // ═══════════════════════════════════════════════════════
     case '/prospects': {
-      if (!client.plan || client.plan !== 'scale') {
-        await telegram.sendMessage(chatId, '🔍 Prospect finder is available on the Scale plan.');
+      if (!client.plan || client.plan !== 'premium') {
+        await telegram.sendMessage(chatId, '🔍 Prospect finder is available on the Premium plan.');
         break;
       }
 

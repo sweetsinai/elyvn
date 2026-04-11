@@ -2,7 +2,7 @@
 
 ### The AI employee that never sleeps, never forgets, and never misses a call.
 
-ELYVN replaces the $42,000/year receptionist with an AI that answers every call, texts every lead within 2 minutes, scores them by likelihood to buy, books appointments automatically, requests Google reviews, and tells the business owner exactly who needs a callback — 24/7, for $299/month.
+ELYVN replaces the $42,000/year receptionist with an AI that answers every call, texts every lead within 2 minutes, scores them by likelihood to buy, books appointments automatically, requests Google reviews, and tells the business owner exactly who needs a callback — 24/7, for $199/month.
 
 Built for home service businesses, dental offices, med spas, salons, auto shops, law firms, and anyone who loses money when the phone goes unanswered.
 
@@ -153,7 +153,7 @@ Business owners manage everything from their phone. No dashboard needed.
 
 ### Commands by Plan
 
-| Command | Starter | Growth | Scale |
+| Command | Starter | Pro | Premium |
 |---------|---------|--------|-------|
 | `/status` | Dashboard overview | | |
 | `/leads` | Lead list by stage | | |
@@ -176,9 +176,9 @@ Business owners manage everything from their phone. No dashboard needed.
 
 | Plan | Price | Calls | SMS | Best for |
 |------|-------|-------|-----|----------|
-| **Starter** | $299/mo | 500 | 1,000 | Solo operator, 1-2 locations |
-| **Growth** | $499/mo | 1,500 | 3,000 | Growing SMB, multiple services |
-| **Scale** | $799/mo | Unlimited | Unlimited | High-volume, multi-location |
+| **Starter** | $199/mo | 500 | 1,000 | Solo operator, 1-2 locations |
+| **Pro** | $399/mo | 1,500 | 3,000 | Growing SMB, multiple services |
+| **Premium** | $799/mo | Unlimited | Unlimited | High-volume, multi-location |
 
 7-day free trial on all plans. Usage tracked per-client per-month.
 

@@ -21,49 +21,49 @@ const stripe = new Stripe(key);
 async function setup() {
   console.log(`Creating ELYVN Stripe products (${key.startsWith('sk_live') ? 'LIVE' : 'TEST'} mode)...\n`);
 
-  // Starter — $299/mo
+  // Starter — $199/mo
   const starter = await stripe.products.create({
     name: 'ELYVN Starter',
-    description: 'AI Phone Agent, SMS Auto-Reply, Missed Call Text-Back, Telegram Alerts, 500 calls/month',
+    description: '500 calls, 1,000 SMS, 200 emails/month, AI Phone Agent, SMS Auto-Reply, Missed Call Text-Back, Telegram Alerts',
   });
   const starterPrice = await stripe.prices.create({
     product: starter.id,
-    unit_amount: 29900,
+    unit_amount: 19900,
     currency: 'usd',
     recurring: { interval: 'month' },
   });
   console.log(`Starter:  product=${starter.id}  price=${starterPrice.id}`);
 
-  // Growth — $499/mo
-  const growth = await stripe.products.create({
-    name: 'ELYVN Growth',
-    description: 'Everything in Starter + Follow-Up Sequences, AI Brain + Lead Scoring, Weekly Revenue Reports, 1,500 calls/month',
+  // Pro — $399/mo
+  const pro = await stripe.products.create({
+    name: 'ELYVN Pro',
+    description: '1,500 calls, 3,000 SMS, 500 emails/month, Everything in Starter + Follow-Up Sequences, AI Brain + Lead Scoring, Weekly Revenue Reports',
   });
-  const growthPrice = await stripe.prices.create({
-    product: growth.id,
-    unit_amount: 49900,
+  const proPrice = await stripe.prices.create({
+    product: pro.id,
+    unit_amount: 39900,
     currency: 'usd',
     recurring: { interval: 'month' },
   });
-  console.log(`Growth:   product=${growth.id}  price=${growthPrice.id}`);
+  console.log(`Pro:      product=${pro.id}  price=${proPrice.id}`);
 
-  // Scale — $799/mo
-  const scale = await stripe.products.create({
-    name: 'ELYVN Scale',
-    description: 'Everything in Growth + New Customer Finder, Automated Outreach, Unlimited calls, Priority Support',
+  // Premium — $799/mo
+  const premium = await stripe.products.create({
+    name: 'ELYVN Premium',
+    description: 'Everything in Pro + New Customer Finder, Automated Outreach, Unlimited everything, Priority Support',
   });
-  const scalePrice = await stripe.prices.create({
-    product: scale.id,
+  const premiumPrice = await stripe.prices.create({
+    product: premium.id,
     unit_amount: 79900,
     currency: 'usd',
     recurring: { interval: 'month' },
   });
-  console.log(`Scale:    product=${scale.id}  price=${scalePrice.id}`);
+  console.log(`Premium:  product=${premium.id}  price=${premiumPrice.id}`);
 
   console.log('\n--- ADD THESE TO RAILWAY ENV VARS ---');
   console.log(`STRIPE_PRICE_STARTER=${starterPrice.id}`);
-  console.log(`STRIPE_PRICE_GROWTH=${growthPrice.id}`);
-  console.log(`STRIPE_PRICE_SCALE=${scalePrice.id}`);
+  console.log(`STRIPE_PRICE_PRO=${proPrice.id}`);
+  console.log(`STRIPE_PRICE_PREMIUM=${premiumPrice.id}`);
 }
 
 setup().catch(err => {

@@ -59,13 +59,13 @@ ELYVN is an AI receptionist SaaS for local service businesses (dental, HVAC, med
 | `/resume` | Resume AI answering | clients.is_active |
 | `/help` | Dynamic command list based on plan | telegram.PLAN_COMMANDS |
 
-### Growth + Scale Plans
+### Pro + Premium Plans
 
 | Command | Description | Data Source |
 |---------|-------------|-------------|
 | `/brain` | Last 10 AI Brain decisions with actions, reasoning, and 7-day count | audit_log (action='brain_decision') |
 
-### Scale Plan Only
+### Premium Plan Only
 
 | Command | Description | Data Source |
 |---------|-------------|-------------|
@@ -155,9 +155,9 @@ All scheduling respects business hours. Telegram notification sent with cancel b
 
 | Plan | Price | Calls | Features |
 |------|-------|-------|----------|
-| Starter | $299/mo | 500 | AI Phone, SMS Auto-Reply, Missed Call Text-Back, Telegram |
-| Growth | $499/mo | 1,500 | + Follow-Up Sequences, AI Brain, Lead Scoring, Weekly Reports |
-| Scale | $799/mo | Unlimited | + New Customer Finder, Automated Outreach, Priority Support |
+| Starter | $199/mo | 500 | AI Phone, SMS Auto-Reply, Missed Call Text-Back, Telegram |
+| Pro | $399/mo | 1,500 | + Follow-Up Sequences, AI Brain, Lead Scoring, Weekly Reports |
+| Premium | $799/mo | Unlimited | + New Customer Finder, Automated Outreach, Priority Support |
 
 All plans include 7-day free trial. Stripe webhook at `/billing/webhook` handles: `checkout.session.completed`, `invoice.payment_succeeded`, `invoice.payment_failed`, `customer.subscription.deleted`.
 
