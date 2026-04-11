@@ -156,9 +156,41 @@ Feature-flagged behind `ELYVN_MANAGED_AGENTS=true` (disabled by default).
 Pipelines: `newLeadPipeline`, `replyPipeline`, `outreachPipeline`, `scoringPipeline`.
 Falls back to legacy single-call brain.js when disabled or on failure.
 
-## Dashboard Pages (React 18 + Vite)
+## Dashboard Pages (React 18 + Vite) — NEEDS FULL REDESIGN
 
-Dashboard.jsx, Clients.jsx, ClientDetail.jsx, Calls.jsx, Messages.jsx, Bookings.jsx, Pipeline.jsx, Intelligence.jsx, Settings.jsx, Outreach.jsx, Onboard.jsx, Provision.jsx, Integrations.jsx.
+Current pages (all .jsx, inline styles): Dashboard, Clients, ClientDetail, Calls, Messages, Bookings, Pipeline, Intelligence, Settings, Outreach, Onboard, Provision, Integrations.
+
+### IMMEDIATE NEXT TASK: Full Dashboard Redesign
+
+The dashboard is functional but visually bare. Redesign to match the website's premium gold/black brand:
+
+**Design system (from website/index.html + Morpheus reference):**
+- Primary gold: `#D4AF37` (not `#C9A84C`)
+- Background: `#050505` (primary), `#111111` (cards)
+- Card borders: `rgba(212, 175, 55, 0.15)` (gold tint)
+- Fonts: Cormorant Garamond for headlines, Inter for body
+- Inputs: `#0a0a0a` background, gold border on focus `rgba(212,175,55,0.4)`
+- Buttons: gold gradient, shimmer on hover
+- Gold glow effects on hover: `box-shadow: 0 0 20px rgba(212,175,55,0.15)`
+
+**Pages to build (13 total):**
+1. `/login` — Premium login with gold branding, dark card, signup toggle
+2. `/` — Dashboard Overview: KPI cards (calls today, leads, bookings, revenue), quick actions, system status
+3. `/calls` — Call log table with transcript viewer + download button
+4. `/messages` — Unified inbox (SMS + email), conversation threads
+5. `/pipeline` — Lead pipeline board (Kanban stages or list)
+6. `/intelligence` — AI insights, coaching tips, peak hours
+7. `/outreach` — Cold email campaigns, prospect scraping
+8. `/clients` — Client list (admin view)
+9. `/client/:clientId` — Single client detail
+10. `/bookings` — Appointment calendar/list
+11. `/settings` — Client settings (transfer phone, webhook URLs, Google Sheet ID)
+12. `/integrations` — Service status, webhook log, test button
+13. `/provision` — Admin client provisioning form
+
+**Sidebar:** 260px fixed, 3 sections (Core, Management, Intelligence), gold active states, user email + logout at bottom.
+
+**Reference:** The Morpheus admin dashboard (`/Users/sohangowda/morpheus/morpheus-admin/src/`) uses the same design system — gold borders, dark cards, Cormorant headers. Use it as direct reference for component patterns.
 
 **Added in Phase 4:** Integrations page (webhook log, test button, Sheets guide), unified phone number display in Settings, real-time active call indicators + transfer controls in Calls.
 
