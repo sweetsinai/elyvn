@@ -329,6 +329,17 @@ async function handleBookingCreated(db, payload) {
       logger.error('[calcom-webhook] Webhook enqueue failed:', err.message);
     }
   }
+
+  // Google Sheets: log booking
+  if (client.google_sheet_id) {
+    try {
+      const { logBooking } = require('../utils/googleSheets');
+      logBooking(client.google_sheet_id, {
+        name, phone, email, service: title || 'Demo',
+        start_time: startTime, status: 'confirmed',
+      }).catch(e => logger.warn('[sheets] logBooking failed:', e.message));
+    } catch (_) {}
+  }
 }
 
 async function handleBookingCancelled(db, payload) {

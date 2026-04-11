@@ -290,7 +290,7 @@ async function handleCallEnded(db, call, correlationId) {
     // Outbound webhook: notify client's configured call_webhook_url
     try {
       const { fireCallEnded } = require('../../utils/webhookEvents');
-      const client = await db.query('SELECT id, call_webhook_url FROM clients WHERE id = ?', [callRecord.client_id], 'get');
+      const client = await db.query('SELECT id, call_webhook_url, google_sheet_id FROM clients WHERE id = ?', [callRecord.client_id], 'get');
       if (client) {
         await fireCallEnded(client, {
           callId,
@@ -301,8 +301,20 @@ async function handleCallEnded(db, call, correlationId) {
           summary: analysis.summary,
           sentiment: analysis.sentiment,
         });
+        // Google Sheets: log call
+        if (client.google_sheet_id) {
+          const { logCall } = require('../../utils/googleSheets');
+          logCall(client.google_sheet_id, {
+            caller_name: callRecord.caller_name,
+            caller_phone: callRecord.caller_phone,
+            duration: analysis.duration,
+            outcome: analysis.outcome,
+            score: analysis.score,
+            summary: analysis.summary,
+          }).catch(e => logger.warn('[sheets] logCall failed:', e.message));
+        }
       }
-    } catch (_whErr) { /* webhook fire must not break request */ }
+    } catch (_whErr) { /* webhook/sheets fire must not break request */ }
   } catch (err) {
     logger.error('[retell] call_ended error:', { correlationId, error: err.message, stack: err.stack });
   }

@@ -1600,4 +1600,19 @@ migrations.push({
   },
 });
 
+// ── 046: Google Sheets integration — add google_sheet_id to clients ──
+migrations.push({
+  id: '046_google_sheet_id',
+  description: 'Add google_sheet_id column to clients for native Google Sheets logging',
+  up(db) {
+    const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+    if (!cols.includes('google_sheet_id')) {
+      db.exec('ALTER TABLE clients ADD COLUMN google_sheet_id TEXT');
+    }
+  },
+  down(db) {
+    // SQLite cannot drop columns
+  },
+});
+
 module.exports = { runMigrations, rollbackMigration, migrations };

@@ -59,15 +59,23 @@ async function fireLeadStageChanged(client, { leadId, oldStage, newStage, leadDa
  * Fire an sms.received webhook if the client has an sms_webhook_url configured.
  */
 async function fireSmsReceived(client, { from, to, body, messageId, leadId }) {
-  if (!client.sms_webhook_url) return;
-  try {
-    await enqueue(
-      client.sms_webhook_url,
-      buildPayload('sms.received', client.id, { from, to, body, messageId, leadId }),
-      { 'X-Client-Id': client.id }
-    );
-  } catch (err) {
-    logger.error('[webhookEvents] fireSmsReceived error:', err.message);
+  if (client.sms_webhook_url) {
+    try {
+      await enqueue(
+        client.sms_webhook_url,
+        buildPayload('sms.received', client.id, { from, to, body, messageId, leadId }),
+        { 'X-Client-Id': client.id }
+      );
+    } catch (err) {
+      logger.error('[webhookEvents] fireSmsReceived error:', err.message);
+    }
+  }
+  // Google Sheets: log inbound message
+  if (client.google_sheet_id) {
+    try {
+      const { logMessage } = require('./googleSheets');
+      logMessage(client.google_sheet_id, { direction: 'inbound', phone: from, body, channel: 'sms' }).catch(() => {});
+    } catch (_) {}
   }
 }
 
@@ -75,15 +83,23 @@ async function fireSmsReceived(client, { from, to, body, messageId, leadId }) {
  * Fire an sms.sent webhook if the client has an sms_webhook_url configured.
  */
 async function fireSmsSent(client, { to, from, body, messageId, leadId }) {
-  if (!client.sms_webhook_url) return;
-  try {
-    await enqueue(
-      client.sms_webhook_url,
-      buildPayload('sms.sent', client.id, { to, from, body, messageId, leadId }),
-      { 'X-Client-Id': client.id }
-    );
-  } catch (err) {
-    logger.error('[webhookEvents] fireSmsSent error:', err.message);
+  if (client.sms_webhook_url) {
+    try {
+      await enqueue(
+        client.sms_webhook_url,
+        buildPayload('sms.sent', client.id, { to, from, body, messageId, leadId }),
+        { 'X-Client-Id': client.id }
+      );
+    } catch (err) {
+      logger.error('[webhookEvents] fireSmsSent error:', err.message);
+    }
+  }
+  // Google Sheets: log outbound message
+  if (client.google_sheet_id) {
+    try {
+      const { logMessage } = require('./googleSheets');
+      logMessage(client.google_sheet_id, { direction: 'outbound', phone: to, body, channel: 'sms' }).catch(() => {});
+    } catch (_) {}
   }
 }
 
