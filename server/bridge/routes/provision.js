@@ -218,6 +218,19 @@ router.post('/', async (req, res, next) => {
     logger.info(`[provision] Provisioning complete for ${business_name} (${clientId})`);
     logger.info(`[provision] Telegram link: ${telegram_link}`);
 
+    // Post-signup: create Google Sheet (non-blocking)
+    try {
+      const { createClientSheet, isConfigured } = require('../utils/googleSheets');
+      if (isConfigured() && owner_email) {
+        createClientSheet(business_name, owner_email).then(async (sheet) => {
+          if (sheet) {
+            await db.query("UPDATE clients SET google_sheet_id = ?, updated_at = datetime('now') WHERE id = ?",
+              [sheet.spreadsheetId, clientId], 'run');
+          }
+        }).catch(() => {});
+      }
+    } catch (_) {}
+
     return res.status(201).json({
       client,
       provisioning_status,

@@ -6,8 +6,8 @@
  * Writes call logs, bookings, leads, and SMS events to a client's Google Sheet
  * in real-time. Each client configures their own Sheet ID in Settings.
  *
- * Setup: Client shares their Google Sheet with elyvn-bot@elyvn-491010.iam.gserviceaccount.com
- * then pastes the Sheet ID into Settings → Google Sheet ID.
+ * Auto-provisioned: on client signup, createClientSheet() creates a new
+ * spreadsheet, shares it with the client's email, and stores the ID.
  *
  * Sheet structure (auto-created tabs):
  *   Calls    — timestamp, caller, phone, duration, outcome, score, summary
@@ -37,7 +37,10 @@ function getSheetsClient() {
 
     _auth = new google.auth.GoogleAuth({
       credentials,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+      scopes: [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive.file', // create + share spreadsheets
+      ],
     });
 
     _sheets = google.sheets({ version: 'v4', auth: _auth });
@@ -47,6 +50,16 @@ function getSheetsClient() {
     logger.error('[sheets] Failed to initialize:', err.message);
     return null;
   }
+}
+
+/**
+ * Get Google Drive client (for sharing permissions).
+ */
+function getDriveClient() {
+  getSheetsClient(); // ensure _auth is initialized
+  if (!_auth) return null;
+  const { google } = require('googleapis');
+  return google.drive({ version: 'v3', auth: _auth });
 }
 
 // ─── Tab names ──────────────────────────────────────────────────────────────
@@ -189,6 +202,70 @@ async function logMessage(spreadsheetId, msg) {
 }
 
 /**
+ * Create a new Google Sheet for a client, set up all tabs, and share with client's email.
+ *
+ * @param {string} businessName - Client's business name (used in sheet title)
+ * @param {string} clientEmail  - Client's email (gets Editor access)
+ * @returns {Promise<{spreadsheetId: string, url: string} | null>}
+ */
+async function createClientSheet(businessName, clientEmail) {
+  const sheets = getSheetsClient();
+  const drive = getDriveClient();
+  if (!sheets || !drive) {
+    logger.warn('[sheets] Cannot create sheet — Google API not configured');
+    return null;
+  }
+
+  try {
+    // 1. Create spreadsheet with all 4 tabs
+    const res = await sheets.spreadsheets.create({
+      requestBody: {
+        properties: { title: `ELYVN — ${businessName || 'Client'} Dashboard` },
+        sheets: Object.values(TABS).map(title => ({
+          properties: { title },
+        })),
+      },
+    });
+
+    const spreadsheetId = res.data.spreadsheetId;
+    const url = res.data.spreadsheetUrl;
+
+    // 2. Add headers to each tab
+    const headerRequests = Object.entries(TAB_HEADERS).map(([tab, headers]) => ({
+      range: `${tab}!A1`,
+      values: [headers],
+    }));
+
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: 'RAW',
+        data: headerRequests,
+      },
+    });
+
+    // 3. Share with client's email (Editor access)
+    if (clientEmail) {
+      await drive.permissions.create({
+        fileId: spreadsheetId,
+        requestBody: {
+          role: 'writer',
+          type: 'user',
+          emailAddress: clientEmail,
+        },
+        sendNotificationEmail: true,
+      });
+    }
+
+    logger.info(`[sheets] Created sheet for "${businessName}": ${spreadsheetId} (shared with ${clientEmail})`);
+    return { spreadsheetId, url };
+  } catch (err) {
+    logger.error('[sheets] createClientSheet failed:', err.message);
+    return null;
+  }
+}
+
+/**
  * Check if Google Sheets is configured and working.
  */
 function isConfigured() {
@@ -196,6 +273,7 @@ function isConfigured() {
 }
 
 module.exports = {
+  createClientSheet,
   logCall,
   logBooking,
   logLead,

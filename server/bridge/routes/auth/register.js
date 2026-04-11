@@ -82,6 +82,19 @@ router.post('/', validateBody(SignupSchema), async (req, res, next) => {
       logger.error('[auth] Failed to send verification email:', err.message);
     });
 
+    // Post-signup: create Google Sheet (non-blocking)
+    try {
+      const { createClientSheet, isConfigured } = require('../../utils/googleSheets');
+      if (isConfigured()) {
+        createClientSheet(business_name.trim(), email.toLowerCase().trim()).then(async (sheet) => {
+          if (sheet) {
+            await db.query("UPDATE clients SET google_sheet_id = ?, updated_at = datetime('now') WHERE id = ?",
+              [sheet.spreadsheetId, clientId], 'run');
+          }
+        }).catch(() => {});
+      }
+    } catch (_) {}
+
     logger.info(`[auth] New signup: ${email} → client ${clientId} (unverified)`);
     res.status(201).json({
       token,

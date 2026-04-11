@@ -755,20 +755,39 @@ export default function Calls() {
                     {transcript.error}
                   </div>
                 ) : transcript?.transcript ? (
-                  <div style={{
-                    padding: 16,
-                    background: '#0d0d0d',
-                    borderRadius: 6,
-                    fontSize: 13,
-                    lineHeight: 1.6,
-                    color: '#e0d8c8',
-                    maxHeight: 300,
-                    overflow: 'auto',
-                    whiteSpace: 'pre-wrap',
-                    wordWrap: 'break-word',
-                  }}>
-                    {transcript.transcript}
-                  </div>
+                  <>
+                    <div style={{
+                      padding: 16,
+                      background: '#0d0d0d',
+                      borderRadius: 6,
+                      fontSize: 13,
+                      lineHeight: 1.6,
+                      color: '#e0d8c8',
+                      maxHeight: 300,
+                      overflow: 'auto',
+                      whiteSpace: 'pre-wrap',
+                      wordWrap: 'break-word',
+                    }}>
+                      {transcript.transcript}
+                    </div>
+                    <a
+                      href={`/api/calls/${selectedCall.client_id}/${selectedCall.call_id}/transcript/download`}
+                      download
+                      style={{
+                        display: 'inline-block',
+                        marginTop: 8,
+                        padding: '6px 14px',
+                        background: '#c9a227',
+                        color: '#0d0d0d',
+                        borderRadius: 4,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        textDecoration: 'none',
+                      }}
+                    >
+                      Download Transcript (.txt)
+                    </a>
+                  </>
                 ) : (
                   <div style={{
                     padding: 16,
