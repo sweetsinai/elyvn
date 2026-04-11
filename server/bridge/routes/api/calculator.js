@@ -33,8 +33,8 @@ router.post('/roi', (req, res) => {
     const missRate = benchmark.missRate;
     const convertRate = benchmark.convertRate;
 
-    const planCosts = { starter: 199, pro: 399, premium: 799 };
-    const monthlyCost = planCosts[plan] || 199;
+    const planCosts = { solo: 99, starter: 199, pro: 399, premium: 799 };
+    const monthlyCost = planCosts[plan] || 99;
 
     // Math
     const monthlyMissed = Math.round(calls * 4.33 * missRate);

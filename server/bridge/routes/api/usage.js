@@ -15,11 +15,11 @@ router.param('clientId', clientIsolationParam);
 // Plan limits
 const PLAN_LIMITS = {
   trial:   { calls: 50,   sms: 100,  emails: 50  },
+  solo:    { calls: 100,  sms: 300,  emails: 100 },
   starter: { calls: 500,  sms: 1000, emails: 200 },
   pro:     { calls: 1500, sms: 3000, emails: 500 },
   premium: { calls: -1,   sms: -1,   emails: -1  }, // unlimited
   // Legacy plan names (backward compat for existing clients)
-  solo:    { calls: 100,  sms: 300,  emails: 100 },
   growth:  { calls: 1500, sms: 3000, emails: 500 },
   scale:   { calls: -1,   sms: -1,   emails: -1  },
 };
@@ -197,9 +197,9 @@ router.post('/plan/:clientId/upgrade', async (req, res, next) => {
     const { planId } = req.body;
     if (!isValidUUID(clientId)) return next(new AppError('INVALID_INPUT', 'Invalid client ID', 400));
 
-    const validPlans = ['starter', 'pro', 'premium'];
+    const validPlans = ['solo', 'starter', 'pro', 'premium'];
     if (!validPlans.includes(planId)) {
-      return next(new AppError('VALIDATION_ERROR', 'Invalid plan. Choose: starter, pro, or premium', 400));
+      return next(new AppError('VALIDATION_ERROR', 'Invalid plan. Choose: solo, starter, pro, or premium', 400));
     }
 
     const client = await db.query('SELECT plan, dodo_customer_id, owner_email, business_name FROM clients WHERE id = ?', [clientId], 'get');

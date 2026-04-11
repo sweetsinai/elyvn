@@ -17,6 +17,15 @@ const { z } = require('zod');
 // ─── Plan configuration ─────────────────────────────────────────────────────
 
 const PLANS = {
+  solo: {
+    name: 'Solo',
+    price: 99,
+    productId: process.env.DODO_PRODUCT_SOLO || 'pdt_0NcSVPcrrPE9CjPnCdjJC',
+    calls: 100,
+    sms: 300,
+    emails: 100,
+    trial_days: 7,
+  },
   starter: {
     name: 'Starter',
     price: 199,
@@ -76,7 +85,7 @@ async function dodoRequest(method, path, body) {
 // ─── Schemas ────────────────────────────────────────────────────────────────
 
 const CreateCheckoutSchema = z.object({
-  planId: z.enum(['starter', 'pro', 'premium']),
+  planId: z.enum(['solo', 'starter', 'pro', 'premium']),
 });
 
 // ─── Auth middleware ────────────────────────────────────────────────────────
