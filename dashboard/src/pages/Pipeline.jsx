@@ -18,12 +18,12 @@ const stageLabels = {
 };
 
 const stageColors = {
-  new: '#3B82F6',
-  contacted: '#EAB308',
-  qualified: '#C9A84C',
-  booked: '#16A34A',
-  completed: '#16A34A',
-  lost: '#DC2626',
+  new: '#60a5fa',
+  contacted: '#fbbf24',
+  qualified: '#D4AF37',
+  booked: '#4ade80',
+  completed: '#4ade80',
+  lost: '#f87171',
 };
 
 export default function Pipeline() {
@@ -128,8 +128,8 @@ export default function Pipeline() {
   if (loading) {
     return (
       <div className="fade-in">
-        <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 24 }}>Pipeline</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#555' }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 24, fontFamily: "'Cormorant Garamond', serif" }}>Pipeline</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#444' }}>
           <div className="spinner" /> Loading pipeline...
         </div>
       </div>
@@ -149,14 +149,14 @@ export default function Pipeline() {
   return (
     <div className="fade-in">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600 }}>Pipeline</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: isConnected ? '#16A34A' : '#DC2626' }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600, fontFamily: "'Cormorant Garamond', serif" }}>Pipeline</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: isConnected ? '#4ade80' : '#f87171' }}>
           <div style={{
             width: 6,
             height: 6,
             borderRadius: '50%',
-            background: isConnected ? '#16A34A' : '#DC2626',
-            boxShadow: isConnected ? '0 0 6px #16A34A' : 'none',
+            background: isConnected ? '#4ade80' : '#f87171',
+            boxShadow: isConnected ? '0 0 6px #4ade80' : 'none',
           }} />
           {isConnected ? 'Live Updates' : 'Disconnected'}
         </div>
@@ -170,10 +170,10 @@ export default function Pipeline() {
         marginBottom: 24,
         padding: '12px 16px',
         background: 'rgba(255,255,255,0.03)',
-        borderRadius: 8,
-        border: '1px solid rgba(255,255,255,0.06)',
+        borderRadius: 14,
+        border: '1px solid rgba(212,175,55,0.12)',
       }} role="search">
-        <Search size={16} color="#555" aria-hidden="true" />
+        <Search size={16} color="#444" aria-hidden="true" />
         <input
           type="text"
           placeholder="Search by name, phone, or email..."
@@ -184,7 +184,7 @@ export default function Pipeline() {
             flex: 1,
             background: 'transparent',
             border: 'none',
-            color: '#e0d8c8',
+            color: '#F5F5F0',
             outline: 'none',
             fontSize: 13,
           }}
@@ -195,10 +195,10 @@ export default function Pipeline() {
           aria-label="Filter by pipeline stage"
           style={{
             padding: '6px 10px',
-            borderRadius: 4,
-            border: '1px solid rgba(255,255,255,0.1)',
-            background: '#141414',
-            color: '#e0d8c8',
+            borderRadius: 6,
+            border: '1px solid rgba(212,175,55,0.15)',
+            background: '#1a1a1a',
+            color: '#F5F5F0',
             fontSize: 12,
             cursor: 'pointer',
           }}
@@ -216,10 +216,10 @@ export default function Pipeline() {
       {error && (
         <div style={{
           padding: '12px 16px',
-          background: 'rgba(220,38,38,0.1)',
-          border: '1px solid rgba(220,38,38,0.2)',
-          borderRadius: 8,
-          color: '#DC2626',
+          background: 'rgba(248,113,113,0.1)',
+          border: '1px solid rgba(248,113,113,0.2)',
+          borderRadius: 14,
+          color: '#f87171',
           fontSize: 13,
           marginBottom: 16,
           display: 'flex',
@@ -227,7 +227,7 @@ export default function Pipeline() {
           justifyContent: 'space-between',
         }}>
           <span>{error}</span>
-          <button className="btn-ghost" onClick={loadLeads} style={{ color: '#DC2626' }}>Retry</button>
+          <button className="btn-ghost" onClick={loadLeads} style={{ color: '#f87171' }}>Retry</button>
         </div>
       )}
 
@@ -252,9 +252,9 @@ export default function Pipeline() {
               onDrop={(e) => handleDrop(e, stage)}
               aria-label={`${stageLabels[stage]} stage with ${stageLeads.length} leads`}
               style={{
-                background: dragOverStage === stage ? 'rgba(201,168,76,0.05)' : 'transparent',
-                border: `1px solid ${dragOverStage === stage ? 'rgba(201,168,76,0.2)' : 'rgba(255,255,255,0.06)'}`,
-                borderRadius: 8,
+                background: dragOverStage === stage ? 'rgba(212,175,55,0.05)' : 'transparent',
+                border: `1px solid ${dragOverStage === stage ? 'rgba(212,175,55,0.2)' : 'rgba(212,175,55,0.12)'}`,
+                borderRadius: 14,
                 padding: 10,
                 minWidth: 170,
                 transition: 'all 0.15s',
@@ -275,16 +275,16 @@ export default function Pipeline() {
                     borderRadius: '50%',
                     background: stageColors[stage],
                   }} />
-                  <span style={{ fontSize: 12, fontWeight: 600, textTransform: 'capitalize' }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, textTransform: 'capitalize', color: '#D4AF37' }}>
                     {stageLabels[stage]}
                   </span>
                 </div>
                 <span style={{
                   fontSize: 11,
-                  color: '#555',
-                  background: 'rgba(255,255,255,0.04)',
+                  color: '#444',
+                  background: 'rgba(212,175,55,0.08)',
                   padding: '1px 6px',
-                  borderRadius: 4,
+                  borderRadius: 6,
                 }}>
                   {stageLeads.length}
                 </span>
@@ -319,7 +319,7 @@ export default function Pipeline() {
           gap: 16,
           marginTop: 24,
           paddingTop: 16,
-          borderTop: '1px solid rgba(255,255,255,0.06)',
+          borderTop: '1px solid rgba(212,175,55,0.12)',
         }} role="navigation" aria-label="Lead list pagination">
           <button
             className="btn-ghost"
@@ -330,7 +330,7 @@ export default function Pipeline() {
           >
             Previous
           </button>
-          <span style={{ fontSize: 13, color: '#888', minWidth: 100, textAlign: 'center' }} aria-live="polite">
+          <span style={{ fontSize: 13, color: '#666', minWidth: 100, textAlign: 'center' }} aria-live="polite">
             Page {page} of {totalPages}
           </span>
           <button
@@ -351,7 +351,7 @@ export default function Pipeline() {
           <div
             className="modal-content"
             onClick={e => e.stopPropagation()}
-            style={{ maxWidth: 520 }}
+            style={{ maxWidth: 520, borderRadius: 24, backdropFilter: 'blur(20px)' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <h3 style={{ fontSize: 16, fontWeight: 600 }}>
@@ -365,27 +365,27 @@ export default function Pipeline() {
             {/* Lead info */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
               <div>
-                <div style={{ fontSize: 11, color: '#555', marginBottom: 2 }}>Phone</div>
+                <div style={{ fontSize: 11, color: '#444', marginBottom: 2 }}>Phone</div>
                 <div style={{ fontSize: 13 }}>{formatPhone(selectedLead.phone)}</div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: '#555', marginBottom: 2 }}>Email</div>
+                <div style={{ fontSize: 11, color: '#444', marginBottom: 2 }}>Email</div>
                 <div style={{ fontSize: 13 }}>{selectedLead.email || '--'}</div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: '#555', marginBottom: 2 }}>Score</div>
+                <div style={{ fontSize: 11, color: '#444', marginBottom: 2 }}>Score</div>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{selectedLead.score ?? '--'}/10</div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: '#555', marginBottom: 2 }}>Stage</div>
+                <div style={{ fontSize: 11, color: '#444', marginBottom: 2 }}>Stage</div>
                 <StatusBadge status={selectedLead.stage} type="stage" />
               </div>
               <div>
-                <div style={{ fontSize: 11, color: '#555', marginBottom: 2 }}>Source</div>
+                <div style={{ fontSize: 11, color: '#444', marginBottom: 2 }}>Source</div>
                 <div style={{ fontSize: 13, textTransform: 'capitalize' }}>{selectedLead.source || '--'}</div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: '#555', marginBottom: 2 }}>Last Contact</div>
+                <div style={{ fontSize: 11, color: '#444', marginBottom: 2 }}>Last Contact</div>
                 <div style={{ fontSize: 13 }}>{timeAgo(selectedLead.last_interaction)}</div>
               </div>
             </div>
@@ -394,7 +394,7 @@ export default function Pipeline() {
             {selectedLead.follow_ups && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Follow-up Status</div>
-                <div style={{ fontSize: 12, color: '#888' }}>
+                <div style={{ fontSize: 12, color: '#666' }}>
                   Touches sent: {selectedLead.follow_ups?.sent || 0} | Scheduled: {selectedLead.follow_ups?.scheduled || 0}
                 </div>
               </div>
@@ -404,7 +404,7 @@ export default function Pipeline() {
             {selectedLead.notes && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Notes</div>
-                <div style={{ fontSize: 13, color: '#888', lineHeight: 1.6 }}>{selectedLead.notes}</div>
+                <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>{selectedLead.notes}</div>
               </div>
             )}
 
@@ -412,11 +412,11 @@ export default function Pipeline() {
             <div>
               <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Recent Interactions</div>
               {loadingInteractions ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#555', fontSize: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#444', fontSize: 12 }}>
                   <div className="spinner" /> Loading...
                 </div>
               ) : leadInteractions.length === 0 ? (
-                <div style={{ fontSize: 12, color: '#555' }}>No interactions found</div>
+                <div style={{ fontSize: 12, color: '#444' }}>No interactions found</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
                   {leadInteractions.map((item, i) => (
@@ -426,12 +426,12 @@ export default function Pipeline() {
                       gap: 8,
                       padding: '8px 10px',
                       background: '#050505',
-                      borderRadius: 6,
+                      borderRadius: 10,
                       fontSize: 12,
                     }}>
-                      {item._type === 'call' ? <Phone size={12} color="#3B82F6" /> : <MessageSquare size={12} color="#C9A84C" />}
-                      <span style={{ color: '#888', minWidth: 54 }}>{timeAgo(item.created_at)}</span>
-                      <span style={{ flex: 1, color: '#e0d8c8' }} className="truncate">
+                      {item._type === 'call' ? <Phone size={12} color="#60a5fa" /> : <MessageSquare size={12} color="#D4AF37" />}
+                      <span style={{ color: '#666', minWidth: 54 }}>{timeAgo(item.created_at)}</span>
+                      <span style={{ flex: 1, color: '#F5F5F0' }} className="truncate">
                         {item._type === 'call'
                           ? truncate(item.summary || item.outcome || 'Call', 40)
                           : truncate(item.original_message || item.body || 'Message', 40)

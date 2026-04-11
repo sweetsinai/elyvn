@@ -142,7 +142,7 @@ export default function Calls() {
   const getOutcomeBadgeColor = (outcome) => {
     switch (outcome) {
       case 'booked':
-        return { bg: 'rgba(34, 197, 94, 0.15)', color: '#22C55E', text: 'Booked' };
+        return { bg: 'rgba(34, 197, 94, 0.15)', color: '#4ade80', text: 'Booked' };
       case 'transferred':
         return { bg: 'rgba(59, 130, 246, 0.15)', color: '#3B82F6', text: 'Transferred' };
       case 'info_provided':
@@ -150,12 +150,12 @@ export default function Calls() {
       case 'missed':
         return { bg: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', text: 'Missed' };
       default:
-        return { bg: 'rgba(136, 136, 136, 0.15)', color: '#888', text: 'Unknown' };
+        return { bg: 'rgba(136, 136, 136, 0.15)', color: '#666', text: 'Unknown' };
     }
   };
 
   const getScoreBarColor = (score) => {
-    if (score >= 8) return '#22C55E';
+    if (score >= 8) return '#4ade80';
     if (score >= 5) return '#EAB308';
     return '#EF4444';
   };
@@ -171,14 +171,14 @@ export default function Calls() {
     <div className="fade-in">
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: '#e0d8c8' }}>Calls</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: isConnected ? '#22C55E' : '#EF4444' }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: '#F5F5F0' }}>Calls</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: isConnected ? '#4ade80' : '#EF4444' }}>
           <div style={{
             width: 8,
             height: 8,
             borderRadius: '50%',
-            background: isConnected ? '#22C55E' : '#EF4444',
-            boxShadow: isConnected ? '0 0 8px #22C55E' : 'none',
+            background: isConnected ? '#4ade80' : '#EF4444',
+            boxShadow: isConnected ? '0 0 8px #4ade80' : 'none',
           }} />
           {isConnected ? 'Live Updates' : 'Disconnected'}
         </div>
@@ -186,43 +186,43 @@ export default function Calls() {
 
       {/* Stats Bar */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 32 }}>
-        <div className="card" style={{ padding: 20, borderLeft: `4px solid #C9A84C` }}>
+        <div className="card" style={{ padding: 20, borderLeft: `4px solid #D4AF37` }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>Total Calls</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: '#e0d8c8' }}>{stats.totalCalls}</div>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>Total Calls</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: '#F5F5F0' }}>{stats.totalCalls}</div>
             </div>
-            <Phone size={24} style={{ color: '#C9A84C', opacity: 0.7 }} />
+            <Phone size={24} style={{ color: '#D4AF37', opacity: 0.7 }} />
           </div>
         </div>
 
-        <div className="card" style={{ padding: 20, borderLeft: `4px solid #C9A84C` }}>
+        <div className="card" style={{ padding: 20, borderLeft: `4px solid #D4AF37` }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>Avg Duration</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: '#e0d8c8' }}>{formatDuration(stats.avgDuration)}</div>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>Avg Duration</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: '#F5F5F0' }}>{formatDuration(stats.avgDuration)}</div>
             </div>
-            <Clock size={24} style={{ color: '#C9A84C', opacity: 0.7 }} />
+            <Clock size={24} style={{ color: '#D4AF37', opacity: 0.7 }} />
           </div>
         </div>
 
-        <div className="card" style={{ padding: 20, borderLeft: `4px solid #C9A84C` }}>
+        <div className="card" style={{ padding: 20, borderLeft: `4px solid #D4AF37` }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>Booking Rate</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: '#e0d8c8' }}>{stats.bookingRate}%</div>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>Booking Rate</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: '#F5F5F0' }}>{stats.bookingRate}%</div>
             </div>
-            <Target size={24} style={{ color: '#C9A84C', opacity: 0.7 }} />
+            <Target size={24} style={{ color: '#D4AF37', opacity: 0.7 }} />
           </div>
         </div>
 
-        <div className="card" style={{ padding: 20, borderLeft: `4px solid #C9A84C` }}>
+        <div className="card" style={{ padding: 20, borderLeft: `4px solid #D4AF37` }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>Avg Score</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: '#e0d8c8' }}>{stats.avgScore}/10</div>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>Avg Score</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: '#F5F5F0' }}>{stats.avgScore}/10</div>
             </div>
-            <TrendingUp size={24} style={{ color: '#C9A84C', opacity: 0.7 }} />
+            <TrendingUp size={24} style={{ color: '#D4AF37', opacity: 0.7 }} />
           </div>
         </div>
       </div>
@@ -230,9 +230,9 @@ export default function Calls() {
       {/* Active Calls Banner */}
       {activeCalls.length > 0 && (
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#22C55E', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#4ade80', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{
-              width: 8, height: 8, borderRadius: '50%', background: '#22C55E',
+              width: 8, height: 8, borderRadius: '50%', background: '#4ade80',
               animation: 'pulse 2s infinite',
             }} />
             {activeCalls.length} Active Call{activeCalls.length > 1 ? 's' : ''}
@@ -241,17 +241,17 @@ export default function Calls() {
             {activeCalls.map(ac => (
               <div key={ac.id} className="card" style={{
                 padding: '12px 16px',
-                borderLeft: `3px solid ${ac.status === 'transferring' ? '#3B82F6' : '#22C55E'}`,
+                borderLeft: `3px solid ${ac.status === 'transferring' ? '#3B82F6' : '#4ade80'}`,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 12,
                 minWidth: 220,
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#e0d8c8', fontFamily: 'monospace' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#F5F5F0', fontFamily: 'monospace' }}>
                     {formatPhone(ac.phone)}
                   </div>
-                  <div style={{ fontSize: 11, color: '#555' }}>
+                  <div style={{ fontSize: 11, color: '#444' }}>
                     {ac.status === 'transferring' ? 'Transferring...' : ac.direction === 'outbound' ? 'Outbound' : 'Ringing'}
                     {' '}&middot; {timeAgo(ac.startedAt)}
                   </div>
@@ -275,13 +275,13 @@ export default function Calls() {
       {/* Filters Card */}
       <div className="card" style={{ padding: 20, marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-          <Filter size={16} style={{ color: '#C9A84C' }} />
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: '#e0d8c8' }}>Filters</h3>
+          <Filter size={16} style={{ color: '#D4AF37' }} />
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: '#F5F5F0' }}>Filters</h3>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
           <div>
-            <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 6 }}>From Date</label>
+            <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>From Date</label>
             <input
               type="date"
               value={startDate}
@@ -289,16 +289,16 @@ export default function Calls() {
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                background: '#141414',
+                background: '#1a1a1a',
                 border: '1px solid #222',
                 borderRadius: 6,
-                color: '#e0d8c8',
+                color: '#F5F5F0',
                 fontSize: 13,
               }}
             />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 6 }}>To Date</label>
+            <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>To Date</label>
             <input
               type="date"
               value={endDate}
@@ -306,26 +306,26 @@ export default function Calls() {
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                background: '#141414',
+                background: '#1a1a1a',
                 border: '1px solid #222',
                 borderRadius: 6,
-                color: '#e0d8c8',
+                color: '#F5F5F0',
                 fontSize: 13,
               }}
             />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 6 }}>Outcome</label>
+            <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>Outcome</label>
             <select
               value={outcome}
               onChange={e => setOutcome(e.target.value)}
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                background: '#141414',
+                background: '#1a1a1a',
                 border: '1px solid #222',
                 borderRadius: 6,
-                color: '#e0d8c8',
+                color: '#F5F5F0',
                 fontSize: 13,
               }}
             >
@@ -337,7 +337,7 @@ export default function Calls() {
             </select>
           </div>
           <div>
-            <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 6 }}>Min Score</label>
+            <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>Min Score</label>
             <input
               type="number"
               min="1"
@@ -347,17 +347,17 @@ export default function Calls() {
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                background: '#141414',
+                background: '#1a1a1a',
                 border: '1px solid #222',
                 borderRadius: 6,
-                color: '#e0d8c8',
+                color: '#F5F5F0',
                 fontSize: 13,
               }}
               placeholder="1-10"
             />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 6 }}>Phone Number</label>
+            <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>Phone Number</label>
             <div style={{ position: 'relative' }}>
               <input
                 type="text"
@@ -367,15 +367,15 @@ export default function Calls() {
                   width: '100%',
                   padding: '8px 12px',
                   paddingLeft: '28px',
-                  background: '#141414',
+                  background: '#1a1a1a',
                   border: '1px solid #222',
                   borderRadius: 6,
-                  color: '#e0d8c8',
+                  color: '#F5F5F0',
                   fontSize: 13,
                 }}
                 placeholder="Search..."
               />
-              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#555' }} />
+              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#444' }} />
             </div>
           </div>
         </div>
@@ -421,11 +421,11 @@ export default function Calls() {
 
       {/* Call list */}
       {loading ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#555' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#444' }}>
           <div className="spinner" /> Loading calls...
         </div>
       ) : calls.length === 0 ? (
-        <div className="card" style={{ padding: 40, textAlign: 'center', color: '#555' }}>
+        <div className="card" style={{ padding: 40, textAlign: 'center', color: '#444' }}>
           No calls yet
         </div>
       ) : (
@@ -433,14 +433,14 @@ export default function Calls() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{
-                borderBottom: '1px solid #141414',
+                borderBottom: '1px solid #1a1a1a',
                 backgroundColor: 'transparent',
               }}>
                 <th style={{
                   textAlign: 'left',
                   fontWeight: 600,
                   fontSize: 12,
-                  color: '#888',
+                  color: '#666',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '16px 20px',
@@ -449,7 +449,7 @@ export default function Calls() {
                   textAlign: 'left',
                   fontWeight: 600,
                   fontSize: 12,
-                  color: '#888',
+                  color: '#666',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '16px 20px',
@@ -458,7 +458,7 @@ export default function Calls() {
                   textAlign: 'left',
                   fontWeight: 600,
                   fontSize: 12,
-                  color: '#888',
+                  color: '#666',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '16px 20px',
@@ -467,7 +467,7 @@ export default function Calls() {
                   textAlign: 'left',
                   fontWeight: 600,
                   fontSize: 12,
-                  color: '#888',
+                  color: '#666',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '16px 20px',
@@ -476,7 +476,7 @@ export default function Calls() {
                   textAlign: 'left',
                   fontWeight: 600,
                   fontSize: 12,
-                  color: '#888',
+                  color: '#666',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '16px 20px',
@@ -485,7 +485,7 @@ export default function Calls() {
                   textAlign: 'left',
                   fontWeight: 600,
                   fontSize: 12,
-                  color: '#888',
+                  color: '#666',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '16px 20px',
@@ -494,7 +494,7 @@ export default function Calls() {
                   textAlign: 'center',
                   fontWeight: 600,
                   fontSize: 12,
-                  color: '#888',
+                  color: '#666',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '16px 20px',
@@ -510,23 +510,23 @@ export default function Calls() {
                     key={call.id || call.call_id || i}
                     onClick={() => openDetail(call)}
                     style={{
-                      borderBottom: '1px solid #0d0d0d',
+                      borderBottom: '1px solid #111111',
                       cursor: 'pointer',
                       transition: 'background-color 0.2s',
                       backgroundColor: 'transparent',
                     }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#141414'}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#1a1a1a'}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                   >
-                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#e0d8c8', fontWeight: 500 }}>
+                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#F5F5F0', fontWeight: 500 }}>
                       {timeAgo(call.created_at || call.timestamp)}
                     </td>
 
-                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#e0d8c8', fontWeight: 500, fontFamily: 'monospace' }}>
+                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#F5F5F0', fontWeight: 500, fontFamily: 'monospace' }}>
                       {formatPhone(call.phone || call.phone_number)}
                     </td>
 
-                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#888' }}>
+                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#666' }}>
                       {formatDuration(call.duration || 0)}
                     </td>
 
@@ -549,7 +549,7 @@ export default function Calls() {
                         <div style={{
                           width: 40,
                           height: 4,
-                          background: '#0d0d0d',
+                          background: '#111111',
                           borderRadius: 2,
                           overflow: 'hidden',
                         }}>
@@ -565,11 +565,11 @@ export default function Calls() {
                       </div>
                     </td>
 
-                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#888' }}>
+                    <td style={{ padding: '16px 20px', fontSize: 13, color: '#666' }}>
                       {getSentiment(call)}
                     </td>
 
-                    <td style={{ padding: '16px 20px', textAlign: 'center', color: '#555' }}>
+                    <td style={{ padding: '16px 20px', textAlign: 'center', color: '#444' }}>
                       <ChevronDown size={16} aria-hidden="true" />
                     </td>
                   </tr>
@@ -598,7 +598,7 @@ export default function Calls() {
           >
             <ChevronLeft size={16} />
           </button>
-          <span style={{ fontSize: 13, color: '#888' }} aria-live="polite">
+          <span style={{ fontSize: 13, color: '#666' }} aria-live="polite">
             Page {page} of {totalPages}
           </span>
           <button
@@ -639,12 +639,12 @@ export default function Calls() {
             {/* Modal Header */}
             <div style={{
               padding: '24px 24px 16px',
-              borderBottom: '1px solid #141414',
+              borderBottom: '1px solid #1a1a1a',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
             }}>
-              <h2 style={{ fontSize: 18, fontWeight: 700, color: '#e0d8c8' }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: '#F5F5F0' }}>
                 Call Details
               </h2>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -666,7 +666,7 @@ export default function Calls() {
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
-                    color: '#888',
+                    color: '#666',
                     padding: 4,
                     display: 'flex',
                     alignItems: 'center',
@@ -682,24 +682,24 @@ export default function Calls() {
             <div style={{ padding: 24 }}>
               {/* Summary Section */}
               <div style={{ marginBottom: 24 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 600, color: '#888', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <h3 style={{ fontSize: 14, fontWeight: 600, color: '#666', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Summary
                 </h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
-                    <div style={{ fontSize: 12, color: '#555', marginBottom: 4 }}>Phone Number</div>
-                    <div style={{ fontSize: 14, color: '#e0d8c8', fontWeight: 600, fontFamily: 'monospace' }}>
+                    <div style={{ fontSize: 12, color: '#444', marginBottom: 4 }}>Phone Number</div>
+                    <div style={{ fontSize: 14, color: '#F5F5F0', fontWeight: 600, fontFamily: 'monospace' }}>
                       {formatPhone(selectedCall.phone || selectedCall.phone_number)}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 12, color: '#555', marginBottom: 4 }}>Duration</div>
-                    <div style={{ fontSize: 14, color: '#e0d8c8', fontWeight: 600 }}>
+                    <div style={{ fontSize: 12, color: '#444', marginBottom: 4 }}>Duration</div>
+                    <div style={{ fontSize: 14, color: '#F5F5F0', fontWeight: 600 }}>
                       {formatDuration(selectedCall.duration || 0)}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 12, color: '#555', marginBottom: 4 }}>Outcome</div>
+                    <div style={{ fontSize: 12, color: '#444', marginBottom: 4 }}>Outcome</div>
                     <div style={{
                       display: 'inline-block',
                       padding: '4px 10px',
@@ -713,20 +713,20 @@ export default function Calls() {
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 12, color: '#555', marginBottom: 4 }}>Score</div>
-                    <div style={{ fontSize: 14, color: '#e0d8c8', fontWeight: 600 }}>
+                    <div style={{ fontSize: 12, color: '#444', marginBottom: 4 }}>Score</div>
+                    <div style={{ fontSize: 14, color: '#F5F5F0', fontWeight: 600 }}>
                       {(selectedCall.score || 0).toFixed(1)} / 10
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 12, color: '#555', marginBottom: 4 }}>Sentiment</div>
-                    <div style={{ fontSize: 14, color: '#e0d8c8', fontWeight: 600 }}>
+                    <div style={{ fontSize: 12, color: '#444', marginBottom: 4 }}>Sentiment</div>
+                    <div style={{ fontSize: 14, color: '#F5F5F0', fontWeight: 600 }}>
                       {getSentiment(selectedCall)}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 12, color: '#555', marginBottom: 4 }}>Time</div>
-                    <div style={{ fontSize: 14, color: '#e0d8c8', fontWeight: 600 }}>
+                    <div style={{ fontSize: 12, color: '#444', marginBottom: 4 }}>Time</div>
+                    <div style={{ fontSize: 14, color: '#F5F5F0', fontWeight: 600 }}>
                       {new Date(selectedCall.created_at || selectedCall.timestamp).toLocaleString()}
                     </div>
                   </div>
@@ -735,11 +735,11 @@ export default function Calls() {
 
               {/* Transcript Section */}
               <div>
-                <h3 style={{ fontSize: 14, fontWeight: 600, color: '#888', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <h3 style={{ fontSize: 14, fontWeight: 600, color: '#666', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Transcript
                 </h3>
                 {transcriptLoading ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#555', justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#444', justifyContent: 'center' }}>
                     <div className="spinner" /> Loading transcript...
                   </div>
                 ) : transcript?.error ? (
@@ -758,11 +758,11 @@ export default function Calls() {
                   <>
                     <div style={{
                       padding: 16,
-                      background: '#0d0d0d',
+                      background: '#111111',
                       borderRadius: 6,
                       fontSize: 13,
                       lineHeight: 1.6,
-                      color: '#e0d8c8',
+                      color: '#F5F5F0',
                       maxHeight: 300,
                       overflow: 'auto',
                       whiteSpace: 'pre-wrap',
@@ -778,7 +778,7 @@ export default function Calls() {
                         marginTop: 8,
                         padding: '6px 14px',
                         background: '#c9a227',
-                        color: '#0d0d0d',
+                        color: '#111111',
                         borderRadius: 4,
                         fontSize: 12,
                         fontWeight: 600,
@@ -791,9 +791,9 @@ export default function Calls() {
                 ) : (
                   <div style={{
                     padding: 16,
-                    background: '#0d0d0d',
+                    background: '#111111',
                     borderRadius: 6,
-                    color: '#555',
+                    color: '#444',
                     fontSize: 13,
                     textAlign: 'center',
                   }}>

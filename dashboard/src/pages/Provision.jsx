@@ -215,7 +215,7 @@ export default function Provision() {
           </h1>
           <p style={{
             fontSize: '14px',
-            color: '#888',
+            color: '#666',
             marginBottom: '0'
           }}>
             One-click setup: Telnyx number + AI agent + Telegram bot
@@ -228,7 +228,7 @@ export default function Provision() {
             <form onSubmit={handleProvision}>
               {/* Business Info Section */}
               <div className="card" style={{
-                background: '#0d0d0d',
+                background: '#111111',
                 border: '1px solid rgba(255,255,255,0.06)',
                 borderRadius: '12px',
                 padding: '24px',
@@ -243,7 +243,7 @@ export default function Provision() {
                   alignItems: 'center',
                   gap: '8px'
                 }}>
-                  <Building2 size={18} style={{ color: '#C9A84C' }} />
+                  <Building2 size={18} style={{ color: '#D4AF37' }} />
                   Business Information
                 </h2>
 
@@ -252,7 +252,7 @@ export default function Provision() {
                     <label style={{
                       fontSize: '12px',
                       fontWeight: '600',
-                      color: '#888',
+                      color: '#666',
                       display: 'block',
                       marginBottom: '8px'
                     }}>
@@ -287,7 +287,7 @@ export default function Provision() {
                     <label style={{
                       fontSize: '12px',
                       fontWeight: '600',
-                      color: '#888',
+                      color: '#666',
                       display: 'block',
                       marginBottom: '8px'
                     }}>
@@ -328,7 +328,7 @@ export default function Provision() {
                     <label style={{
                       fontSize: '12px',
                       fontWeight: '600',
-                      color: '#888',
+                      color: '#666',
                       display: 'block',
                       marginBottom: '8px'
                     }}>
@@ -369,7 +369,7 @@ export default function Provision() {
 
               {/* Owner Info Section */}
               <div className="card" style={{
-                background: '#0d0d0d',
+                background: '#111111',
                 border: '1px solid rgba(255,255,255,0.06)',
                 borderRadius: '12px',
                 padding: '24px',
@@ -384,7 +384,7 @@ export default function Provision() {
                   alignItems: 'center',
                   gap: '8px'
                 }}>
-                  <User size={18} style={{ color: '#C9A84C' }} />
+                  <User size={18} style={{ color: '#D4AF37' }} />
                   Owner Information
                 </h2>
 
@@ -393,7 +393,7 @@ export default function Provision() {
                     <label style={{
                       fontSize: '12px',
                       fontWeight: '600',
-                      color: '#888',
+                      color: '#666',
                       display: 'block',
                       marginBottom: '8px'
                     }}>
@@ -428,7 +428,7 @@ export default function Provision() {
                     <label style={{
                       fontSize: '12px',
                       fontWeight: '600',
-                      color: '#888',
+                      color: '#666',
                       display: 'block',
                       marginBottom: '8px'
                     }}>
@@ -463,7 +463,7 @@ export default function Provision() {
                     <label style={{
                       fontSize: '12px',
                       fontWeight: '600',
-                      color: '#888',
+                      color: '#666',
                       display: 'block',
                       marginBottom: '8px'
                     }}>
@@ -498,7 +498,7 @@ export default function Provision() {
 
               {/* Plan Selection */}
               <div className="card" style={{
-                background: '#0d0d0d',
+                background: '#111111',
                 border: '1px solid rgba(255,255,255,0.06)',
                 borderRadius: '12px',
                 padding: '24px',
@@ -513,7 +513,7 @@ export default function Provision() {
                   alignItems: 'center',
                   gap: '8px'
                 }}>
-                  <Package size={18} style={{ color: '#C9A84C' }} />
+                  <Package size={18} style={{ color: '#D4AF37' }} />
                   Select Plan
                 </h2>
 
@@ -530,7 +530,7 @@ export default function Provision() {
                       style={{
                         padding: '20px',
                         background: formData.plan === plan.id ? 'rgba(201, 168, 76, 0.1)' : '#0a0a0a',
-                        border: formData.plan === plan.id ? '2px solid #C9A84C' : '1px solid rgba(255,255,255,0.1)',
+                        border: formData.plan === plan.id ? '2px solid #D4AF37' : '1px solid rgba(255,255,255,0.1)',
                         borderRadius: '12px',
                         cursor: 'pointer',
                         transition: 'all 0.2s',
@@ -554,7 +554,7 @@ export default function Provision() {
                           top: '-12px',
                           left: '50%',
                           transform: 'translateX(-50%)',
-                          background: '#C9A84C',
+                          background: '#D4AF37',
                           color: '#0a0a0a',
                           padding: '4px 12px',
                           borderRadius: '4px',
@@ -575,13 +575,13 @@ export default function Provision() {
                       <p style={{
                         fontSize: '20px',
                         fontWeight: '700',
-                        color: '#C9A84C',
+                        color: '#D4AF37',
                         margin: '8px 0'
                       }}>
                         {plan.price}
                         <span style={{
                           fontSize: '12px',
-                          color: '#888',
+                          color: '#666',
                           fontWeight: '400',
                           marginLeft: '4px'
                         }}>
@@ -596,7 +596,7 @@ export default function Provision() {
                         {plan.features.map((feature, idx) => (
                           <li key={idx} style={{
                             fontSize: '12px',
-                            color: '#888',
+                            color: '#666',
                             marginBottom: '8px',
                             paddingLeft: '0'
                           }}>
@@ -617,7 +617,7 @@ export default function Provision() {
 
               {/* Optional Fields */}
               <div className="card" style={{
-                background: '#0d0d0d',
+                background: '#111111',
                 border: '1px solid rgba(255,255,255,0.06)',
                 borderRadius: '12px',
                 padding: '24px',
@@ -637,7 +637,7 @@ export default function Provision() {
                     <label style={{
                       fontSize: '12px',
                       fontWeight: '600',
-                      color: '#888',
+                      color: '#666',
                       display: 'block',
                       marginBottom: '8px'
                     }}>
@@ -667,7 +667,7 @@ export default function Provision() {
                     <label style={{
                       fontSize: '12px',
                       fontWeight: '600',
-                      color: '#888',
+                      color: '#666',
                       display: 'block',
                       marginBottom: '8px'
                     }}>
@@ -701,7 +701,7 @@ export default function Provision() {
                 style={{
                   width: '100%',
                   padding: '14px 24px',
-                  background: '#C9A84C',
+                  background: '#D4AF37',
                   color: '#0a0a0a',
                   border: 'none',
                   borderRadius: '12px',
@@ -720,7 +720,7 @@ export default function Provision() {
                   e.currentTarget.style.boxShadow = '0 8px 24px rgba(201, 168, 76, 0.2)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#C9A84C';
+                  e.currentTarget.style.background = '#D4AF37';
                   e.currentTarget.style.transform = 'translateY(0)';
                   e.currentTarget.style.boxShadow = 'none';
                 }}
@@ -735,14 +735,14 @@ export default function Provision() {
         {/* Loading State */}
         {status === 'loading' && (
           <div className="fade-in" style={{
-            background: '#0d0d0d',
+            background: '#111111',
             border: '1px solid rgba(255,255,255,0.06)',
             borderRadius: '12px',
             padding: '40px',
             textAlign: 'center'
           }}>
             <Loader size={48} style={{
-              color: '#C9A84C',
+              color: '#D4AF37',
               margin: '0 auto 24px',
               animation: 'spin 1s linear infinite'
             }} />
@@ -764,7 +764,7 @@ export default function Provision() {
 
             <p style={{
               fontSize: '13px',
-              color: '#888',
+              color: '#666',
               marginBottom: '32px'
             }}>
               Setting up all services. This typically takes 2-3 minutes.
@@ -790,13 +790,13 @@ export default function Provision() {
                     width: '24px',
                     height: '24px',
                     borderRadius: '50%',
-                    background: idx < currentStep ? '#C9A84C' : idx === currentStep ? 'rgba(201, 168, 76, 0.2)' : 'rgba(255,255,255,0.1)',
+                    background: idx < currentStep ? '#D4AF37' : idx === currentStep ? 'rgba(201, 168, 76, 0.2)' : 'rgba(255,255,255,0.1)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: '12px',
                     fontWeight: '600',
-                    color: idx < currentStep ? '#0a0a0a' : '#888'
+                    color: idx < currentStep ? '#0a0a0a' : '#666'
                   }}>
                     {idx < currentStep ? (
                       <Check size={14} />
@@ -806,7 +806,7 @@ export default function Provision() {
                   </div>
                   <span style={{
                     fontSize: '13px',
-                    color: idx <= currentStep ? '#fff' : '#888',
+                    color: idx <= currentStep ? '#fff' : '#666',
                     fontWeight: idx === currentStep ? '600' : '400'
                   }}>
                     {step.name}
@@ -820,7 +820,7 @@ export default function Provision() {
         {/* Success State */}
         {status === 'success' && provisionData && (
           <div className="fade-in" style={{
-            background: '#0d0d0d',
+            background: '#111111',
             border: '1px solid rgba(201, 168, 76, 0.3)',
             borderRadius: '12px',
             padding: '40px'
@@ -834,13 +834,13 @@ export default function Provision() {
                 height: '60px',
                 borderRadius: '50%',
                 background: 'rgba(201, 168, 76, 0.1)',
-                border: '2px solid #C9A84C',
+                border: '2px solid #D4AF37',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 margin: '0 auto 20px'
               }}>
-                <Check size={32} style={{ color: '#C9A84C' }} />
+                <Check size={32} style={{ color: '#D4AF37' }} />
               </div>
               <h2 style={{
                 fontSize: '24px',
@@ -852,7 +852,7 @@ export default function Provision() {
               </h2>
               <p style={{
                 fontSize: '13px',
-                color: '#888'
+                color: '#666'
               }}>
                 {provisionData.client.business_name} is ready to go.
               </p>
@@ -889,14 +889,14 @@ export default function Provision() {
                   >
                     {status ? (
                       <div style={{
-                        color: '#C9A84C',
+                        color: '#D4AF37',
                         flexShrink: 0
                       }}>
                         <Check size={18} />
                       </div>
                     ) : (
                       <div style={{
-                        color: '#888',
+                        color: '#666',
                         flexShrink: 0
                       }}>
                         <AlertCircle size={18} />
@@ -929,7 +929,7 @@ export default function Provision() {
                 <label style={{
                   fontSize: '11px',
                   fontWeight: '600',
-                  color: '#888',
+                  color: '#666',
                   display: 'block',
                   marginBottom: '8px'
                 }}>
@@ -938,7 +938,7 @@ export default function Provision() {
                 <p style={{
                   fontSize: '16px',
                   fontWeight: '600',
-                  color: '#C9A84C',
+                  color: '#D4AF37',
                   margin: '0',
                   display: 'flex',
                   alignItems: 'center',
@@ -957,7 +957,7 @@ export default function Provision() {
                 <label style={{
                   fontSize: '11px',
                   fontWeight: '600',
-                  color: '#888',
+                  color: '#666',
                   display: 'block',
                   marginBottom: '8px'
                 }}>
@@ -984,7 +984,7 @@ export default function Provision() {
                   <label style={{
                     fontSize: '11px',
                     fontWeight: '600',
-                    color: '#888',
+                    color: '#666',
                     display: 'block',
                     marginBottom: '8px'
                   }}>
@@ -996,7 +996,7 @@ export default function Provision() {
                     rel="noopener noreferrer"
                     style={{
                       fontSize: '13px',
-                      color: '#C9A84C',
+                      color: '#D4AF37',
                       textDecoration: 'none',
                       wordBreak: 'break-all',
                       display: 'inline-flex',
@@ -1029,7 +1029,7 @@ export default function Provision() {
                 }}
                 style={{
                   padding: '12px 24px',
-                  background: '#C9A84C',
+                  background: '#D4AF37',
                   color: '#0a0a0a',
                   border: 'none',
                   borderRadius: '8px',
@@ -1043,7 +1043,7 @@ export default function Provision() {
                   e.currentTarget.style.transform = 'translateY(-2px)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#C9A84C';
+                  e.currentTarget.style.background = '#D4AF37';
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
@@ -1055,7 +1055,7 @@ export default function Provision() {
                 style={{
                   padding: '12px 24px',
                   background: 'transparent',
-                  color: '#888',
+                  color: '#666',
                   border: '1px solid rgba(255,255,255,0.1)',
                   borderRadius: '8px',
                   fontSize: '13px',
@@ -1069,7 +1069,7 @@ export default function Provision() {
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#888';
+                  e.currentTarget.style.color = '#666';
                 }}
               >
                 Provision Another Client
@@ -1081,7 +1081,7 @@ export default function Provision() {
         {/* Error State */}
         {status === 'error' && (
           <div className="fade-in" style={{
-            background: '#0d0d0d',
+            background: '#111111',
             border: '1px solid rgba(255, 107, 107, 0.3)',
             borderRadius: '12px',
             padding: '40px'
@@ -1113,7 +1113,7 @@ export default function Provision() {
               </h2>
               <p style={{
                 fontSize: '13px',
-                color: '#888',
+                color: '#666',
                 marginBottom: '16px'
               }}>
                 {errorMessage}
@@ -1130,7 +1130,7 @@ export default function Provision() {
                 onClick={handleReset}
                 style={{
                   padding: '12px 24px',
-                  background: '#C9A84C',
+                  background: '#D4AF37',
                   color: '#0a0a0a',
                   border: 'none',
                   borderRadius: '8px',
@@ -1144,7 +1144,7 @@ export default function Provision() {
                   e.currentTarget.style.transform = 'translateY(-2px)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#C9A84C';
+                  e.currentTarget.style.background = '#D4AF37';
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
@@ -1158,7 +1158,7 @@ export default function Provision() {
                 style={{
                   padding: '12px 24px',
                   background: 'transparent',
-                  color: '#888',
+                  color: '#666',
                   border: '1px solid rgba(255,255,255,0.1)',
                   borderRadius: '8px',
                   fontSize: '13px',
@@ -1172,7 +1172,7 @@ export default function Provision() {
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#888';
+                  e.currentTarget.style.color = '#666';
                 }}
               >
                 Back to Dashboard

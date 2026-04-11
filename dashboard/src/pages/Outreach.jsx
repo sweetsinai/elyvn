@@ -18,13 +18,13 @@ export default function Outreach() {
 
   return (
     <div className="fade-in">
-      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 24 }}>Outreach</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 24, fontFamily: "'Cormorant Garamond', serif" }}>Outreach</h1>
 
       {/* Tabs */}
       <div style={{
         display: 'flex',
         gap: 0,
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid rgba(212,175,55,0.12)',
         marginBottom: 24,
       }}>
         {TABS.map(tab => (
@@ -35,9 +35,11 @@ export default function Outreach() {
               padding: '10px 20px',
               fontSize: 13,
               fontWeight: activeTab === tab ? 600 : 400,
-              color: activeTab === tab ? '#C9A84C' : '#888',
-              background: 'transparent',
-              borderBottom: activeTab === tab ? '2px solid #C9A84C' : '2px solid transparent',
+              color: activeTab === tab ? '#D4AF37' : '#666',
+              background: activeTab === tab ? 'rgba(212,175,55,0.12)' : 'transparent',
+              border: activeTab === tab ? '1px solid rgba(212,175,55,0.3)' : '1px solid transparent',
+              borderBottom: activeTab === tab ? '2px solid #D4AF37' : '2px solid transparent',
+              borderRadius: '10px 10px 0 0',
               transition: 'all 0.15s',
             }}
           >
@@ -99,7 +101,7 @@ function ScrapeTab() {
       {/* Form */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div>
-          <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4 }}>Industry</label>
+          <label style={{ fontSize: 11, color: '#444', display: 'block', marginBottom: 4 }}>Industry</label>
           <input
             value={industry}
             onChange={e => setIndustry(e.target.value)}
@@ -108,7 +110,7 @@ function ScrapeTab() {
           />
         </div>
         <div>
-          <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4 }}>City</label>
+          <label style={{ fontSize: 11, color: '#444', display: 'block', marginBottom: 4 }}>City</label>
           <input
             value={city}
             onChange={e => setCity(e.target.value)}
@@ -117,7 +119,7 @@ function ScrapeTab() {
           />
         </div>
         <div>
-          <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4 }}>Country</label>
+          <label style={{ fontSize: 11, color: '#444', display: 'block', marginBottom: 4 }}>Country</label>
           <select value={country} onChange={e => setCountry(e.target.value)}>
             <option value="US">US</option>
             <option value="UK">UK</option>
@@ -125,7 +127,7 @@ function ScrapeTab() {
           </select>
         </div>
         <div>
-          <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4 }}>Max Results</label>
+          <label style={{ fontSize: 11, color: '#444', display: 'block', marginBottom: 4 }}>Max Results</label>
           <input
             type="number"
             value={maxResults}
@@ -147,9 +149,9 @@ function ScrapeTab() {
       {error && (
         <div style={{
           padding: '10px 14px',
-          background: 'rgba(220,38,38,0.1)',
-          borderRadius: 6,
-          color: '#DC2626',
+          background: 'rgba(248,113,113,0.1)',
+          borderRadius: 10,
+          color: '#f87171',
           fontSize: 13,
           marginBottom: 16,
         }}>
@@ -191,16 +193,16 @@ function ScrapeTab() {
                     />
                   </td>
                   <td style={{ fontWeight: 500 }}>{biz.business_name}</td>
-                  <td style={{ color: '#888' }}>{biz.phone || '--'}</td>
-                  <td style={{ color: biz.email ? '#888' : '#555' }}>{biz.email || 'Not found'}</td>
-                  <td style={{ color: '#C9A84C' }}>{biz.rating || '--'}</td>
-                  <td style={{ color: '#888' }}>{biz.reviews ?? biz.review_count ?? '--'}</td>
+                  <td style={{ color: '#666' }}>{biz.phone || '--'}</td>
+                  <td style={{ color: biz.email ? '#666' : '#444' }}>{biz.email || 'Not found'}</td>
+                  <td style={{ color: '#D4AF37' }}>{biz.rating || '--'}</td>
+                  <td style={{ color: '#666' }}>{biz.reviews ?? biz.review_count ?? '--'}</td>
                   <td><StatusBadge status={biz.status || 'new'} type="stage" /></td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div style={{ padding: '10px 12px', fontSize: 12, color: '#555' }}>
+          <div style={{ padding: '10px 12px', fontSize: 12, color: '#444' }}>
             {selected.size} of {results.length} selected
           </div>
         </div>
@@ -276,7 +278,7 @@ function CampaignsTab() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#555' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#444' }}>
         <div className="spinner" /> Loading campaigns...
       </div>
     );
@@ -285,7 +287,7 @@ function CampaignsTab() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <span style={{ fontSize: 13, color: '#888' }}>{campaigns.length} campaign{campaigns.length !== 1 ? 's' : ''}</span>
+        <span style={{ fontSize: 13, color: '#666' }}>{campaigns.length} campaign{campaigns.length !== 1 ? 's' : ''}</span>
         <button className="btn-primary" onClick={() => setShowNew(true)}>
           New Campaign
         </button>
@@ -310,7 +312,7 @@ function CampaignsTab() {
 
       {/* Campaign List */}
       {campaigns.length === 0 ? (
-        <div className="card" style={{ padding: 40, textAlign: 'center', color: '#555' }}>
+        <div className="card" style={{ padding: 40, textAlign: 'center', color: '#444' }}>
           No campaigns yet. Create one to get started.
         </div>
       ) : (
@@ -320,7 +322,7 @@ function CampaignsTab() {
           const campaignEmails = emails[id] || [];
 
           return (
-            <div key={id} className="card" style={{ marginBottom: 8 }}>
+            <div key={id} className="card" style={{ marginBottom: 8, borderTop: '2px solid rgba(212,175,55,0.3)' }}>
               <div
                 style={{
                   display: 'flex',
@@ -332,16 +334,16 @@ function CampaignsTab() {
                 onClick={() => setExpandedId(isExpanded ? null : id)}
               >
                 <span style={{ flex: 1, fontWeight: 500, fontSize: 13 }}>{campaign.name}</span>
-                <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#888' }}>
+                <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#666' }}>
                   <span>Sent: {campaign.sent || 0}</span>
                   <span>Replied: {campaign.replied || 0}</span>
-                  <span style={{ color: '#16A34A' }}>Booked: {campaign.booked || 0}</span>
+                  <span style={{ color: '#4ade80' }}>Booked: {campaign.booked || 0}</span>
                 </div>
-                {isExpanded ? <ChevronUp size={14} color="#555" /> : <ChevronDown size={14} color="#555" />}
+                {isExpanded ? <ChevronUp size={14} color="#444" /> : <ChevronDown size={14} color="#444" />}
               </div>
 
               {isExpanded && (
-                <div style={{ padding: '0 16px 16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ padding: '0 16px 16px', borderTop: '1px solid rgba(212,175,55,0.12)' }}>
                   <div style={{ display: 'flex', gap: 8, marginTop: 12, marginBottom: 12 }}>
                     <button
                       className="btn-secondary"
@@ -376,13 +378,13 @@ function CampaignsTab() {
                     <div style={{ marginBottom: 12 }}>
                       <div style={{
                         height: 4,
-                        background: 'rgba(255,255,255,0.06)',
+                        background: 'rgba(212,175,55,0.12)',
                         borderRadius: 2,
                         overflow: 'hidden',
                       }}>
                         <div style={{
                           height: '100%',
-                          background: '#C9A84C',
+                          background: 'linear-gradient(90deg, #9A7840, #D4AF37, #EED07A)',
                           borderRadius: 2,
                           width: '60%',
                           animation: 'progress 2s ease-in-out infinite',
@@ -398,7 +400,7 @@ function CampaignsTab() {
                         <div key={i} style={{
                           padding: 12,
                           background: '#050505',
-                          borderRadius: 6,
+                          borderRadius: 10,
                         }}>
                           {editingEmail === `${id}-${i}` ? (
                             <div>
@@ -443,11 +445,11 @@ function CampaignsTab() {
                                   <Edit2 size={12} />
                                 </button>
                               </div>
-                              <div style={{ fontSize: 12, color: '#888', marginTop: 4, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                              <div style={{ fontSize: 12, color: '#666', marginTop: 4, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
                                 {email.body || 'No body'}
                               </div>
                               {email.to && (
-                                <div style={{ fontSize: 11, color: '#555', marginTop: 6 }}>To: {email.to}</div>
+                                <div style={{ fontSize: 11, color: '#444', marginTop: 6 }}>To: {email.to}</div>
                               )}
                             </div>
                           )}
@@ -467,7 +469,7 @@ function CampaignsTab() {
         <div className="modal-overlay" onClick={() => setConfirmSend(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Confirm Send</h3>
-            <p style={{ fontSize: 13, color: '#888', marginBottom: 20 }}>
+            <p style={{ fontSize: 13, color: '#666', marginBottom: 20 }}>
               Are you sure you want to send this campaign? This action cannot be undone.
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -519,7 +521,7 @@ function RepliesTab() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#555' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#444' }}>
         <div className="spinner" /> Loading replies...
       </div>
     );
@@ -527,7 +529,7 @@ function RepliesTab() {
 
   if (replies.length === 0) {
     return (
-      <div className="card" style={{ padding: 40, textAlign: 'center', color: '#555' }}>
+      <div className="card" style={{ padding: 40, textAlign: 'center', color: '#444' }}>
         No replies yet
       </div>
     );
@@ -557,13 +559,13 @@ function RepliesTab() {
                   style={{ cursor: 'pointer' }}
                 >
                   <td style={{ fontWeight: 500 }}>{reply.prospect_name || reply.from || '--'}</td>
-                  <td style={{ color: '#888', maxWidth: 280 }} className="truncate">
+                  <td style={{ color: '#666', maxWidth: 280 }} className="truncate">
                     {reply.reply_text || reply.body || '--'}
                   </td>
                   <td>
                     <StatusBadge status={reply.classification} type="classification" />
                   </td>
-                  <td style={{ color: reply.auto_responded ? '#16A34A' : '#555' }}>
+                  <td style={{ color: reply.auto_responded ? '#4ade80' : '#444' }}>
                     {reply.auto_responded ? 'Yes' : 'No'}
                   </td>
                   <td>
@@ -584,19 +586,19 @@ function RepliesTab() {
                   <tr key={`${id}-detail`}>
                     <td colSpan={5} style={{ padding: 16, background: '#050505' }}>
                       <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontSize: 11, color: '#555', textTransform: 'uppercase', marginBottom: 4 }}>
+                        <div style={{ fontSize: 11, color: '#444', textTransform: 'uppercase', marginBottom: 4 }}>
                           Full Reply
                         </div>
-                        <div style={{ fontSize: 13, color: '#e0d8c8', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                        <div style={{ fontSize: 13, color: '#F5F5F0', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
                           {reply.reply_text || reply.body || 'N/A'}
                         </div>
                       </div>
                       {reply.response && (
                         <div>
-                          <div style={{ fontSize: 11, color: '#555', textTransform: 'uppercase', marginBottom: 4 }}>
+                          <div style={{ fontSize: 11, color: '#444', textTransform: 'uppercase', marginBottom: 4 }}>
                             Auto-Response Sent
                           </div>
-                          <div style={{ fontSize: 13, color: '#888', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                          <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
                             {reply.response}
                           </div>
                         </div>

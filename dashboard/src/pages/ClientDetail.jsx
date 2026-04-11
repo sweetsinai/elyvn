@@ -61,7 +61,7 @@ export default function ClientDetail() {
         <button className="btn-ghost" onClick={() => navigate('/clients')} style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
           <ChevronLeft size={16} /> Back to Clients
         </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#555' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#444' }}>
           <div className="spinner" /> Loading client details...
         </div>
       </div>
@@ -74,7 +74,7 @@ export default function ClientDetail() {
         <button className="btn-ghost" onClick={() => navigate('/clients')} style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
           <ChevronLeft size={16} /> Back to Clients
         </button>
-        <div className="card" style={{ padding: 32, textAlign: 'center', color: '#555' }}>
+        <div className="card" style={{ padding: 32, textAlign: 'center', color: '#444' }}>
           Client not found
         </div>
       </div>
@@ -95,9 +95,9 @@ export default function ClientDetail() {
             width: 12,
             height: 12,
             borderRadius: '50%',
-            background: client.active !== false ? '#16A34A' : '#555',
+            background: client.active !== false ? '#4ade80' : '#444',
           }} />
-          <h1 style={{ fontSize: 24, fontWeight: 600 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 600, fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
             {client.business_name}
           </h1>
           {client.plan && (
@@ -107,7 +107,7 @@ export default function ClientDetail() {
               background: '#D4AF37',
               color: '#000',
               padding: '4px 10px',
-              borderRadius: 4,
+              borderRadius: 6,
               textTransform: 'uppercase',
             }}>
               {client.plan} Plan
@@ -119,19 +119,19 @@ export default function ClientDetail() {
         <div className="card" style={{ padding: 16, marginBottom: 20 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16 }}>
             <div>
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Owner</div>
+              <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>Owner</div>
               <div style={{ fontSize: 13 }}>{client.owner_name || '--'}</div>
             </div>
             <div>
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Email</div>
+              <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>Email</div>
               <div style={{ fontSize: 13 }}>{client.owner_email || '--'}</div>
             </div>
             <div>
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Phone</div>
+              <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>Phone</div>
               <div style={{ fontSize: 13 }}>{client.phone || client.owner_phone || '--'}</div>
             </div>
             <div>
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Industry</div>
+              <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>Industry</div>
               <div style={{ fontSize: 13 }}>{client.industry || '--'}</div>
             </div>
           </div>
@@ -143,8 +143,8 @@ export default function ClientDetail() {
           padding: '12px 16px',
           background: 'rgba(220,38,38,0.1)',
           border: '1px solid rgba(220,38,38,0.2)',
-          borderRadius: 8,
-          color: '#DC2626',
+          borderRadius: 14,
+          color: '#f87171',
           fontSize: 13,
           marginBottom: 20,
           display: 'flex',
@@ -152,7 +152,7 @@ export default function ClientDetail() {
           justifyContent: 'space-between',
         }}>
           <span>{error}</span>
-          <button className="btn-ghost" onClick={loadData} style={{ color: '#DC2626' }}>Retry</button>
+          <button className="btn-ghost" onClick={loadData} style={{ color: '#f87171' }}>Retry</button>
         </div>
       )}
 
@@ -163,149 +163,157 @@ export default function ClientDetail() {
           value={stats?.calls_this_week ?? 0}
           trend={stats?.calls_trend}
           icon={Phone}
-          color="#3B82F6"
+          color="#60a5fa"
         />
         <StatsCard
           title="Messages This Week"
           value={stats?.messages_this_week ?? 0}
           trend={stats?.messages_trend}
           icon={MessageSquare}
-          color="#C9A84C"
+          color="#D4AF37"
         />
         <StatsCard
           title="Appointments Booked"
           value={stats?.bookings_this_week ?? 0}
           trend={stats?.bookings_trend}
           icon={Calendar}
-          color="#16A34A"
+          color="#4ade80"
         />
         <StatsCard
           title="Estimated Revenue"
           value={`$${(stats?.estimated_revenue ?? 0).toLocaleString()}`}
           trend={stats?.revenue_trend}
           icon={DollarSign}
-          color="#EAB308"
+          color="#fbbf24"
         />
       </div>
 
       {/* Dashboard Links */}
       <div style={{ marginBottom: 28 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Quick Access</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: '#D4AF37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quick Access</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
           <a
             href="/calls"
             style={{
               padding: 16,
-              background: '#0d0d0d',
-              border: '1px solid #333',
-              borderRadius: 8,
+              background: '#111111',
+              border: '1px solid rgba(212,175,55,0.12)',
+              borderRadius: 14,
               textDecoration: 'none',
-              color: '#e0d8c8',
-              transition: 'all 0.15s',
+              color: '#F5F5F0',
+              transition: 'all 0.2s',
               display: 'flex',
               alignItems: 'center',
               gap: 10,
             }}
             onMouseEnter={e => {
               e.currentTarget.style.background = '#1a1a1a';
-              e.currentTarget.style.borderColor = '#444';
+              e.currentTarget.style.borderColor = 'rgba(212,175,55,0.3)';
+              e.currentTarget.style.boxShadow = '0 0 20px rgba(212,175,55,0.15)';
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.background = '#0d0d0d';
-              e.currentTarget.style.borderColor = '#333';
+              e.currentTarget.style.background = '#111111';
+              e.currentTarget.style.borderColor = 'rgba(212,175,55,0.12)';
+              e.currentTarget.style.boxShadow = 'none';
             }}
           >
-            <Phone size={16} color="#3B82F6" />
+            <Phone size={16} color="#60a5fa" />
             <div>
               <div style={{ fontSize: 12, fontWeight: 600 }}>View Calls</div>
-              <div style={{ fontSize: 11, color: '#888' }}>All call recordings</div>
+              <div style={{ fontSize: 11, color: '#666' }}>All call recordings</div>
             </div>
           </a>
           <a
             href="/messages"
             style={{
               padding: 16,
-              background: '#0d0d0d',
-              border: '1px solid #333',
-              borderRadius: 8,
+              background: '#111111',
+              border: '1px solid rgba(212,175,55,0.12)',
+              borderRadius: 14,
               textDecoration: 'none',
-              color: '#e0d8c8',
-              transition: 'all 0.15s',
+              color: '#F5F5F0',
+              transition: 'all 0.2s',
               display: 'flex',
               alignItems: 'center',
               gap: 10,
             }}
             onMouseEnter={e => {
               e.currentTarget.style.background = '#1a1a1a';
-              e.currentTarget.style.borderColor = '#444';
+              e.currentTarget.style.borderColor = 'rgba(212,175,55,0.3)';
+              e.currentTarget.style.boxShadow = '0 0 20px rgba(212,175,55,0.15)';
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.background = '#0d0d0d';
-              e.currentTarget.style.borderColor = '#333';
+              e.currentTarget.style.background = '#111111';
+              e.currentTarget.style.borderColor = 'rgba(212,175,55,0.12)';
+              e.currentTarget.style.boxShadow = 'none';
             }}
           >
-            <MessageSquare size={16} color="#C9A84C" />
+            <MessageSquare size={16} color="#D4AF37" />
             <div>
               <div style={{ fontSize: 12, fontWeight: 600 }}>View Messages</div>
-              <div style={{ fontSize: 11, color: '#888' }}>SMS conversations</div>
+              <div style={{ fontSize: 11, color: '#666' }}>SMS conversations</div>
             </div>
           </a>
           <a
             href="/pipeline"
             style={{
               padding: 16,
-              background: '#0d0d0d',
-              border: '1px solid #333',
-              borderRadius: 8,
+              background: '#111111',
+              border: '1px solid rgba(212,175,55,0.12)',
+              borderRadius: 14,
               textDecoration: 'none',
-              color: '#e0d8c8',
-              transition: 'all 0.15s',
+              color: '#F5F5F0',
+              transition: 'all 0.2s',
               display: 'flex',
               alignItems: 'center',
               gap: 10,
             }}
             onMouseEnter={e => {
               e.currentTarget.style.background = '#1a1a1a';
-              e.currentTarget.style.borderColor = '#444';
+              e.currentTarget.style.borderColor = 'rgba(212,175,55,0.3)';
+              e.currentTarget.style.boxShadow = '0 0 20px rgba(212,175,55,0.15)';
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.background = '#0d0d0d';
-              e.currentTarget.style.borderColor = '#333';
+              e.currentTarget.style.background = '#111111';
+              e.currentTarget.style.borderColor = 'rgba(212,175,55,0.12)';
+              e.currentTarget.style.boxShadow = 'none';
             }}
           >
-            <TrendingUp size={16} color="#16A34A" />
+            <TrendingUp size={16} color="#4ade80" />
             <div>
               <div style={{ fontSize: 12, fontWeight: 600 }}>View Pipeline</div>
-              <div style={{ fontSize: 11, color: '#888' }}>Lead management</div>
+              <div style={{ fontSize: 11, color: '#666' }}>Lead management</div>
             </div>
           </a>
           <a
             href="/settings"
             style={{
               padding: 16,
-              background: '#0d0d0d',
-              border: '1px solid #333',
-              borderRadius: 8,
+              background: '#111111',
+              border: '1px solid rgba(212,175,55,0.12)',
+              borderRadius: 14,
               textDecoration: 'none',
-              color: '#e0d8c8',
-              transition: 'all 0.15s',
+              color: '#F5F5F0',
+              transition: 'all 0.2s',
               display: 'flex',
               alignItems: 'center',
               gap: 10,
             }}
             onMouseEnter={e => {
               e.currentTarget.style.background = '#1a1a1a';
-              e.currentTarget.style.borderColor = '#444';
+              e.currentTarget.style.borderColor = 'rgba(212,175,55,0.3)';
+              e.currentTarget.style.boxShadow = '0 0 20px rgba(212,175,55,0.15)';
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.background = '#0d0d0d';
-              e.currentTarget.style.borderColor = '#333';
+              e.currentTarget.style.background = '#111111';
+              e.currentTarget.style.borderColor = 'rgba(212,175,55,0.12)';
+              e.currentTarget.style.boxShadow = 'none';
             }}
           >
             <TrendingUp size={16} color="#D4AF37" />
             <div>
               <div style={{ fontSize: 12, fontWeight: 600 }}>Settings</div>
-              <div style={{ fontSize: 11, color: '#888' }}>Configuration</div>
+              <div style={{ fontSize: 11, color: '#666' }}>Configuration</div>
             </div>
           </a>
         </div>
@@ -315,9 +323,9 @@ export default function ClientDetail() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 28 }}>
         {/* Recent Calls */}
         <div>
-          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Recent Calls ({calls.length})</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: '#D4AF37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent Calls ({calls.length})</h2>
           {calls.length === 0 ? (
-            <div className="card" style={{ padding: 16, textAlign: 'center', color: '#555', fontSize: 13 }}>
+            <div className="card" style={{ padding: 16, textAlign: 'center', color: '#444', fontSize: 13 }}>
               No recent calls
             </div>
           ) : (
@@ -327,7 +335,7 @@ export default function ClientDetail() {
                   <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>
                     {call.from_number || call.caller_phone || 'Unknown'}
                   </div>
-                  <div style={{ fontSize: 11, color: '#888' }}>
+                  <div style={{ fontSize: 11, color: '#666' }}>
                     {call.summary || call.outcome || 'Call recorded'}
                   </div>
                 </div>
@@ -338,9 +346,9 @@ export default function ClientDetail() {
 
         {/* Recent Messages */}
         <div>
-          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Recent Messages ({messages.length})</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: '#D4AF37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent Messages ({messages.length})</h2>
           {messages.length === 0 ? (
-            <div className="card" style={{ padding: 16, textAlign: 'center', color: '#555', fontSize: 13 }}>
+            <div className="card" style={{ padding: 16, textAlign: 'center', color: '#444', fontSize: 13 }}>
               No recent messages
             </div>
           ) : (
@@ -350,7 +358,7 @@ export default function ClientDetail() {
                   <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>
                     {msg.from_number || msg.sender_phone || 'Unknown'}
                   </div>
-                  <div style={{ fontSize: 11, color: '#888' }}>
+                  <div style={{ fontSize: 11, color: '#666' }}>
                     {(msg.original_message || msg.body || 'Message received').substring(0, 60)}...
                   </div>
                 </div>
@@ -364,9 +372,9 @@ export default function ClientDetail() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         {/* Active Leads */}
         <div>
-          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Active Leads ({leads.filter(l => l.stage !== 'completed' && l.stage !== 'lost').length})</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: '#D4AF37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Leads ({leads.filter(l => l.stage !== 'completed' && l.stage !== 'lost').length})</h2>
           {leads.filter(l => l.stage !== 'completed' && l.stage !== 'lost').length === 0 ? (
-            <div className="card" style={{ padding: 16, textAlign: 'center', color: '#555', fontSize: 13 }}>
+            <div className="card" style={{ padding: 16, textAlign: 'center', color: '#444', fontSize: 13 }}>
               No active leads
             </div>
           ) : (
@@ -377,7 +385,7 @@ export default function ClientDetail() {
                     {lead.name || lead.phone || 'Unknown'}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 11, color: '#888', textTransform: 'capitalize' }}>
+                    <span style={{ fontSize: 11, color: '#666', textTransform: 'capitalize' }}>
                       {lead.stage || 'new'}
                     </span>
                     <span style={{ fontSize: 11, color: '#D4AF37' }}>
@@ -392,9 +400,9 @@ export default function ClientDetail() {
 
         {/* Recent Bookings */}
         <div>
-          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Recent Bookings ({bookings.length})</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: '#D4AF37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent Bookings ({bookings.length})</h2>
           {bookings.length === 0 ? (
-            <div className="card" style={{ padding: 16, textAlign: 'center', color: '#555', fontSize: 13 }}>
+            <div className="card" style={{ padding: 16, textAlign: 'center', color: '#444', fontSize: 13 }}>
               No bookings
             </div>
           ) : (
@@ -404,7 +412,7 @@ export default function ClientDetail() {
                   <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>
                     {booking.name || booking.title || 'Booking'}
                   </div>
-                  <div style={{ fontSize: 11, color: '#888' }}>
+                  <div style={{ fontSize: 11, color: '#666' }}>
                     {booking.start_time || booking.date ? new Date(booking.start_time || booking.date).toLocaleDateString() : '--'}
                   </div>
                 </div>

@@ -19,17 +19,17 @@ export default function MessageCard({ message }) {
           cursor: 'pointer',
           transition: 'background 0.15s',
         }}
-        onMouseEnter={e => e.currentTarget.style.background = '#141414'}
+        onMouseEnter={e => e.currentTarget.style.background = 'rgba(212,175,55,0.03)'}
         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
       >
-        <MessageSquare size={14} color="#888" />
-        <span style={{ fontSize: 12, color: '#888', minWidth: 70 }}>
+        <MessageSquare size={14} color="#666" />
+        <span style={{ fontSize: 12, color: '#666', minWidth: 70 }}>
           {timeAgo(message.created_at)}
         </span>
         <span style={{ fontSize: 13, minWidth: 120 }}>
           {formatPhone(message.from_number || message.sender_phone)}
         </span>
-        <span style={{ fontSize: 12, color: '#888', flex: 1 }} className="truncate">
+        <span style={{ fontSize: 12, color: '#666', flex: 1 }} className="truncate">
           {truncate(message.original_message || message.body, 60)}
         </span>
         {message.ai_reply && (
@@ -48,29 +48,29 @@ export default function MessageCard({ message }) {
       {expanded && (
         <div style={{
           padding: '0 16px 16px',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
+          borderTop: '1px solid rgba(212,175,55,0.08)',
         }}>
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+            <div style={{ fontSize: 11, color: '#444', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
               Original Message
             </div>
-            <div style={{ fontSize: 13, color: '#e0d8c8', lineHeight: 1.6 }}>
+            <div style={{ fontSize: 13, color: '#F5F5F0', lineHeight: 1.6 }}>
               {message.original_message || message.body || 'N/A'}
             </div>
           </div>
 
           {message.ai_reply && (
             <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+              <div style={{ fontSize: 11, color: '#444', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
                 AI Reply
               </div>
               <div style={{
                 fontSize: 13,
-                color: '#888',
+                color: '#aaa',
                 lineHeight: 1.6,
-                background: '#050505',
+                background: '#0a0a0a',
                 padding: 12,
-                borderRadius: 6,
+                borderRadius: 14,
               }}>
                 {message.ai_reply}
               </div>
@@ -79,10 +79,10 @@ export default function MessageCard({ message }) {
 
           {message.escalated && (
             <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+              <div style={{ fontSize: 11, color: '#444', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
                 Escalation
               </div>
-              <div style={{ fontSize: 13, color: '#EAB308' }}>
+              <div style={{ fontSize: 13, color: '#fbbf24' }}>
                 {message.escalation_reason || 'Escalated to owner'}
               </div>
             </div>

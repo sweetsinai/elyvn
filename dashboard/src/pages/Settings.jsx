@@ -162,36 +162,36 @@ export default function Settings() {
       name: 'Retell',
       key: 'retell',
       icon: Zap,
-      color: '#3B82F6',
+      color: '#60a5fa',
     },
     {
       name: 'Telnyx',
       key: 'telnyx',
       icon: Phone,
-      color: '#DC2626',
+      color: '#f87171',
     },
     {
       name: 'Cal.com',
       key: 'calcom',
       icon: Calendar,
-      color: '#16A34A',
+      color: '#4ade80',
     },
     {
       name: 'SMTP',
       key: 'smtp',
       icon: Mail,
-      color: '#EAB308',
+      color: '#fbbf24',
     },
   ];
 
   return (
     <div className="fade-in">
-      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 28 }}>Settings</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 28, fontFamily: "'Cormorant Garamond', Georgia, serif" }}>Settings</h1>
 
       {/* ========== CLIENT MANAGEMENT ========== */}
       <section style={{ marginBottom: 40 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Client Management</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: '#D4AF37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Client Management</h2>
           <button
             className="btn-primary"
             onClick={() => setShowAdd(true)}
@@ -218,7 +218,7 @@ export default function Settings() {
                 { key: 'avg_ticket', label: 'Avg Ticket ($)', placeholder: '250', type: 'number' },
               ].map(field => (
                 <div key={field.key}>
-                  <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4 }}>
+                  <label style={{ fontSize: 11, color: '#D4AF37', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
                     {field.label}
                   </label>
                   <input
@@ -237,6 +237,7 @@ export default function Settings() {
                 className="btn-primary"
                 onClick={handleCreate}
                 disabled={creating || !newClient.business_name}
+                style={{ background: 'linear-gradient(135deg, #D4AF37, #9A7840)', border: 'none', color: '#050505', fontWeight: 600 }}
               >
                 {creating ? 'Creating...' : 'Create Client'}
               </button>
@@ -246,11 +247,11 @@ export default function Settings() {
 
         {/* Client List */}
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#555' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#444' }}>
             <div className="spinner" /> Loading clients...
           </div>
         ) : clients.length === 0 ? (
-          <div className="card" style={{ padding: 32, textAlign: 'center', color: '#555' }}>
+          <div className="card" style={{ padding: 32, textAlign: 'center', color: '#444' }}>
             No clients yet. Add one to get started.
           </div>
         ) : (
@@ -276,7 +277,7 @@ export default function Settings() {
                           { key: 'transfer_phone', label: 'Transfer Phone', placeholder: '+15551234567' },
                         ].map(f => (
                           <div key={f.key}>
-                            <label style={{ fontSize: 10, color: '#555', display: 'block', marginBottom: 2 }}>{f.label}</label>
+                            <label style={{ fontSize: 10, color: '#D4AF37', display: 'block', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{f.label}</label>
                             <input
                               type={f.type || 'text'}
                               value={editData[f.key] || ''}
@@ -287,7 +288,7 @@ export default function Settings() {
                         ))}
                       </div>
                       <div style={{ marginTop: 16 }}>
-                        <h4 style={{ fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 8 }}>Outbound Webhook URLs</h4>
+                        <h4 style={{ fontSize: 12, fontWeight: 600, color: '#666', marginBottom: 8 }}>Outbound Webhook URLs</h4>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                         {[
                           { key: 'lead_webhook_url', label: 'Lead Created', placeholder: 'https://hooks.zapier.com/...' },
@@ -297,7 +298,7 @@ export default function Settings() {
                           { key: 'stage_change_webhook_url', label: 'Lead Stage Changed', placeholder: 'https://hooks.zapier.com/...' },
                         ].map(f => (
                           <div key={f.key}>
-                            <label style={{ fontSize: 10, color: '#555', display: 'block', marginBottom: 2 }}>{f.label}</label>
+                            <label style={{ fontSize: 10, color: '#D4AF37', display: 'block', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{f.label}</label>
                             <input
                               type={f.type || 'text'}
                               value={editData[f.key] || ''}
@@ -310,7 +311,7 @@ export default function Settings() {
                       </div>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 12 }}>
                         <button className="btn-ghost" onClick={() => setEditingId(null)}>Cancel</button>
-                        <button className="btn-primary" onClick={handleSaveEdit} disabled={saving}>
+                        <button className="btn-primary" onClick={handleSaveEdit} disabled={saving} style={{ background: 'linear-gradient(135deg, #D4AF37, #9A7840)', border: 'none', color: '#050505', fontWeight: 600 }}>
                           {saving ? 'Saving...' : 'Save'}
                         </button>
                       </div>
@@ -324,13 +325,13 @@ export default function Settings() {
                             width: 8,
                             height: 8,
                             borderRadius: '50%',
-                            background: client.active !== false ? '#16A34A' : '#555',
+                            background: client.active !== false ? '#4ade80' : '#444',
                           }} />
                           <span style={{ fontSize: 14, fontWeight: 600 }}>
                             {client.business_name}
                           </span>
                           {client.industry && (
-                            <span style={{ fontSize: 11, color: '#555' }}>{client.industry}</span>
+                            <span style={{ fontSize: 11, color: '#444' }}>{client.industry}</span>
                           )}
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
@@ -343,14 +344,14 @@ export default function Settings() {
                         </div>
                       </div>
                       {(client.owner_name || client.email) && (
-                        <div style={{ marginTop: 6, fontSize: 12, color: '#888' }}>
+                        <div style={{ marginTop: 6, fontSize: 12, color: '#666' }}>
                           {client.owner_name && <span>{client.owner_name}</span>}
                           {client.owner_name && client.email && <span> &middot; </span>}
                           {client.email && <span>{client.email}</span>}
                         </div>
                       )}
                       {client.transfer_phone && (
-                        <div style={{ marginTop: 4, fontSize: 12, color: '#888', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <div style={{ marginTop: 4, fontSize: 12, color: '#666', display: 'flex', alignItems: 'center', gap: 4 }}>
                           <PhoneForwarded size={11} />
                           <span>Transfer: {client.transfer_phone}</span>
                         </div>
@@ -359,7 +360,7 @@ export default function Settings() {
                       {/* Knowledge Base Editor */}
                       {isKbEdit && (
                         <div style={{ marginTop: 12 }}>
-                          <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4 }}>
+                          <label style={{ fontSize: 11, color: '#D4AF37', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
                             Knowledge Base (JSON)
                           </label>
                           <textarea
@@ -377,7 +378,7 @@ export default function Settings() {
                             }}
                           />
                           {kbError && (
-                            <div style={{ fontSize: 11, color: '#DC2626', marginTop: 4 }}>{kbError}</div>
+                            <div style={{ fontSize: 11, color: '#f87171', marginTop: 4 }}>{kbError}</div>
                           )}
                           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
                             <button className="btn-ghost" onClick={() => setKbEditId(null)}>Cancel</button>
@@ -397,52 +398,52 @@ export default function Settings() {
       {/* ========== PHONE NUMBER MANAGEMENT ========== */}
       {phoneSettings.phone && (
         <section style={{ marginBottom: 40 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Phone Number Management</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: '#D4AF37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Phone Number Management</h2>
           <div className="card" style={{ padding: 20 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <PhoneCall size={16} color="#C9A84C" />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#e0d8c8' }}>Unified Phone Number</span>
+                  <PhoneCall size={16} color="#D4AF37" />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#F5F5F0' }}>Unified Phone Number</span>
                 </div>
-                <code style={{ fontSize: 15, color: '#C9A84C', fontFamily: 'monospace', display: 'block', marginBottom: 4 }}>
+                <code style={{ fontSize: 15, color: '#D4AF37', fontFamily: 'monospace', display: 'block', marginBottom: 4 }}>
                   {phoneSettings.phone?.phone_number || 'Not provisioned'}
                 </code>
-                <div style={{ fontSize: 11, color: '#555' }}>
-                  Single number for inbound calls + outbound SMS (SIP trunk to Retell)
+                <div style={{ fontSize: 11, color: '#444' }}>
+    Single number for inbound calls + outbound SMS (SIP trunk to Retell)
                 </div>
               </div>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <PhoneForwarded size={16} color="#3B82F6" />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#e0d8c8' }}>Call Transfer</span>
+                  <PhoneForwarded size={16} color="#60a5fa" />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#F5F5F0' }}>Call Transfer</span>
                 </div>
-                <code style={{ fontSize: 15, color: '#3B82F6', fontFamily: 'monospace', display: 'block', marginBottom: 4 }}>
+                <code style={{ fontSize: 15, color: '#60a5fa', fontFamily: 'monospace', display: 'block', marginBottom: 4 }}>
                   {phoneSettings.voice?.transfer_phone || 'Not configured'}
                 </code>
-                <div style={{ fontSize: 11, color: '#555' }}>
-                  Forwarding destination when callers request transfer or press *
+                <div style={{ fontSize: 11, color: '#444' }}>
+    Forwarding destination when callers request transfer or press *
                 </div>
               </div>
             </div>
             {phoneSettings.voice && (
-              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #141414' }}>
-                <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>Voice Configuration</div>
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #1a1a1a' }}>
+                <div style={{ fontSize: 12, color: '#444', marginBottom: 8 }}>Voice Configuration</div>
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: 12, color: '#888' }}>
-                    Agent: <span style={{ color: '#e0d8c8' }}>{phoneSettings.voice.retell_agent_id ? 'Active' : 'Not set'}</span>
+                  <div style={{ fontSize: 12, color: '#666' }}>
+                    Agent: <span style={{ color: '#F5F5F0' }}>{phoneSettings.voice.retell_agent_id ? 'Active' : 'Not set'}</span>
                   </div>
-                  <div style={{ fontSize: 12, color: '#888' }}>
-                    Voice: <span style={{ color: '#e0d8c8' }}>{phoneSettings.voice.retell_voice}</span>
+                  <div style={{ fontSize: 12, color: '#666' }}>
+                    Voice: <span style={{ color: '#F5F5F0' }}>{phoneSettings.voice.retell_voice}</span>
                   </div>
-                  <div style={{ fontSize: 12, color: '#888' }}>
-                    Language: <span style={{ color: '#e0d8c8' }}>{phoneSettings.voice.retell_language}</span>
+                  <div style={{ fontSize: 12, color: '#666' }}>
+                    Language: <span style={{ color: '#F5F5F0' }}>{phoneSettings.voice.retell_language}</span>
                   </div>
                 </div>
               </div>
             )}
-            <div style={{ marginTop: 12, fontSize: 11, color: '#555' }}>
-              Phone numbers are provisioned via the Provision page. Edit transfer_phone in a client's settings above.
+            <div style={{ marginTop: 12, fontSize: 11, color: '#444' }}>
+Phone numbers are provisioned via the Provision page. Edit transfer_phone in a client's settings above.
             </div>
           </div>
         </section>
@@ -451,7 +452,7 @@ export default function Settings() {
       {/* ========== CONNECTION STATUS ========== */}
       <section style={{ marginBottom: 40 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Connection Status</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: '#D4AF37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Connection Status</h2>
           <button className="btn-ghost" onClick={loadHealth} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <RefreshCw size={12} /> Refresh
           </button>
@@ -480,7 +481,7 @@ export default function Settings() {
                   <div style={{
                     width: 32,
                     height: 32,
-                    borderRadius: 8,
+                    borderRadius: 14,
                     background: `${intg.color}15`,
                     display: 'flex',
                     alignItems: 'center',
@@ -496,7 +497,7 @@ export default function Settings() {
                     type="status"
                   />
                 </div>
-                <div style={{ fontSize: 12, color: '#888', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ fontSize: 12, color: '#666', display: 'flex', alignItems: 'center', gap: 6 }}>
                   API Key:
                   <StatusBadge
                     status={apiStatus}
@@ -511,7 +512,7 @@ export default function Settings() {
 
       {/* ========== INBOUND WEBHOOK URLS ========== */}
       <section style={{ marginBottom: 40 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Inbound Webhook URLs</h2>
+        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: '#D4AF37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Inbound Webhook URLs</h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[
             { label: 'Retell Webhook', url: `${baseUrl}/webhooks/retell` },
@@ -524,8 +525,8 @@ export default function Settings() {
               justifyContent: 'space-between',
             }}>
               <div>
-                <div style={{ fontSize: 12, color: '#555', marginBottom: 2 }}>{wh.label}</div>
-                <code style={{ fontSize: 13, color: '#e0d8c8', fontFamily: 'monospace' }}>{wh.url}</code>
+                <div style={{ fontSize: 12, color: '#444', marginBottom: 2 }}>{wh.label}</div>
+                <code style={{ fontSize: 13, color: '#F5F5F0', fontFamily: 'monospace' }}>{wh.url}</code>
               </div>
               <button
                 className="btn-ghost"
@@ -533,7 +534,7 @@ export default function Settings() {
                 style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}
               >
                 {copied === wh.label ? (
-                  <><Check size={12} color="#16A34A" /> Copied</>
+                  <><Check size={12} color="#4ade80" /> Copied</>
                 ) : (
                   <><Copy size={12} /> Copy</>
                 )}
@@ -545,9 +546,9 @@ export default function Settings() {
 
       {/* ========== DATA EXPORT ========== */}
       <section>
-        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Data Export</h2>
+        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: '#D4AF37', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Data Export</h2>
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>
             Export leads, calls, and messages as CSV for Google Sheets or CRM import.
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -567,7 +568,7 @@ export default function Settings() {
               );
             })}
           </div>
-          <div style={{ marginTop: 12, fontSize: 11, color: '#555' }}>
+          <div style={{ marginTop: 12, fontSize: 11, color: '#444' }}>
             Tip: Use outbound webhook URLs (edit a client above) to push events to Zapier/Make for real-time Google Sheets sync.
           </div>
         </div>

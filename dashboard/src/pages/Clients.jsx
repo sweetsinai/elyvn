@@ -99,23 +99,23 @@ export default function Clients() {
     <div className="fade-in">
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 16 }}>All Clients</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 16, fontFamily: "'Cormorant Garamond', Georgia, serif" }}>All Clients</h1>
         <div className="grid-4">
           <div className="card" style={{ padding: 16 }}>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Total Clients</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#D4AF37' }}>{totalClients}</div>
+            <div style={{ fontSize: 11, color: '#666', marginBottom: 8 }}>Total Clients</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: '#D4AF37', fontFamily: "'Cormorant Garamond', Georgia, serif" }}>{totalClients}</div>
           </div>
           <div className="card" style={{ padding: 16 }}>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Active</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#16A34A' }}>{activeClients}</div>
+            <div style={{ fontSize: 11, color: '#666', marginBottom: 8 }}>Active</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: '#4ade80', fontFamily: "'Cormorant Garamond', Georgia, serif" }}>{activeClients}</div>
           </div>
           <div className="card" style={{ padding: 16 }}>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Calls This Week</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#3B82F6' }}>{totalCalls}</div>
+            <div style={{ fontSize: 11, color: '#666', marginBottom: 8 }}>Calls This Week</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: '#60a5fa', fontFamily: "'Cormorant Garamond', Georgia, serif" }}>{totalCalls}</div>
           </div>
           <div className="card" style={{ padding: 16 }}>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Messages This Week</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#C9A84C' }}>{totalMessages}</div>
+            <div style={{ fontSize: 11, color: '#666', marginBottom: 8 }}>Messages This Week</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: '#D4AF37', fontFamily: "'Cormorant Garamond', Georgia, serif" }}>{totalMessages}</div>
           </div>
         </div>
       </div>
@@ -129,7 +129,7 @@ export default function Clients() {
         flexWrap: 'wrap',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <label style={{ fontSize: 12, color: '#888' }}>Status:</label>
+          <label style={{ fontSize: 12, color: '#666' }}>Status:</label>
           <select
             value={filterStatus}
             onChange={e => setFilterStatus(e.target.value)}
@@ -140,7 +140,7 @@ export default function Clients() {
           </select>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <label style={{ fontSize: 12, color: '#888' }}>Sort by:</label>
+          <label style={{ fontSize: 12, color: '#666' }}>Sort by:</label>
           <select
             value={sortBy}
             onChange={e => setSortBy(e.target.value)}
@@ -158,8 +158,8 @@ export default function Clients() {
           padding: '12px 16px',
           background: 'rgba(220,38,38,0.1)',
           border: '1px solid rgba(220,38,38,0.2)',
-          borderRadius: 8,
-          color: '#DC2626',
+          borderRadius: 14,
+          color: '#f87171',
           fontSize: 13,
           marginBottom: 16,
           display: 'flex',
@@ -167,17 +167,17 @@ export default function Clients() {
           justifyContent: 'space-between',
         }}>
           <span>{error}</span>
-          <button className="btn-ghost" onClick={loadClients} style={{ color: '#DC2626' }}>Retry</button>
+          <button className="btn-ghost" onClick={loadClients} style={{ color: '#f87171' }}>Retry</button>
         </div>
       )}
 
       {/* Client List */}
       {loading ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#555' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 20, color: '#444' }}>
           <div className="spinner" /> Loading clients...
         </div>
       ) : filteredClients.length === 0 ? (
-        <div className="card" style={{ padding: 40, textAlign: 'center', color: '#555' }}>
+        <div className="card" style={{ padding: 40, textAlign: 'center', color: '#444' }}>
           No clients found
         </div>
       ) : (
@@ -197,7 +197,7 @@ export default function Clients() {
                         width: 8,
                         height: 8,
                         borderRadius: '50%',
-                        background: isActive ? '#16A34A' : '#555',
+                        background: isActive ? '#4ade80' : '#444',
                       }} />
                       <span style={{ fontSize: 14, fontWeight: 600 }}>
                         {client.business_name}
@@ -209,21 +209,21 @@ export default function Clients() {
                           background: '#D4AF37',
                           color: '#000',
                           padding: '2px 8px',
-                          borderRadius: 4,
+                          borderRadius: 6,
                           textTransform: 'uppercase',
                         }}>
                           {client.plan}
                         </span>
                       )}
                       {client.industry && (
-                        <span style={{ fontSize: 11, color: '#555' }}>
+                        <span style={{ fontSize: 11, color: '#444' }}>
                           {client.industry}
                         </span>
                       )}
                     </div>
 
                     {/* Contact Info */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 12, color: '#888', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 12, color: '#666', marginBottom: 8 }}>
                       {client.owner_name && (
                         <span>{client.owner_name}</span>
                       )}
@@ -241,15 +241,15 @@ export default function Clients() {
                     {/* Stats */}
                     {stats && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 20, fontSize: 12 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#3B82F6' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#60a5fa' }}>
                           <Phone size={12} />
                           <span>{stats.calls_this_week || 0} calls</span>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#C9A84C' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#D4AF37' }}>
                           <MessageSquare size={12} />
                           <span>{stats.messages_this_week || 0} messages</span>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#16A34A' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#4ade80' }}>
                           <Calendar size={12} />
                           <span>{stats.bookings_this_week || 0} bookings</span>
                         </div>
@@ -262,7 +262,7 @@ export default function Clients() {
                     <button
                       className="btn-secondary"
                       onClick={() => handleViewClient(id)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', border: '1px solid rgba(212,175,55,0.3)', color: '#D4AF37', background: 'transparent' }}
                     >
                       <Eye size={12} /> View
                     </button>
@@ -275,9 +275,9 @@ export default function Clients() {
                         gap: 6,
                         padding: '8px 12px',
                         background: '#222',
-                        border: '1px solid #333',
-                        borderRadius: 6,
-                        color: '#e0d8c8',
+                        border: '1px solid rgba(212,175,55,0.3)',
+                        borderRadius: 10,
+                        color: '#D4AF37',
                         cursor: 'pointer',
                         fontSize: 12,
                         fontWeight: 500,
@@ -285,12 +285,12 @@ export default function Clients() {
                         transition: 'all 0.15s',
                       }}
                       onMouseEnter={e => {
-                        e.currentTarget.style.background = '#2a2a2a';
-                        e.currentTarget.style.borderColor = '#444';
+                        e.currentTarget.style.background = 'rgba(212,175,55,0.08)';
+                        e.currentTarget.style.borderColor = 'rgba(212,175,55,0.5)';
                       }}
                       onMouseLeave={e => {
                         e.currentTarget.style.background = '#222';
-                        e.currentTarget.style.borderColor = '#333';
+                        e.currentTarget.style.borderColor = 'rgba(212,175,55,0.3)';
                       }}
                     >
                       <Settings size={12} />

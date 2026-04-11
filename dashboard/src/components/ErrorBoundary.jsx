@@ -25,17 +25,18 @@ export default class ErrorBoundary extends Component {
           padding: 40, textAlign: 'center',
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           justifyContent: 'center', minHeight: 300,
+          background: '#050505',
         }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>!</div>
-          <h2 style={{ margin: '0 0 8px', color: '#1a1a2e', fontWeight: 600 }}>Something went wrong</h2>
+          <h2 style={{ margin: '0 0 8px', color: '#F5F5F0', fontWeight: 600 }}>Something went wrong</h2>
           <p style={{ color: '#666', marginBottom: 24, maxWidth: 400 }}>
             {this.state.error?.message || 'An unexpected error occurred in this section.'}
           </p>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
             style={{
-              padding: '10px 24px', background: '#667eea', color: '#fff',
-              border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14,
+              padding: '10px 24px', background: 'linear-gradient(135deg, #EED07A, #D4AF37, #9A7840)', color: '#050505',
+              border: 'none', borderRadius: 14, cursor: 'pointer', fontSize: 14,
               fontWeight: 500,
             }}
           >

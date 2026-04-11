@@ -119,13 +119,13 @@ const Bookings = () => {
   const getBookingColor = (status) => {
     switch (status) {
       case 'upcoming':
-        return '#C9A84C';
+        return '#D4AF37';
       case 'completed':
-        return '#16A34A';
+        return '#4ade80';
       case 'cancelled':
-        return '#DC2626';
+        return '#f87171';
       default:
-        return '#888';
+        return '#666';
     }
   };
 
@@ -170,10 +170,10 @@ const Bookings = () => {
 
   const getStatusBadge = (status) => {
     const statusConfig = {
-      upcoming: { bg: 'rgba(201, 168, 76, 0.1)', color: '#C9A84C', icon: Clock },
-      completed: { bg: 'rgba(22, 163, 74, 0.1)', color: '#16A34A', icon: Check },
-      cancelled: { bg: 'rgba(220, 38, 38, 0.1)', color: '#DC2626', icon: X },
-      'no-show': { bg: 'rgba(136, 136, 136, 0.1)', color: '#888', icon: X },
+      upcoming: { bg: 'rgba(212, 175, 55, 0.1)', color: '#D4AF37', icon: Clock },
+      completed: { bg: 'rgba(74, 222, 128, 0.1)', color: '#4ade80', icon: Check },
+      cancelled: { bg: 'rgba(248, 113, 113, 0.1)', color: '#f87171', icon: X },
+      'no-show': { bg: 'rgba(136, 136, 136, 0.1)', color: '#666', icon: X },
     };
 
     const config = statusConfig[status] || statusConfig.upcoming;
@@ -188,7 +188,7 @@ const Bookings = () => {
           padding: '6px 12px',
           backgroundColor: config.bg,
           color: config.color,
-          borderRadius: '6px',
+          borderRadius: '10px',
           fontSize: '12px',
           fontWeight: '500',
           textTransform: 'capitalize',
@@ -210,6 +210,7 @@ const Bookings = () => {
             fontWeight: '600',
             color: 'white',
             margin: '0 0 16px 0',
+            fontFamily: "'Cormorant Garamond', Georgia, serif",
           }}
         >
           Bookings
@@ -220,7 +221,7 @@ const Bookings = () => {
               style={{
                 display: 'block',
                 fontSize: '12px',
-                color: '#888',
+                color: '#666',
                 marginBottom: '8px',
                 fontWeight: '500',
               }}
@@ -233,9 +234,9 @@ const Bookings = () => {
               onChange={e => setStartDate(e.target.value)}
               style={{
                 padding: '10px 12px',
-                backgroundColor: '#0d0d0d',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                borderRadius: '8px',
+                backgroundColor: '#111111',
+                border: '1px solid rgba(212, 175, 55, 0.12)',
+                borderRadius: '14px',
                 color: 'white',
                 fontSize: '13px',
                 fontFamily: 'inherit',
@@ -247,7 +248,7 @@ const Bookings = () => {
               style={{
                 display: 'block',
                 fontSize: '12px',
-                color: '#888',
+                color: '#666',
                 marginBottom: '8px',
                 fontWeight: '500',
               }}
@@ -260,9 +261,9 @@ const Bookings = () => {
               onChange={e => setEndDate(e.target.value)}
               style={{
                 padding: '10px 12px',
-                backgroundColor: '#0d0d0d',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                borderRadius: '8px',
+                backgroundColor: '#111111',
+                border: '1px solid rgba(212, 175, 55, 0.12)',
+                borderRadius: '14px',
                 color: 'white',
                 fontSize: '13px',
                 fontFamily: 'inherit',
@@ -277,9 +278,9 @@ const Bookings = () => {
           style={{
             marginBottom: '24px',
             padding: '16px',
-            backgroundColor: 'rgba(220, 38, 38, 0.1)',
-            border: '1px solid rgba(220, 38, 38, 0.3)',
-            borderRadius: '12px',
+            backgroundColor: 'rgba(248, 113, 113, 0.1)',
+            border: '1px solid rgba(248, 113, 113, 0.3)',
+            borderRadius: '14px',
             color: '#fca5a5',
             fontSize: '13px',
             display: 'flex',
@@ -292,9 +293,9 @@ const Bookings = () => {
             onClick={handleRetry}
             style={{
               padding: '8px 16px',
-              backgroundColor: 'rgba(220, 38, 38, 0.2)',
-              border: '1px solid rgba(220, 38, 38, 0.5)',
-              borderRadius: '6px',
+              backgroundColor: 'rgba(248, 113, 113, 0.2)',
+              border: '1px solid rgba(248, 113, 113, 0.5)',
+              borderRadius: '10px',
               color: '#fca5a5',
               fontSize: '12px',
               fontWeight: '500',
@@ -302,10 +303,10 @@ const Bookings = () => {
               transition: 'all 0.2s ease',
             }}
             onMouseEnter={e => {
-              e.target.style.backgroundColor = 'rgba(220, 38, 38, 0.3)';
+              e.target.style.backgroundColor = 'rgba(248, 113, 113, 0.3)';
             }}
             onMouseLeave={e => {
-              e.target.style.backgroundColor = 'rgba(220, 38, 38, 0.2)';
+              e.target.style.backgroundColor = 'rgba(248, 113, 113, 0.2)';
             }}
           >
             Retry
@@ -325,9 +326,9 @@ const Bookings = () => {
           className="fade-in"
         >
           <StatCard label="Total Bookings" value={statsData.total} />
-          <StatCard label="Upcoming Today" value={statsData.upcomingToday} color="#C9A84C" />
-          <StatCard label="Completed" value={statsData.completed} color="#16A34A" />
-          <StatCard label="Cancelled" value={statsData.cancelled} color="#DC2626" />
+          <StatCard label="Upcoming Today" value={statsData.upcomingToday} color="#D4AF37" />
+          <StatCard label="Completed" value={statsData.completed} color="#4ade80" />
+          <StatCard label="Cancelled" value={statsData.cancelled} color="#f87171" />
         </div>
       )}
 
@@ -340,9 +341,9 @@ const Bookings = () => {
                 key={i}
                 style={{
                   height: '100px',
-                  backgroundColor: '#0d0d0d',
-                  borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  backgroundColor: '#111111',
+                  borderRadius: '14px',
+                  border: '1px solid rgba(212, 175, 55, 0.12)',
                   animation: 'pulse 2s infinite',
                 }}
               />
@@ -370,21 +371,21 @@ const Bookings = () => {
                 onClick={handlePreviousWeek}
                 style={{
                   padding: '8px 12px',
-                  backgroundColor: '#0d0d0d',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
-                  borderRadius: '8px',
+                  backgroundColor: '#111111',
+                  border: '1px solid rgba(212, 175, 55, 0.12)',
+                  borderRadius: '14px',
                   color: 'white',
                   cursor: 'pointer',
                   fontSize: '13px',
                   transition: 'all 0.2s ease',
                 }}
                 onMouseEnter={e => {
-                  e.target.style.backgroundColor = 'rgba(201, 168, 76, 0.1)';
-                  e.target.style.borderColor = 'rgba(201, 168, 76, 0.3)';
+                  e.target.style.backgroundColor = 'rgba(212, 175, 55, 0.1)';
+                  e.target.style.borderColor = 'rgba(212, 175, 55, 0.3)';
                 }}
                 onMouseLeave={e => {
-                  e.target.style.backgroundColor = '#0d0d0d';
-                  e.target.style.borderColor = 'rgba(255, 255, 255, 0.06)';
+                  e.target.style.backgroundColor = '#111111';
+                  e.target.style.borderColor = 'rgba(212, 175, 55, 0.12)';
                 }}
               >
                 <ChevronLeft size={16} style={{ display: 'inline' }} />
@@ -393,21 +394,21 @@ const Bookings = () => {
                 onClick={handleNextWeek}
                 style={{
                   padding: '8px 12px',
-                  backgroundColor: '#0d0d0d',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
-                  borderRadius: '8px',
+                  backgroundColor: '#111111',
+                  border: '1px solid rgba(212, 175, 55, 0.12)',
+                  borderRadius: '14px',
                   color: 'white',
                   cursor: 'pointer',
                   fontSize: '13px',
                   transition: 'all 0.2s ease',
                 }}
                 onMouseEnter={e => {
-                  e.target.style.backgroundColor = 'rgba(201, 168, 76, 0.1)';
-                  e.target.style.borderColor = 'rgba(201, 168, 76, 0.3)';
+                  e.target.style.backgroundColor = 'rgba(212, 175, 55, 0.1)';
+                  e.target.style.borderColor = 'rgba(212, 175, 55, 0.3)';
                 }}
                 onMouseLeave={e => {
-                  e.target.style.backgroundColor = '#0d0d0d';
-                  e.target.style.borderColor = 'rgba(255, 255, 255, 0.06)';
+                  e.target.style.backgroundColor = '#111111';
+                  e.target.style.borderColor = 'rgba(212, 175, 55, 0.12)';
                 }}
               >
                 <ChevronRight size={16} style={{ display: 'inline' }} />
@@ -417,9 +418,9 @@ const Bookings = () => {
 
           <div
             style={{
-              backgroundColor: '#0d0d0d',
-              border: '1px solid rgba(255, 255, 255, 0.06)',
-              borderRadius: '12px',
+              backgroundColor: '#111111',
+              border: '1px solid rgba(212, 175, 55, 0.12)',
+              borderRadius: '14px',
               overflow: 'hidden',
             }}
           >
@@ -428,7 +429,7 @@ const Bookings = () => {
               style={{
                 display: 'grid',
                 gridTemplateColumns: 'auto ' + weekDays.map(() => '1fr').join(' '),
-                borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                borderBottom: '1px solid rgba(212, 175, 55, 0.12)',
               }}
             >
               <div style={{ width: '80px', padding: '12px', backgroundColor: '#0a0a0a' }} />
@@ -440,10 +441,10 @@ const Bookings = () => {
                     backgroundColor: '#0a0a0a',
                     textAlign: 'center',
                     borderRight:
-                      idx < weekDays.length - 1 ? '1px solid rgba(255, 255, 255, 0.06)' : 'none',
+                      idx < weekDays.length - 1 ? '1px solid rgba(212, 175, 55, 0.12)' : 'none',
                   }}
                 >
-                  <div style={{ fontSize: '12px', color: '#888', fontWeight: '500' }}>
+                  <div style={{ fontSize: '12px', color: '#666', fontWeight: '500' }}>
                     {day.toLocaleDateString('en-US', { weekday: 'short' })}
                   </div>
                   <div style={{ fontSize: '13px', color: 'white', fontWeight: '600' }}>
@@ -469,8 +470,8 @@ const Bookings = () => {
                       height: '60px',
                       padding: '8px',
                       fontSize: '12px',
-                      color: '#888',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                      color: '#666',
+                      borderBottom: '1px solid rgba(212, 175, 55, 0.12)',
                       textAlign: 'right',
                     }}
                   >
@@ -491,7 +492,7 @@ const Bookings = () => {
                     style={{
                       position: 'relative',
                       borderRight:
-                        dayIdx < weekDays.length - 1 ? '1px solid rgba(255, 255, 255, 0.06)' : 'none',
+                        dayIdx < weekDays.length - 1 ? '1px solid rgba(212, 175, 55, 0.12)' : 'none',
                     }}
                   >
                     {hourSlots.map(hour => (
@@ -499,7 +500,7 @@ const Bookings = () => {
                         key={hour}
                         style={{
                           height: '60px',
-                          borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                          borderBottom: '1px solid rgba(212, 175, 55, 0.12)',
                           position: 'relative',
                         }}
                       >
@@ -520,7 +521,7 @@ const Bookings = () => {
                                   left: '4px',
                                   right: '4px',
                                   backgroundColor: getBookingColor(booking.status),
-                                  borderRadius: '6px',
+                                  borderRadius: '10px',
                                   padding: '6px',
                                   fontSize: '11px',
                                   color: '#0a0a0a',
@@ -569,24 +570,24 @@ const Bookings = () => {
           {bookings.length === 0 ? (
             <div
               style={{
-                backgroundColor: '#0d0d0d',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                borderRadius: '12px',
+                backgroundColor: '#111111',
+                border: '1px solid rgba(212, 175, 55, 0.12)',
+                borderRadius: '14px',
                 padding: '48px 24px',
                 textAlign: 'center',
               }}
             >
-              <Calendar size={40} style={{ color: '#888', marginBottom: '16px' }} />
-              <p style={{ fontSize: '13px', color: '#888', margin: '0' }}>
+              <Calendar size={40} style={{ color: '#666', marginBottom: '16px' }} />
+              <p style={{ fontSize: '13px', color: '#666', margin: '0' }}>
                 No bookings found for the selected date range.
               </p>
             </div>
           ) : (
             <div
               style={{
-                backgroundColor: '#0d0d0d',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                borderRadius: '12px',
+                backgroundColor: '#111111',
+                border: '1px solid rgba(212, 175, 55, 0.12)',
+                borderRadius: '14px',
                 overflow: 'hidden',
               }}
             >
@@ -598,9 +599,9 @@ const Bookings = () => {
                   gap: '16px',
                   padding: '16px 24px',
                   backgroundColor: '#0a0a0a',
-                  borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                  borderBottom: '1px solid rgba(212, 175, 55, 0.12)',
                   fontSize: '12px',
-                  color: '#888',
+                  color: '#666',
                   fontWeight: '600',
                 }}
               >
@@ -622,12 +623,12 @@ const Bookings = () => {
                     gap: '16px',
                     padding: '16px 24px',
                     borderBottom:
-                      idx < bookings.length - 1 ? '1px solid rgba(255, 255, 255, 0.06)' : 'none',
+                      idx < bookings.length - 1 ? '1px solid rgba(212, 175, 55, 0.12)' : 'none',
                     alignItems: 'center',
                     transition: 'background-color 0.2s ease',
                   }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.backgroundColor = 'rgba(201, 168, 76, 0.05)';
+                    e.currentTarget.style.backgroundColor = 'rgba(212, 175, 55, 0.05)';
                   }}
                   onMouseLeave={e => {
                     e.currentTarget.style.backgroundColor = 'transparent';
@@ -640,7 +641,7 @@ const Bookings = () => {
                         width: '32px',
                         height: '32px',
                         borderRadius: '50%',
-                        backgroundColor: '#C9A84C',
+                        backgroundColor: '#D4AF37',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -665,7 +666,7 @@ const Bookings = () => {
                       href={`tel:${booking.phone}`}
                       style={{
                         fontSize: '13px',
-                        color: '#C9A84C',
+                        color: '#D4AF37',
                         textDecoration: 'none',
                         display: 'flex',
                         alignItems: 'center',
@@ -680,7 +681,7 @@ const Bookings = () => {
                       href={`mailto:${booking.email}`}
                       style={{
                         fontSize: '12px',
-                        color: '#888',
+                        color: '#666',
                         textDecoration: 'none',
                       }}
                     >
@@ -696,7 +697,7 @@ const Bookings = () => {
                     <div
                       style={{
                         fontSize: '12px',
-                        color: '#888',
+                        color: '#666',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '4px',
@@ -709,7 +710,7 @@ const Bookings = () => {
                   </div>
 
                   {/* Service */}
-                  <div style={{ fontSize: '13px', color: '#888', textTransform: 'capitalize' }}>
+                  <div style={{ fontSize: '13px', color: '#666', textTransform: 'capitalize' }}>
                     {booking.service_type}
                   </div>
 
@@ -717,7 +718,7 @@ const Bookings = () => {
                   <div>{getStatusBadge(booking.status)}</div>
 
                   {/* Source */}
-                  <div style={{ fontSize: '13px', color: '#888', textTransform: 'capitalize' }}>
+                  <div style={{ fontSize: '13px', color: '#666', textTransform: 'capitalize' }}>
                     {booking.source || 'web'}
                   </div>
                 </div>
@@ -756,26 +757,26 @@ const Bookings = () => {
   );
 };
 
-const StatCard = ({ label, value, color = '#C9A84C' }) => {
+const StatCard = ({ label, value, color = '#D4AF37' }) => {
   return (
     <div
       style={{
-        backgroundColor: '#0d0d0d',
-        border: '1px solid rgba(255, 255, 255, 0.06)',
-        borderRadius: '12px',
+        backgroundColor: '#111111',
+        border: '1px solid rgba(212, 175, 55, 0.12)',
+        borderRadius: '14px',
         padding: '20px',
         transition: 'all 0.2s ease',
       }}
       onMouseEnter={e => {
-        e.currentTarget.style.borderColor = `rgba(201, 168, 76, 0.3)`;
-        e.currentTarget.style.backgroundColor = 'rgba(201, 168, 76, 0.05)';
+        e.currentTarget.style.borderColor = `rgba(212, 175, 55, 0.3)`;
+        e.currentTarget.style.backgroundColor = 'rgba(212, 175, 55, 0.05)';
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
-        e.currentTarget.style.backgroundColor = '#0d0d0d';
+        e.currentTarget.style.borderColor = 'rgba(212, 175, 55, 0.12)';
+        e.currentTarget.style.backgroundColor = '#111111';
       }}
     >
-      <div style={{ fontSize: '12px', color: '#888', fontWeight: '500', marginBottom: '12px' }}>
+      <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', marginBottom: '12px' }}>
         {label}
       </div>
       <div style={{ fontSize: '32px', fontWeight: '600', color: color }}>

@@ -2,9 +2,9 @@ import { Phone, MessageSquare } from 'lucide-react';
 import { formatPhone, timeAgo } from '../lib/utils';
 
 function scoreColor(score) {
-  if (score >= 8) return '#16A34A';
-  if (score >= 5) return '#EAB308';
-  return '#DC2626';
+  if (score >= 8) return '#4ade80';
+  if (score >= 5) return '#fbbf24';
+  return '#f87171';
 }
 
 export default function LeadCard({ lead, onDragStart, onClick }) {
@@ -33,12 +33,12 @@ export default function LeadCard({ lead, onDragStart, onClick }) {
         transition: 'all 0.15s',
       }}
       onMouseEnter={e => {
-        e.currentTarget.style.background = '#141414';
-        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+        e.currentTarget.style.background = 'rgba(212,175,55,0.03)';
+        e.currentTarget.style.borderColor = 'rgba(212,175,55,0.2)';
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.background = '#0d0d0d';
-        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
+        e.currentTarget.style.background = '#111111';
+        e.currentTarget.style.borderColor = 'rgba(212,175,55,0.12)';
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -71,12 +71,12 @@ export default function LeadCard({ lead, onDragStart, onClick }) {
         marginTop: 4,
       }}>
         {lead.phone && lead.name && (
-          <span style={{ fontSize: 11, color: '#555' }}>
+          <span style={{ fontSize: 11, color: '#444' }}>
             {formatPhone(lead.phone)}
           </span>
         )}
         {lead.last_interaction && (
-          <span style={{ fontSize: 10, color: '#555', marginLeft: 'auto' }}>
+          <span style={{ fontSize: 10, color: '#444', marginLeft: 'auto' }}>
             {timeAgo(lead.last_interaction)}
           </span>
         )}

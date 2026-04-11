@@ -5,9 +5,9 @@ import { getTranscript } from '../lib/api';
 import { formatPhone, formatDuration, timeAgo } from '../lib/utils';
 
 function scoreColor(score) {
-  if (score >= 8) return '#16A34A';
-  if (score >= 5) return '#EAB308';
-  return '#DC2626';
+  if (score >= 8) return '#4ade80';
+  if (score >= 5) return '#fbbf24';
+  return '#f87171';
 }
 
 export default function CallCard({ call, clientId }) {
@@ -41,17 +41,17 @@ export default function CallCard({ call, clientId }) {
           cursor: 'pointer',
           transition: 'background 0.15s',
         }}
-        onMouseEnter={e => e.currentTarget.style.background = '#141414'}
+        onMouseEnter={e => e.currentTarget.style.background = 'rgba(212,175,55,0.03)'}
         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
       >
-        <Phone size={14} color="#888" />
-        <span style={{ fontSize: 12, color: '#888', minWidth: 70 }}>
+        <Phone size={14} color="#666" />
+        <span style={{ fontSize: 12, color: '#666', minWidth: 70 }}>
           {timeAgo(call.created_at)}
         </span>
         <span style={{ fontSize: 13, minWidth: 120 }}>
           {formatPhone(call.caller_phone || call.from_number)}
         </span>
-        <span style={{ fontSize: 12, color: '#888', minWidth: 60 }}>
+        <span style={{ fontSize: 12, color: '#666', minWidth: 60 }}>
           {formatDuration(call.duration)}
         </span>
         <StatusBadge status={call.outcome} type="outcome" />
@@ -80,12 +80,12 @@ export default function CallCard({ call, clientId }) {
       {expanded && (
         <div style={{
           padding: '0 16px 16px',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
+          borderTop: '1px solid rgba(212,175,55,0.08)',
         }}>
           {call.summary && (
             <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Summary</div>
-              <div style={{ fontSize: 13, color: '#e0d8c8', lineHeight: 1.6 }}>{call.summary}</div>
+              <div style={{ fontSize: 11, color: '#444', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Summary</div>
+              <div style={{ fontSize: 13, color: '#F5F5F0', lineHeight: 1.6 }}>{call.summary}</div>
             </div>
           )}
           <div style={{ marginTop: 12 }}>
@@ -101,18 +101,18 @@ export default function CallCard({ call, clientId }) {
               </button>
             ) : (
               <div>
-                <div style={{ fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Transcript</div>
+                <div style={{ fontSize: 11, color: '#444', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Transcript</div>
                 <pre style={{
                   fontSize: 12,
-                  color: '#888',
+                  color: '#aaa',
                   lineHeight: 1.6,
                   whiteSpace: 'pre-wrap',
                   fontFamily: 'inherit',
                   maxHeight: 300,
                   overflowY: 'auto',
-                  background: '#050505',
+                  background: '#0a0a0a',
                   padding: 12,
-                  borderRadius: 6,
+                  borderRadius: 14,
                 }}>
                   {typeof transcript === 'string' ? transcript : JSON.stringify(transcript, null, 2)}
                 </pre>

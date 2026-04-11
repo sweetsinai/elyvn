@@ -68,9 +68,10 @@ export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => 
       left: 0,
       top: 0,
       bottom: 0,
-      width: 240,
-      background: '#0d0d0d',
-      borderRight: '1px solid rgba(255,255,255,0.06)',
+      width: 260,
+      background: '#111111',
+      backdropFilter: 'blur(16px)',
+      borderRight: '1px solid rgba(212,175,55,0.12)',
       display: 'flex',
       flexDirection: 'column',
       zIndex: 50,
@@ -84,12 +85,13 @@ export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => 
         alignItems: 'center',
         gap: 10,
       }}>
-        <Zap size={20} color="#C9A84C" />
+        <Zap size={20} color="#D4AF37" />
         <span style={{
           fontSize: 18,
           fontWeight: 700,
-          letterSpacing: '0.08em',
-          color: '#C9A84C',
+          fontFamily: "'Cormorant Garamond', Georgia, serif",
+          letterSpacing: '0.12em',
+          color: '#D4AF37',
         }}>ELYVN</span>
       </div>
 
@@ -110,23 +112,23 @@ export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => 
                 alignItems: 'center',
                 gap: 10,
                 padding: '10px 12px',
-                borderRadius: 8,
+                borderRadius: 10,
                 fontSize: 13,
                 fontWeight: isActive ? 500 : 400,
-                color: isActive ? '#C9A84C' : '#888',
-                background: isActive ? 'rgba(201,168,76,0.15)' : 'transparent',
+                color: isActive ? '#D4AF37' : '#666',
+                background: isActive ? 'rgba(212,175,55,0.12)' : 'transparent',
                 transition: 'all 0.15s',
               }}
               onMouseEnter={e => {
                 if (!isActive) {
-                  e.currentTarget.style.background = '#141414';
+                  e.currentTarget.style.background = 'rgba(212,175,55,0.06)';
                   e.currentTarget.style.color = '#e0d8c8';
                 }
               }}
               onMouseLeave={e => {
                 if (!isActive) {
                   e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#888';
+                  e.currentTarget.style.color = '#666';
                 }
               }}
             >
@@ -146,7 +148,7 @@ export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => 
           fontSize: 10,
           textTransform: 'uppercase',
           letterSpacing: '0.06em',
-          color: '#555',
+          color: '#444',
           marginBottom: 10,
         }}>Connections</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -158,14 +160,14 @@ export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => 
                 alignItems: 'center',
                 gap: 8,
                 fontSize: 11,
-                color: '#888',
+                color: '#666',
               }}>
                 <div style={{
                   width: 6,
                   height: 6,
                   borderRadius: '50%',
-                  background: isUp ? '#16A34A' : '#DC2626',
-                  boxShadow: isUp ? '0 0 6px #16A34A' : 'none',
+                  background: isUp ? '#4ade80' : '#f87171',
+                  boxShadow: isUp ? '0 0 6px #4ade80' : '0 0 6px #f87171',
                 }} />
                 {conn.name}
               </div>

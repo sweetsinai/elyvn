@@ -86,12 +86,12 @@ export default function Onboard() {
     borderRadius: 16, padding: 32, maxWidth: 640, margin: '0 auto',
   };
   const inputStyle = {
-    width: '100%', padding: '10px 14px', fontSize: 14, borderRadius: 8,
+    width: '100%', padding: '10px 14px', fontSize: 14, borderRadius: 14,
     border: '1px solid var(--border)', background: 'var(--bg-input, #fff)',
     color: 'var(--text-primary)', boxSizing: 'border-box', outline: 'none',
   };
   const btnPrimary = {
-    padding: '12px 32px', background: 'linear-gradient(135deg, #7C3AED, #4F46E5)',
+    padding: '12px 32px', background: 'linear-gradient(135deg, #D4AF37, #9A7840)',
     color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600,
     cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1,
   };
@@ -118,7 +118,7 @@ export default function Onboard() {
   return (
     <div style={{ padding: '40px 20px' }}>
       <div style={{ textAlign: 'center', marginBottom: 32 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 300, color: 'var(--text-primary)', marginBottom: 4, fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
           Set Up Your AI Receptionist
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Step {step} of 4</p>
@@ -126,7 +126,7 @@ export default function Onboard() {
           {[1, 2, 3, 4].map(s => (
             <div key={s} style={{
               width: 48, height: 4, borderRadius: 2,
-              background: s <= step ? '#7C3AED' : 'var(--border)',
+              background: s <= step ? '#D4AF37' : 'var(--border)',
               transition: 'background 0.3s',
             }} />
           ))}
@@ -134,7 +134,7 @@ export default function Onboard() {
       </div>
 
       {error && (
-        <div style={{ maxWidth: 640, margin: '0 auto 16px', padding: '12px 16px', background: '#FEE2E2', borderRadius: 8, color: '#DC2626', fontSize: 14 }}>
+        <div style={{ maxWidth: 640, margin: '0 auto 16px', padding: '12px 16px', background: '#FEE2E2', borderRadius: 14, color: '#f87171', fontSize: 14 }}>
           {error}
         </div>
       )}
@@ -185,7 +185,7 @@ export default function Onboard() {
               <input value={svc.price} onChange={e => updateService(i, 'price', e.target.value)}
                 placeholder="$" style={{ ...inputStyle, flex: 0.5, textAlign: 'center' }} type="number" />
               {services.length > 1 && (
-                <button onClick={() => removeService(i)} style={{ border: 'none', background: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+                <button onClick={() => removeService(i)} style={{ border: 'none', background: 'none', color: '#f87171', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
               )}
             </div>
           ))}
