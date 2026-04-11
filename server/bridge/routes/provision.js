@@ -151,9 +151,35 @@ router.post('/', async (req, res, next) => {
       // Don't return — allow client creation without Retell
     }
 
-    // Step 2: Save client to database
+    // Step 2: Auto-provision dedicated phone number (Twilio + SIP trunk → Retell)
+    let provisionedNumber = null;
+    if (retellAgentId && process.env.TWILIO_ACCOUNT_SID) {
+      try {
+        const { provisionUnifiedNumber } = require('../utils/twilioProvisioning');
+        const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+          ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+          : process.env.BASE_URL || 'http://localhost:3001';
+
+        provisionedNumber = await provisionUnifiedNumber({
+          businessName: business_name,
+          retellSipUri: `sip:${retellAgentId}@in.retellai.com`,
+          smsWebhookUrl: `${baseUrl}/webhooks/telnyx`,
+          countryCode: 'US',
+          areaCode: area_code || undefined,
+        });
+        provisioning_status.phone_number = provisionedNumber.phoneNumber;
+        logger.info(`[provision] Dedicated number provisioned: ${provisionedNumber.phoneNumber}`);
+      } catch (err) {
+        provisioning_status.phone_error = err.message;
+        logger.warn(`[provision] Phone provisioning failed (non-fatal): ${err.message}`);
+        // Fall back to shared number
+      }
+    }
+
+    const phoneNumber = provisionedNumber?.phoneNumber || process.env.TWILIO_PHONE_NUMBER || null;
+
+    // Step 3: Save client to database
     try {
-      const twilioPhone = process.env.TWILIO_PHONE_NUMBER || null;
       await db.query(`
         INSERT INTO clients (
           id, business_name, owner_name, owner_phone, owner_email,
@@ -167,8 +193,8 @@ router.post('/', async (req, res, next) => {
         owner_phone,
         owner_email || null,
         retellAgentId || null,
-        twilioPhone,
-        twilioPhone,
+        phoneNumber,
+        phoneNumber,
         industry || null,
         timezone || 'UTC',
         avg_ticket || 0,
