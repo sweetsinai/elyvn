@@ -198,10 +198,12 @@ describe('migrations', () => {
   });
 
   describe('migration 006_indexes', () => {
-    it.skip('should create performance indexes', () => {
+    it('should create performance indexes', () => {
       const m001 = migrations.find(m => m.id === '001_base_tables');
+      const m005 = migrations.find(m => m.id === '005_outreach_tables');
       const m006 = migrations.find(m => m.id === '006_indexes');
       m001.up(db);
+      m005.up(db);
       m006.up(db);
 
       const indexes = db.prepare(
@@ -211,10 +213,12 @@ describe('migrations', () => {
       expect(indexes.length).toBeGreaterThanOrEqual(5);
     });
 
-    it.skip('should have index on calls.caller_phone', () => {
+    it('should have index on calls.caller_phone', () => {
       const m001 = migrations.find(m => m.id === '001_base_tables');
+      const m005 = migrations.find(m => m.id === '005_outreach_tables');
       const m006 = migrations.find(m => m.id === '006_indexes');
       m001.up(db);
+      m005.up(db);
       m006.up(db);
 
       const index = db.prepare(
