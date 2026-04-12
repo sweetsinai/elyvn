@@ -45,12 +45,7 @@ function validateEnv() {
     logger.warn(`[WARN] Missing recommended env vars: ${missingRecommended.join(', ')} — some features will be disabled`);
   }
   if (!process.env.ELYVN_API_KEY) {
-    if (process.env.NODE_ENV === 'production') {
-      logger.error('[FATAL] ELYVN_API_KEY must be set in production — API endpoints are UNPROTECTED');
-      process.exit(1);
-    } else {
-      logger.warn('[WARN] ELYVN_API_KEY not set — API endpoints are UNPROTECTED. Set this before going live!');
-    }
+    logger.warn('[WARN] ELYVN_API_KEY not set — API endpoints rely on JWT auth only. Set this for API key authentication.');
   }
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
     logger.error('[FATAL] JWT_SECRET must be set and at least 32 characters for security');
