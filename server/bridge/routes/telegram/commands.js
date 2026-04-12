@@ -875,6 +875,69 @@ async function handleCommand(db, message) {
     // ═══════════════════════════════════════════════════════
     // /help — Dynamic command list based on plan
     // ═══════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════
+    // /ask — AI answers questions about your business data
+    // ═══════════════════════════════════════════════════════
+    case '/ask': {
+      const question = text.replace(/^\/ask\s*/i, '').trim();
+      if (!question) {
+        await telegram.sendMessage(chatId, 'Ask me anything about your business!\n\nExamples:\n• /ask how many calls this week?\n• /ask which leads are hot?\n• /ask what was my best day?\n• /ask summarize today');
+        break;
+      }
+
+      await telegram.sendMessage(chatId, '🤔 Thinking...');
+
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+        // Gather business data for context
+        const [callsToday, callsWeek, leadsActive, messagesWeek, bookingsWeek] = await Promise.all([
+          db.query(`SELECT COUNT(*) as c, SUM(CASE WHEN outcome='booked' THEN 1 ELSE 0 END) as booked FROM calls WHERE client_id = ? AND date(created_at) = ?`, [client.id, today], 'get'),
+          db.query(`SELECT COUNT(*) as c, SUM(CASE WHEN outcome='booked' THEN 1 ELSE 0 END) as booked, AVG(score) as avg_score FROM calls WHERE client_id = ? AND created_at >= ?`, [client.id, weekAgo], 'get'),
+          db.query(`SELECT stage, COUNT(*) as c FROM leads WHERE client_id = ? AND stage NOT IN ('lost','completed') GROUP BY stage`, [client.id]),
+          db.query(`SELECT COUNT(*) as c FROM messages WHERE client_id = ? AND created_at >= ?`, [client.id, weekAgo], 'get'),
+          db.query(`SELECT COUNT(*) as c FROM appointments WHERE client_id = ? AND created_at >= ?`, [client.id, weekAgo], 'get'),
+        ]);
+
+        const recentCalls = await db.query(
+          `SELECT caller_name, caller_phone, outcome, score, summary, created_at FROM calls WHERE client_id = ? ORDER BY created_at DESC LIMIT 5`,
+          [client.id]
+        );
+
+        const hotLeads = await db.query(
+          `SELECT name, phone, stage, score FROM leads WHERE client_id = ? AND stage IN ('hot','warm') ORDER BY score DESC LIMIT 5`,
+          [client.id]
+        );
+
+        const context = `BUSINESS: ${esc(client.business_name)}
+TODAY: ${callsToday.c || 0} calls (${callsToday.booked || 0} booked)
+THIS WEEK: ${callsWeek.c || 0} calls (${callsWeek.booked || 0} booked), avg score ${(callsWeek.avg_score || 0).toFixed(1)}/10
+MESSAGES THIS WEEK: ${messagesWeek.c || 0}
+BOOKINGS THIS WEEK: ${bookingsWeek.c || 0}
+ACTIVE LEADS: ${(leadsActive || []).map(l => `${l.stage}: ${l.c}`).join(', ') || 'none'}
+RECENT CALLS:\n${(recentCalls || []).map(c => `  ${c.created_at?.split('T')[0]} — ${c.caller_name || c.caller_phone || '?'} — ${c.outcome} (score: ${c.score || '?'}) ${c.summary ? '— ' + c.summary.substring(0, 80) : ''}`).join('\n') || '  none'}
+HOT LEADS:\n${(hotLeads || []).map(l => `  ${l.name || l.phone} — ${l.stage} (score: ${l.score})`).join('\n') || '  none'}`;
+
+        const Anthropic = require('@anthropic-ai/sdk');
+        const anthropic = new Anthropic();
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 500,
+          system: `You are ELYVN's AI assistant helping a business owner understand their data. Answer concisely using the data provided. Use numbers and specifics. If the data doesn't contain what they're asking, say so honestly. Format for Telegram (short paragraphs, no markdown tables).`,
+          messages: [{ role: 'user', content: `BUSINESS DATA:\n${context}\n\nQUESTION: ${question}` }],
+        });
+
+        const answer = response.content[0]?.text || 'Sorry, I couldn\'t generate an answer.';
+        await telegram.sendMessage(chatId, answer);
+      } catch (err) {
+        logger.error('[telegram] /ask error:', err.message);
+        await telegram.sendMessage(chatId, 'Sorry, something went wrong. Try again in a moment.');
+      }
+      break;
+    }
+
     case '/help': {
       const helpText = telegram.getHelpText(client.plan || 'starter');
       await telegram.sendMessage(chatId, helpText);

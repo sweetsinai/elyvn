@@ -221,6 +221,7 @@ async function sendDocument(chatId, fileContent, filename, caption = '') {
 
 const PLAN_COMMANDS = {
   starter: [
+    { command: 'ask', description: 'Ask AI about your business data' },
     { command: 'today', description: "Today's schedule" },
     { command: 'stats', description: 'Last 7 days stats' },
     { command: 'calls', description: 'Recent calls' },
@@ -234,6 +235,7 @@ const PLAN_COMMANDS = {
     { command: 'help', description: 'Show commands' },
   ],
   pro: [
+    { command: 'ask', description: 'Ask AI about your business data' },
     { command: 'today', description: "Today's schedule" },
     { command: 'stats', description: 'Last 7 days stats' },
     { command: 'calls', description: 'Recent calls' },
@@ -248,6 +250,7 @@ const PLAN_COMMANDS = {
     { command: 'help', description: 'Show commands' },
   ],
   premium: [
+    { command: 'ask', description: 'Ask AI about your business data' },
     { command: 'today', description: "Today's schedule" },
     { command: 'stats', description: 'Last 7 days stats' },
     { command: 'calls', description: 'Recent calls' },
@@ -287,7 +290,7 @@ async function setClientCommands(chatId, plan) {
 }
 
 function getOnboardingLink(clientId) {
-  const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'ElyvnBot';
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'ELYVNupdatebot';
   return `https://t.me/${botUsername}?start=${clientId}`;
 }
 
