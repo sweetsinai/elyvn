@@ -1494,8 +1494,10 @@ const migrations = [
         db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_referral_code ON clients(referral_code) WHERE referral_code IS NOT NULL");
       } catch (_) { /* index may already exist */ }
 
-      // Backfill business_name from name where business_name is NULL
-      db.exec("UPDATE clients SET business_name = name WHERE business_name IS NULL AND name IS NOT NULL");
+      // Backfill business_name from name where business_name is NULL (only if name column exists)
+      if (cols.includes('name')) {
+        db.exec("UPDATE clients SET business_name = name WHERE business_name IS NULL AND name IS NOT NULL");
+      }
 
       getLogger().info('[migrations] 047: signup columns added to clients');
     },
