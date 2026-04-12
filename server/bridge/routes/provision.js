@@ -69,7 +69,7 @@ async function createRetellAgent(businessName, knowledgeBaseSummary, voiceId, la
   const options = {
     hostname: 'api.retellai.com',
     port: 443,
-    path: '/v2/create-agent',
+    path: '/create-agent',
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
