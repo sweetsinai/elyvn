@@ -73,6 +73,9 @@ function setupMiddleware(app) {
   const ALLOWED_ORIGINS = [
     'https://elyvn.ai',
     'https://app.elyvn.ai',
+    'https://dashboard-nine-ebon-97.vercel.app',
+    ...(process.env.DASHBOARD_URL ? [process.env.DASHBOARD_URL] : []),
+    ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean) : []),
     process.env.NODE_ENV !== 'production' && 'http://localhost:3000',
     process.env.NODE_ENV !== 'production' && 'http://localhost:8081',
   ].filter(Boolean);

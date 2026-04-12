@@ -54,17 +54,20 @@ function csrfProtection(req, res, next) {
   // 3. Origin matches allowed origins
   const origin = req.headers['origin'];
   if (origin) {
-    const allowed = (process.env.CORS_ORIGINS || '')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
+    const allowed = [
+      'https://elyvn.ai',
+      'https://app.elyvn.ai',
+      'https://dashboard-nine-ebon-97.vercel.app',
+      ...(process.env.DASHBOARD_URL ? [process.env.DASHBOARD_URL] : []),
+      ...(process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
+    ];
 
-    if (allowed.length > 0 && allowed.includes(origin)) {
+    if (allowed.includes(origin)) {
       return next();
     }
 
     // In dev with no CORS_ORIGINS configured, allow through
-    if (allowed.length === 0 && process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV !== 'production') {
       return next();
     }
   }
