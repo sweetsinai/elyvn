@@ -1700,4 +1700,22 @@ migrations.push({
   down() {},
 });
 
+// ── 051: Add all missing columns to calls table ──
+migrations.push({
+  id: '051_calls_all_missing_columns',
+  description: 'Add updated_at, caller_name, outcome, score, sentiment to calls if missing',
+  up(db) {
+    const cols = db.prepare("PRAGMA table_info('calls')").all().map(c => c.name);
+    const add = (name, type) => {
+      if (!cols.includes(name)) db.exec(`ALTER TABLE calls ADD COLUMN ${name} ${type}`);
+    };
+    add('updated_at', 'TEXT');
+    add('caller_name', 'TEXT');
+    add('outcome', 'TEXT');
+    add('score', 'INTEGER');
+    add('sentiment', 'TEXT');
+  },
+  down() {},
+});
+
 module.exports = { runMigrations, rollbackMigration, migrations };
