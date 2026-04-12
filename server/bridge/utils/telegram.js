@@ -219,54 +219,22 @@ async function sendDocument(chatId, fileContent, filename, caption = '') {
 
 // --- Plan-based command menus ---
 
+// Same simple menu for every client — only tested, working features
+const CLIENT_COMMANDS = [
+  { command: 'status', description: 'Your dashboard — calls, leads, bookings' },
+  { command: 'calls', description: 'Recent calls' },
+  { command: 'leads', description: 'Your leads' },
+  { command: 'today', description: "Today's schedule" },
+  { command: 'ask', description: 'Ask AI anything about your business' },
+  { command: 'pause', description: 'Pause AI answering' },
+  { command: 'resume', description: 'Resume AI answering' },
+  { command: 'help', description: 'Show commands' },
+];
+
 const PLAN_COMMANDS = {
-  starter: [
-    { command: 'ask', description: 'Ask AI about your business data' },
-    { command: 'today', description: "Today's schedule" },
-    { command: 'stats', description: 'Last 7 days stats' },
-    { command: 'calls', description: 'Recent calls' },
-    { command: 'leads', description: 'Hot leads' },
-    { command: 'complete', description: 'Mark job done (+phone)' },
-    { command: 'reviewlink', description: 'Set Google review link' },
-    { command: 'pause', description: 'Pause AI answering' },
-    { command: 'resume', description: 'Resume AI answering' },
-    { command: 'digest', description: 'Daily summary only (silence alerts)' },
-    { command: 'alerts', description: 'Get every call/SMS alert' },
-    { command: 'help', description: 'Show commands' },
-  ],
-  pro: [
-    { command: 'ask', description: 'Ask AI about your business data' },
-    { command: 'today', description: "Today's schedule" },
-    { command: 'stats', description: 'Last 7 days stats' },
-    { command: 'calls', description: 'Recent calls' },
-    { command: 'leads', description: 'Hot leads' },
-    { command: 'brain', description: 'AI Brain activity feed' },
-    { command: 'complete', description: 'Mark job done (+phone)' },
-    { command: 'reviewlink', description: 'Set Google review link' },
-    { command: 'pause', description: 'Pause AI answering' },
-    { command: 'resume', description: 'Resume AI answering' },
-    { command: 'digest', description: 'Daily summary only (silence alerts)' },
-    { command: 'alerts', description: 'Get every call/SMS alert' },
-    { command: 'help', description: 'Show commands' },
-  ],
-  premium: [
-    { command: 'ask', description: 'Ask AI about your business data' },
-    { command: 'today', description: "Today's schedule" },
-    { command: 'stats', description: 'Last 7 days stats' },
-    { command: 'calls', description: 'Recent calls' },
-    { command: 'leads', description: 'Hot leads' },
-    { command: 'brain', description: 'AI Brain activity feed' },
-    { command: 'outreach', description: 'Outreach stats (7 days)' },
-    { command: 'scrape', description: 'Scrape Google Maps (industry city)' },
-    { command: 'prospects', description: 'Top 10 prospects' },
-    { command: 'complete', description: 'Mark job done (+phone)' },
-    { command: 'reviewlink', description: 'Set Google review link' },
-    { command: 'pause', description: 'Pause AI answering' },
-    { command: 'resume', description: 'Resume AI answering' },
-    { command: 'digest', description: 'Daily summary only (silence alerts)' },
-    { command: 'alerts', description: 'Get every call/SMS alert' },
-    { command: 'help', description: 'Show commands' },
-  ],
+  starter: CLIENT_COMMANDS,
+  pro: CLIENT_COMMANDS,
+  premium: CLIENT_COMMANDS,
 };
 
 async function setClientCommands(chatId, plan) {
