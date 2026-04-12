@@ -38,6 +38,7 @@ jobs:
           TWILIO_AUTH_TOKEN: test-twilio-auth-token-for-ci
           TWILIO_ACCOUNT_SID: ACtest123456789
           STRIPE_WEBHOOK_SECRET: whsec_test_stripe_secret_for_ci
+          DODO_WEBHOOK_SECRET: whsec_test_dodo_secret
           TELEGRAM_WEBHOOK_SECRET: test-telegram-secret-for-ci
 
   lint:
