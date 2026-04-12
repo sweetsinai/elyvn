@@ -161,44 +161,49 @@ async function initializeDatabase(app) {
  * @param {{ rateLimiterInterval: NodeJS.Timer }} routeHandles - cleanup handles from mountRoutes
  */
 function initializeServer(app, server, routeHandles) {
-  const db = app.locals.db;
+  // db resolved lazily — initializeDatabase() is async and may not have finished yet
+  const getDb = () => app.locals.db;
   const PORT = process.env.PORT || 3001;
 
-  // Graceful shutdown
-  const { initGracefulShutdown } = require('../utils/gracefulShutdown');
-  initGracefulShutdown(server, db);
+  // Wait for DB to be ready before initializing services that need it
+  // initializeDatabase is async — poll until app.locals.db is set
+  const waitForDb = () => new Promise((resolve) => {
+    const check = () => {
+      if (app.locals.db) return resolve(app.locals.db);
+      setTimeout(check, 100);
+    };
+    check();
+  });
 
-  // Initialize WebSocket
-  const { initWebSocket } = require('../utils/websocket');
-  initWebSocket(server, db);
+  waitForDb().then((db) => {
+    // Graceful shutdown
+    const { initGracefulShutdown } = require('../utils/gracefulShutdown');
+    initGracefulShutdown(server, db);
 
-  // Initialize metrics flush & threshold alerting
-  const { initMetricsFlush } = require('../utils/metrics');
-  if (db) initMetricsFlush(db);
+    // Initialize WebSocket
+    const { initWebSocket } = require('../utils/websocket');
+    initWebSocket(server, db);
 
-  // Initialize Telegram scheduler
-  const { initScheduler } = require('../utils/scheduler');
-  if (db) initScheduler(db);
+    // Initialize metrics flush & threshold alerting
+    const { initMetricsFlush } = require('../utils/metrics');
+    initMetricsFlush(db);
 
-  // Start backup scheduler
-  if (db) {
+    // Initialize Telegram scheduler
+    const { initScheduler } = require('../utils/scheduler');
+    initScheduler(db);
+
+    // Start backup scheduler
     const { scheduleBackups } = require('../utils/backup');
     scheduleBackups(db._path, 24, db);
-  }
 
-  // Data retention is scheduled exclusively by scheduler.js at 3 AM — do not double-schedule here.
-
-  // Start job queue processor
-  let jobProcessorInterval;
-  if (db) {
+    // Start job queue processor
     const { processJobs } = require('../utils/jobQueue');
     const { sendSMS } = require('../utils/sms');
-    const { triggerSpeedSequence } = require('../utils/speed-to-lead');
     const { createJobHandlers } = require('../utils/jobHandlers');
 
     const jobHandlers = createJobHandlers(db, sendSMS, captureException);
 
-    jobProcessorInterval = setInterval(() => {
+    const jobProcessorInterval = setInterval(() => {
       try {
         processJobs(db, jobHandlers).catch(err => {
           logger.error('[jobQueue] Processing error:', err.message);
@@ -213,48 +218,41 @@ function initializeServer(app, server, routeHandles) {
         }
       }
     }, JOB_PROCESSOR_INTERVAL);
-  }
 
-  // Start outbound webhook delivery processor
-  if (db) {
+    // Start outbound webhook delivery processor
     const { startProcessor: startWebhookProcessor } = require('../utils/webhookQueue');
     startWebhookProcessor();
-  }
 
-  // Auto-classify replies
-  const { autoClassifyReplies } = require('../utils/autoClassify');
-  const autoClassifyInterval = setInterval(async () => {
-    try {
-      const unclassified = await db.query(`
-        SELECT COUNT(*) as c FROM emails_sent
-        WHERE reply_text IS NOT NULL AND reply_classification IS NULL
-      `, [], 'get');
-      if (unclassified.c > 0) {
-        logger.info(`[auto-classify] Found ${unclassified.c} unclassified replies, triggering...`);
-        try {
-          const result = await autoClassifyReplies(db);
-          logger.info(`[auto-classify] Completed: ${result.classified} classified`);
-        } catch (err) {
-          logger.error('[auto-classify] Processing error:', err.message);
-          if (captureException) {
-            captureException(err, { context: 'auto-classify.processing' });
+    // Auto-classify replies
+    const { autoClassifyReplies } = require('../utils/autoClassify');
+    const autoClassifyInterval = setInterval(async () => {
+      try {
+        const unclassified = await db.query(`
+          SELECT COUNT(*) as c FROM emails_sent
+          WHERE reply_text IS NOT NULL AND reply_classification IS NULL
+        `, [], 'get');
+        if (unclassified.c > 0) {
+          logger.info(`[auto-classify] Found ${unclassified.c} unclassified replies, triggering...`);
+          try {
+            const result = await autoClassifyReplies(db);
+            logger.info(`[auto-classify] Completed: ${result.classified} classified`);
+          } catch (err) {
+            logger.error('[auto-classify] Processing error:', err.message);
+            if (captureException) captureException(err, { context: 'auto-classify.processing' });
           }
         }
+      } catch (err) {
+        logger.error('[auto-classify] Periodic check error:', err.message);
+        if (captureException) captureException(err, { context: 'auto-classify.periodic' });
       }
-    } catch (err) {
-      logger.error('[auto-classify] Periodic check error:', err.message);
-      if (captureException) {
-        captureException(err, { context: 'auto-classify.periodic' });
-      }
-    }
-  }, AUTO_CLASSIFY_INTERVAL_MS);
+    }, AUTO_CLASSIFY_INTERVAL_MS);
 
-  // Register timers for graceful shutdown
-  const { onShutdown } = require('../utils/gracefulShutdown');
-  onShutdown(async () => {
-    if (routeHandles.rateLimiterInterval) clearInterval(routeHandles.rateLimiterInterval);
-    if (jobProcessorInterval) clearInterval(jobProcessorInterval);
-    if (autoClassifyInterval) clearInterval(autoClassifyInterval);
+    // Register timers for graceful shutdown
+    const { onShutdown } = require('../utils/gracefulShutdown');
+    onShutdown(async () => {
+      if (routeHandles.rateLimiterInterval) clearInterval(routeHandles.rateLimiterInterval);
+      clearInterval(jobProcessorInterval);
+      clearInterval(autoClassifyInterval);
     try {
       const { stopProcessor: stopWebhookProcessor } = require('../utils/webhookQueue');
       stopWebhookProcessor();
@@ -285,18 +283,21 @@ function initializeServer(app, server, routeHandles) {
     } catch (err) {
       logger.error('[shutdown] Error cleaning up SMS timers:', err.message);
     }
-  });
+    });
 
-  // Set Telegram webhook on startup
-  if (process.env.TELEGRAM_BOT_TOKEN) {
-    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
-      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : process.env.BASE_URL || `http://localhost:${PORT}`;
-    const { setWebhook } = require('../utils/telegram');
-    setWebhook(`${baseUrl}/webhooks/telegram`).catch(err =>
-      logger.error('[startup] Telegram setWebhook failed (non-fatal):', err.message)
-    );
-  }
+    // Set Telegram webhook
+    if (process.env.TELEGRAM_BOT_TOKEN) {
+      const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+        : process.env.BASE_URL || `http://localhost:${PORT}`;
+      const { setWebhook } = require('../utils/telegram');
+      setWebhook(`${baseUrl}/webhooks/telegram`).catch(err =>
+        logger.error('[startup] Telegram setWebhook failed (non-fatal):', err.message)
+      );
+    }
+
+    logger.info('[startup] All services initialized (db ready)');
+  }); // end waitForDb().then()
 }
 
 module.exports = { alertCriticalError, validateEnv, initializeDatabase, initializeServer };
