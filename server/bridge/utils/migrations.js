@@ -1670,4 +1670,17 @@ migrations.push({
   down() { /* data deletion is irreversible */ },
 });
 
+// ── 049: Set password for provisioned ELYVN admin account ──
+migrations.push({
+  id: '049_set_admin_password',
+  description: 'Set login password for the provisioned ELYVN admin client',
+  up(db) {
+    // Password: Elyvn2026 (scrypt N=16384, r=8, p=1)
+    const hash = '3849d612f375a466e38c67ef5e61e85d:191543809136ca82520c01ce53a761f85a63e8c7b7002bfae8ee2e2d2f8435381759b7e540bfcb5d7da8193bc08fe3e1db94d7fdd3abdef25844bb8a0cf016d9';
+    const result = db.prepare("UPDATE clients SET password_hash = ?, email_verified = 1 WHERE owner_email = 'ssohangowda@gmail.com'").run(hash);
+    getLogger().info(`[migrations] 049: set admin password (${result.changes} rows)`);
+  },
+  down() {},
+});
+
 module.exports = { runMigrations, rollbackMigration, migrations };
