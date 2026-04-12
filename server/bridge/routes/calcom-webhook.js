@@ -420,7 +420,7 @@ async function handleBookingRescheduled(db, payload) {
       // Reschedule review request if client has a review link
       if (endTime && appt.phone) {
         try {
-          const client = await db.query('SELECT google_review_link, twilio_phone, business_name, name FROM clients WHERE id = ?', [appt.client_id], 'get');
+          const client = await db.query('SELECT google_review_link, twilio_phone, business_name FROM clients WHERE id = ?', [appt.client_id], 'get');
           if (client?.google_review_link) {
             const { enqueueJob } = require('../utils/jobQueue');
             const reviewAt = new Date(new Date(endTime).getTime() + 2 * 60 * 60 * 1000).toISOString();

@@ -40,7 +40,7 @@ router.post('/', validateBody(LoginSchema), async (req, res, next) => {
 
   try {
     const client = await db.query(
-      'SELECT id, name, owner_email, password_hash, plan, subscription_status FROM clients WHERE owner_email = ?',
+      'SELECT id, business_name, owner_email, password_hash, plan, subscription_status FROM clients WHERE owner_email = ?',
       [email.toLowerCase().trim()],
       'get'
     );

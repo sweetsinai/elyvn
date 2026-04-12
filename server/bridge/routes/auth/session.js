@@ -23,7 +23,7 @@ router.get('/me', async (req, res, next) => {
 
   try {
     const client = await db.query(
-      'SELECT id, name, owner_name, owner_email, owner_phone, plan, subscription_status, dodo_customer_id, industry, email_verified, created_at FROM clients WHERE id = ?',
+      'SELECT id, business_name, owner_name, owner_email, owner_phone, plan, subscription_status, dodo_customer_id, industry, email_verified, created_at FROM clients WHERE id = ?',
       [payload.clientId],
       'get'
     );
