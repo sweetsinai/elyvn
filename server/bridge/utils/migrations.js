@@ -1649,4 +1649,25 @@ migrations.push({
   },
 });
 
+// ── 048: Clean up test data — remove old test clients ──
+migrations.push({
+  id: '048_cleanup_test_data',
+  description: 'Remove old test clients and their data (WeBrakes, duplicate elyvn)',
+  up(db) {
+    const oldIds = [
+      '1a72f414-375d-48f7-809d-b1ecc444cd91',
+      'a11fca87-de51-4f4c-9151-4aee804e16ec',
+    ];
+    const tables = ['leads', 'calls', 'messages', 'followups', 'appointments', 'job_queue', 'emails_sent', 'prospects', 'campaigns', 'referrals', 'conversations'];
+    for (const id of oldIds) {
+      for (const t of tables) {
+        try { db.prepare(`DELETE FROM ${t} WHERE client_id = ?`).run(id); } catch (_) {}
+      }
+      db.prepare('DELETE FROM clients WHERE id = ?').run(id);
+    }
+    getLogger().info('[migrations] 048: cleaned up test data');
+  },
+  down() { /* data deletion is irreversible */ },
+});
+
 module.exports = { runMigrations, rollbackMigration, migrations };
