@@ -6,7 +6,7 @@
 module.exports = {
   // ===== API & Network Timeouts =====
   // External service request timeouts (Retell, Anthropic, etc.)
-  ANTHROPIC_TIMEOUT: process.env.ANTHROPIC_TIMEOUT ? parseInt(process.env.ANTHROPIC_TIMEOUT) : 30000, // Anthropic API call timeout (30 seconds)
+  ANTHROPIC_TIMEOUT: process.env.ANTHROPIC_TIMEOUT ? parseInt(process.env.ANTHROPIC_TIMEOUT) : 45000, // Anthropic API call timeout (45 seconds)
   API_TIMEOUT_MS: 5000,           // Generic API call timeout (5 seconds)
   FETCH_TIMEOUT: process.env.FETCH_TIMEOUT ? parseInt(process.env.FETCH_TIMEOUT) : 5000,  // Generic fetch timeout for scraping (5 seconds)
   RETELL_CALL_TIMEOUT_MS: 15000,  // Retell outbound call creation timeout (15 seconds)
@@ -96,7 +96,7 @@ module.exports = {
   TRANSFER_VOICEMAIL_MAX_LENGTH_S: 120, // Max voicemail recording length (2 minutes)
 
   // ===== Graceful Shutdown =====
-  GRACEFUL_SHUTDOWN_TIMEOUT_MS: 5000, // Force shutdown after 5 seconds of waiting
+  GRACEFUL_SHUTDOWN_TIMEOUT_MS: 15000, // Force shutdown after 15 seconds of waiting
 
   // ===== Telegram Callback Rate Limiting =====
   TELEGRAM_CALLBACK_RATE_LIMIT: 10,      // Max callbacks per minute per chatId

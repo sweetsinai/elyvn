@@ -16,6 +16,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { logger } = require('../logger');
 const config = require('../config');
+const { sanitizeForPrompt } = require('../brain');
 
 const client = new Anthropic();
 
@@ -245,19 +246,29 @@ async function runAgent(agentType, userMessage, options = {}) {
 async function receptionistDecide(context) {
   const { client: bizClient, lead, eventType, eventData, timeline, insights, knowledgeBase, guardrails } = context;
 
+  const safeEventData = JSON.stringify(eventData).substring(0, 2000).replace(/Human:|Assistant:|SYSTEM:/gi, '');
+  const safeName = sanitizeForPrompt(lead?.name, 100) || 'Unknown';
+  const safePhone = sanitizeForPrompt(lead?.phone, 20);
+  const safeBizName = sanitizeForPrompt(bizClient?.business_name, 100) || 'Unknown';
+  const safeOwner = sanitizeForPrompt(bizClient?.owner_name, 100) || 'Unknown';
+  const safeTimeline = (timeline || []).slice(-15).map(t => {
+    const safeSummary = sanitizeForPrompt(t.summary || t.body || t.content || '', 100);
+    return `[${t.timestamp}] ${t.type}: ${safeSummary}`;
+  }).join('\n') || 'No history';
+
   const userMessage = `EVENT: ${eventType}
-EVENT DATA: ${JSON.stringify(eventData).substring(0, 2000)}
+EVENT DATA: ${safeEventData}
 
-LEAD: ${lead ? `${lead.name || 'Unknown'} (${lead.phone}) — Score: ${lead.score || 0}/10 — Stage: ${lead.stage}` : 'New lead'}
+LEAD: ${lead ? `${safeName} (${safePhone}) — Score: ${lead.score || 0}/10 — Stage: ${lead.stage}` : 'New lead'}
 
-BUSINESS: ${bizClient?.business_name || 'Unknown'} | Owner: ${bizClient?.owner_name || 'Unknown'}
+BUSINESS: ${safeBizName} | Owner: ${safeOwner}
 Calendar: ${bizClient?.calcom_booking_link || 'Not configured'}
 
 KNOWLEDGE BASE:
 ${(knowledgeBase || '').substring(0, 2000)}
 
 TIMELINE (last 15 interactions):
-${(timeline || []).slice(-15).map(t => `[${t.timestamp}] ${t.type}: ${(t.summary || t.body || t.content || '').substring(0, 100)}`).join('\n') || 'No history'}
+${safeTimeline}
 
 INSIGHTS:
 - Total interactions: ${insights?.totalInteractions || 0}
@@ -280,11 +291,11 @@ async function outreachCompose(prospect, bizClient) {
   const userMessage = `Write a cold email for:
 
 PROSPECT:
-- Business: ${prospect.business_name || 'Unknown'}
-- Industry: ${prospect.industry || 'service business'}
-- City: ${prospect.city || 'Unknown'}${prospect.state ? ', ' + prospect.state : ''}
+- Business: ${sanitizeForPrompt(prospect.business_name, 100) || 'Unknown'}
+- Industry: ${sanitizeForPrompt(prospect.industry, 50) || 'service business'}
+- City: ${sanitizeForPrompt(prospect.city, 50) || 'Unknown'}${prospect.state ? ', ' + sanitizeForPrompt(prospect.state, 30) : ''}
 - Rating: ${prospect.rating || 'N/A'}/5 (${prospect.review_count || 0} reviews)
-- Website: ${prospect.website || 'N/A'}
+- Website: ${sanitizeForPrompt(prospect.website, 100) || 'N/A'}
 
 SENDER:
 - Name: ${config.outreach.senderName}
@@ -302,8 +313,8 @@ Generate two subject lines for A/B testing and the email body.`;
 async function qualifyReply(subject, body) {
   const userMessage = `Classify this email reply:
 
-SUBJECT: ${(subject || '').substring(0, 200)}
-BODY: ${(body || '').substring(0, 1000)}
+SUBJECT: ${sanitizeForPrompt(subject, 200)}
+BODY: ${sanitizeForPrompt(body, 1000)}
 
 Return JSON: { "classification": "INTERESTED|QUESTION|NOT_INTERESTED|UNSUBSCRIBE", "confidence": 0.0-1.0, "summary": "..." }`;
 
@@ -316,11 +327,11 @@ Return JSON: { "classification": "INTERESTED|QUESTION|NOT_INTERESTED|UNSUBSCRIBE
 async function scheduleOptimize(lead, interactions) {
   const userMessage = `Determine the optimal follow-up for this lead:
 
-LEAD: ${lead.name || 'Unknown'} — Stage: ${lead.stage} — Score: ${lead.score || 0}/10
-Phone: ${lead.phone}
+LEAD: ${sanitizeForPrompt(lead.name, 100) || 'Unknown'} — Stage: ${lead.stage} — Score: ${lead.score || 0}/10
+Phone: ${sanitizeForPrompt(lead.phone, 20)}
 
 RECENT INTERACTIONS:
-${(interactions || []).slice(-10).map(i => `[${i.timestamp}] ${i.type}: ${(i.summary || i.body || '').substring(0, 80)}`).join('\n') || 'None'}
+${(interactions || []).slice(-10).map(i => `[${i.timestamp}] ${i.type}: ${sanitizeForPrompt(i.summary || i.body || '', 80)}`).join('\n') || 'None'}
 
 Current time: ${new Date().toISOString()}
 

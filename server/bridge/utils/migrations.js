@@ -1469,6 +1469,38 @@ const migrations = [
       getLogger().info(`[migrations] 044: conversations table created, ${groups.length} conversations backfilled, delivery_status added`);
     },
   },
+
+  // ─── 047: Add signup-related columns to clients ─────────────────────────
+  {
+    id: '047_signup_columns',
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+      const addCol = (name, type) => {
+        if (!cols.includes(name)) {
+          db.exec(`ALTER TABLE clients ADD COLUMN ${name} ${type}`);
+        }
+      };
+      addCol('referral_code', 'TEXT');
+      addCol('referred_by', 'TEXT');
+      addCol('onboarding_step', 'INTEGER DEFAULT 0');
+      addCol('onboarding_completed', 'INTEGER DEFAULT 0');
+      addCol('email_verified', 'INTEGER DEFAULT 0');
+      addCol('verification_token', 'TEXT');
+      addCol('verification_expires', 'TEXT');
+      addCol('password_hash', 'TEXT');
+
+      // Create unique index on referral_code if it doesn't exist
+      try {
+        db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_referral_code ON clients(referral_code) WHERE referral_code IS NOT NULL");
+      } catch (_) { /* index may already exist */ }
+
+      // Backfill business_name from name where business_name is NULL
+      db.exec("UPDATE clients SET business_name = name WHERE business_name IS NULL AND name IS NOT NULL");
+
+      getLogger().info('[migrations] 047: signup columns added to clients');
+    },
+    down() { /* SQLite cannot drop columns */ },
+  },
 ];
 
 /**

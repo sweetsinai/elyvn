@@ -36,7 +36,13 @@ const leadLocks = new Map();
  */
 function sanitizeForPrompt(str, maxLen = 200) {
   if (!str) return '';
-  return String(str).replace(/[\r\n\t]/g, ' ').replace(/[<>{}]/g, '').substring(0, maxLen);
+  return String(str)
+    .replace(/[\r\n\t]/g, ' ')
+    .replace(/[<>{}]/g, '')
+    .replace(/Human:|Assistant:|SYSTEM:|<\/?system>|---{3,}/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .substring(0, maxLen);
 }
 
 /**
@@ -509,4 +515,4 @@ function _resetForTesting() {
   leadLocks.clear();
 }
 
-module.exports = { think, _claudeBreaker: claudeBreaker, _leadLocks: leadLocks, _resetForTesting };
+module.exports = { think, sanitizeForPrompt, _claudeBreaker: claudeBreaker, _leadLocks: leadLocks, _resetForTesting };

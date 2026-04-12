@@ -22,7 +22,11 @@ const SCORE_PROMPT_VERSION = 'retell-score-v1';
 
 function sanitizeTranscript(text, maxLen = 3000) {
   if (!text) return '';
-  return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').slice(0, maxLen);
+  return text
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/Human:|Assistant:|SYSTEM:|<\/?system>|---{3,}/gi, '')
+    .slice(0, maxLen);
 }
 
 const anthropic = new Anthropic();
