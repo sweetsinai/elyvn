@@ -1683,4 +1683,21 @@ migrations.push({
   down() {},
 });
 
+// ── 050: Add missing columns to calls + audit_log ──
+migrations.push({
+  id: '050_missing_columns',
+  description: 'Add caller_name to calls, hash/previous_hash to audit_log',
+  up(db) {
+    const callCols = db.prepare("PRAGMA table_info('calls')").all().map(c => c.name);
+    if (!callCols.includes('caller_name')) db.exec('ALTER TABLE calls ADD COLUMN caller_name TEXT');
+
+    try {
+      const auditCols = db.prepare("PRAGMA table_info('audit_log')").all().map(c => c.name);
+      if (!auditCols.includes('hash')) db.exec('ALTER TABLE audit_log ADD COLUMN hash TEXT');
+      if (!auditCols.includes('previous_hash')) db.exec('ALTER TABLE audit_log ADD COLUMN previous_hash TEXT');
+    } catch (_) { /* audit_log may not exist yet */ }
+  },
+  down() {},
+});
+
 module.exports = { runMigrations, rollbackMigration, migrations };
