@@ -21,6 +21,11 @@ process.on('unhandledRejection', (reason, promise) => {
 
 process.on('uncaughtException', (error) => {
   captureException(error, { type: 'uncaughtException' });
+  // IMAP socket timeouts are non-fatal — don't kill the server
+  if (error.message && (error.message.includes('Socket timeout') || error.message.includes('Connection not available'))) {
+    logger.warn('[WARN] Non-fatal uncaught exception (IMAP):', error.message);
+    return; // Don't exit
+  }
   logger.error('[CRASH] UNCAUGHT EXCEPTION — process will exit:', error);
   Promise.resolve(alertCriticalError('Uncaught Exception', error)).finally(() => process.exit(1));
 });

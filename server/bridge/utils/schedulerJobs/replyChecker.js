@@ -23,6 +23,12 @@ async function checkReplies(db) {
       },
       tls: { rejectUnauthorized: false },
       logger: false,
+      socketTimeout: 30000,
+    });
+
+    // Prevent IMAP socket errors from crashing the entire process
+    client.on('error', (err) => {
+      logger.warn('[Replies] IMAP connection error (non-fatal):', err.message);
     });
 
     await client.connect();

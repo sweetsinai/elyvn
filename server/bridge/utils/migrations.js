@@ -1718,4 +1718,68 @@ migrations.push({
   down() {},
 });
 
+// ── 052: Add ALL missing columns referenced in code but absent from schema ──
+migrations.push({
+  id: '052_all_missing_columns',
+  description: 'Add every column referenced in code but missing from DB: clients (timezone, auto_followup_enabled, kb_path, business_address, website, ai_enabled, booking_link, ticket_price), calls (twilio_call_sid), campaigns (client_id), emails_sent (client_id), job_queue (client_id), prospects (client_id)',
+  up(db) {
+    // Helper: add column if it doesn't already exist
+    function addIfMissing(table, name, type) {
+      const cols = db.prepare(`PRAGMA table_info('${table}')`).all().map(c => c.name);
+      if (!cols.includes(name)) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+      }
+    }
+
+    // ── clients table ──
+    // timezone: INSERTed in clients.js, onboard.js, provision.js; SELECTed in settings.js
+    addIfMissing('clients', 'timezone', "TEXT DEFAULT 'UTC'");
+    // auto_followup_enabled: SELECTed in settings.js; in ALLOWED_CLIENT_FIELDS
+    addIfMissing('clients', 'auto_followup_enabled', 'INTEGER DEFAULT 1');
+    // kb_path: INSERTed in onboard.js
+    addIfMissing('clients', 'kb_path', 'TEXT');
+    // business_address: in ALLOWED_CLIENT_FIELDS (UPDATE crashes if sent)
+    addIfMissing('clients', 'business_address', 'TEXT');
+    // website: in ALLOWED_CLIENT_FIELDS (UPDATE crashes if sent)
+    addIfMissing('clients', 'website', 'TEXT');
+    // ai_enabled: in ALLOWED_CLIENT_FIELDS
+    addIfMissing('clients', 'ai_enabled', 'INTEGER DEFAULT 1');
+    // booking_link: in ALLOWED_CLIENT_FIELDS (separate from calcom_booking_link)
+    addIfMissing('clients', 'booking_link', 'TEXT');
+    // ticket_price: in ALLOWED_CLIENT_FIELDS (separate from avg_ticket)
+    addIfMissing('clients', 'ticket_price', 'REAL');
+
+    // ── calls table ──
+    // twilio_call_sid: SELECTed in routes/api/calls.js:199 for cold transfer fallback
+    addIfMissing('calls', 'twilio_call_sid', 'TEXT');
+
+    // ── campaigns table ──
+    // client_id: INSERTed in campaigns.js, SELECTed in email-send.js, WHERE in telegram/commands.js
+    addIfMissing('campaigns', 'client_id', 'TEXT');
+
+    // ── emails_sent table ──
+    // client_id: SELECTed in email-send.js:20 for access control
+    addIfMissing('emails_sent', 'client_id', 'TEXT');
+
+    // ── job_queue table ──
+    // client_id: Postgres schema has it; migration 048 cleanup references it
+    addIfMissing('job_queue', 'client_id', 'TEXT');
+
+    // ── prospects table ──
+    // client_id: Postgres schema has it; migration 048 cleanup references it
+    addIfMissing('prospects', 'client_id', 'TEXT');
+
+    // ── Indexes for new columns ──
+    db.exec('CREATE INDEX IF NOT EXISTS idx_campaigns_client_id ON campaigns(client_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_emails_sent_client_id ON emails_sent(client_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_job_queue_client_id ON job_queue(client_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_prospects_client_id ON prospects(client_id)');
+
+    getLogger().info('[migrations] 052: all missing columns added (13 columns across 5 tables)');
+  },
+  down() {
+    // SQLite cannot drop columns — they remain harmlessly
+  },
+});
+
 module.exports = { runMigrations, rollbackMigration, migrations };
