@@ -52,9 +52,9 @@ router.post('/', validateBody(SignupSchema), async (req, res, next) => {
     const referralCode = 'ELYVN-' + crypto.randomBytes(4).toString('hex').toUpperCase();
 
     await db.query(`
-      INSERT INTO clients (id, business_name, name, owner_name, owner_email, owner_phone, password_hash, is_active, plan, email_verified, verification_token, verification_expires, referral_code, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'trial', 0, ?, ?, ?, datetime('now'), datetime('now'))
-    `, [clientId, business_name.trim(), business_name.trim(), owner_name?.trim() || '', email.toLowerCase().trim(), owner_phone?.trim() || '', passwordHash, verificationToken, verificationExpires, referralCode], 'run');
+      INSERT INTO clients (id, business_name, owner_name, owner_email, owner_phone, password_hash, is_active, plan, email_verified, verification_token, verification_expires, referral_code, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, 'trial', 0, ?, ?, ?, datetime('now'), datetime('now'))
+    `, [clientId, business_name.trim(), owner_name?.trim() || '', email.toLowerCase().trim(), owner_phone?.trim() || '', passwordHash, verificationToken, verificationExpires, referralCode], 'run');
 
     const token = createToken({ clientId, email: email.toLowerCase().trim() });
 
