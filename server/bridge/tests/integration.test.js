@@ -400,7 +400,7 @@ describe('Integration Tests - Webhook → DB Flows', () => {
       if (response.body.data.length > 0) {
         const client = response.body.data[0];
         expect(client.id).toBeDefined();
-        expect(client.name).toBeDefined();
+        expect(client.business_name).toBeDefined();
       }
     });
   });

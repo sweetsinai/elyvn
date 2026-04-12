@@ -25,7 +25,7 @@ describe('auth routes', () => {
         if (sql.includes('INSERT INTO clients')) {
           return { run: jest.fn() };
         }
-        if (sql.includes('SELECT id, name, owner_email, password_hash')) {
+        if (sql.includes('SELECT id, business_name, owner_email, password_hash')) {
           return {
             get: jest.fn((email) => {
               if (overrides.loginClient) return overrides.loginClient;
@@ -33,7 +33,7 @@ describe('auth routes', () => {
             })
           };
         }
-        if (sql.includes('SELECT id, name, owner_name, owner_email')) {
+        if (sql.includes('SELECT id, business_name, owner_name, owner_email')) {
           return {
             get: jest.fn((id) => {
               if (overrides.meClient) return overrides.meClient;
@@ -224,7 +224,7 @@ describe('auth routes', () => {
     test('valid login returns token', async () => {
       // Hash a known password
       const salt = crypto.randomBytes(16).toString('hex');
-      const hash = crypto.scryptSync('Password1', salt, 64).toString('hex');
+      const hash = crypto.scryptSync('Password1', salt, 64, { N: 16384, r: 8, p: 1 }).toString('hex');
       const passwordHash = `${salt}:${hash}`;
 
       app.locals.db = makeLoginDb({
@@ -247,7 +247,7 @@ describe('auth routes', () => {
 
     test('wrong password returns 401', async () => {
       const salt = crypto.randomBytes(16).toString('hex');
-      const hash = crypto.scryptSync('Password1', salt, 64).toString('hex');
+      const hash = crypto.scryptSync('Password1', salt, 64, { N: 16384, r: 8, p: 1 }).toString('hex');
 
       app.locals.db = makeLoginDb({
         id: 'client-1',
