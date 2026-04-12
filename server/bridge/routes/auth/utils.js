@@ -10,13 +10,13 @@ const { logger } = require('../../utils/logger');
 // Simple password hashing using Node.js built-in scrypt (no bcrypt dependency needed)
 async function hashPassword(password) {
   const salt = randomBytes(32).toString('hex');
-  const hash = await scryptAsync(password, salt, 64, { N: 65536, r: 8, p: 1 });
+  const hash = await scryptAsync(password, salt, 64, { N: 16384, r: 8, p: 1 });
   return `${salt}:${hash.toString('hex')}`;
 }
 
 async function verifyPassword(password, stored) {
   const [salt, expected] = stored.split(':');
-  const hash = await scryptAsync(password, salt, 64, { N: 65536, r: 8, p: 1 });
+  const hash = await scryptAsync(password, salt, 64, { N: 16384, r: 8, p: 1 });
   const expectedBuf = Buffer.from(expected, 'hex');
   if (hash.length !== expectedBuf.length) return false;
   return timingSafeEqual(hash, expectedBuf);
