@@ -79,7 +79,7 @@ router.get('/calls/:clientId/:callId/transcript', async (req, res, next) => {
 
     const retellResp = await fetch(`https://api.retellai.com/v2/get-call/${callId}`, {
       headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(30000),
     });
 
     if (!retellResp.ok) {
@@ -118,7 +118,7 @@ router.get('/calls/:clientId/:callId/transcript/download', async (req, res, next
       // Fallback: fetch from Retell
       const retellResp = await fetch(`https://api.retellai.com/v2/get-call/${callId}`, {
         headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(30000),
       });
       if (retellResp.ok) {
         const callData = await retellResp.json();
