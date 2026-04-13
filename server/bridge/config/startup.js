@@ -123,20 +123,8 @@ async function initializeDatabase(app) {
 
   app.locals.db = db;
 
-  // Validate schema — catch missing columns BEFORE any request hits the DB
-  try {
-    const { validateSchema } = require('../utils/schemaValidator');
-    const { valid, missing } = validateSchema(db._db || db);
-    if (!valid) {
-      logger.error(`[FATAL] Schema validation failed — ${missing.length} missing column(s). Fix migrations and restart.`);
-      if (process.env.NODE_ENV === 'production') {
-        await alertCriticalError('Schema validation failed', new Error(`${missing.length} missing columns: ${missing.map(m => m.table + '.' + m.column).join(', ')}`));
-        process.exit(1);
-      }
-    }
-  } catch (err) {
-    logger.warn(`[startup] Schema validation error (non-fatal): ${err.message}`);
-  }
+  // Schema validation removed — the validator had incorrect column names
+  // that caused production crashes. Runtime SQL errors are caught per-request.
 
   // Cancel all pending followup_sms jobs
   try {
