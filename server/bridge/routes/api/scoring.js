@@ -74,7 +74,7 @@ router.get('/scoring/:clientId/analytics/conversion', (req, res, next) => {
 });
 
 // GET /scoring/:clientId/:leadId/insights — Feature-derived intelligence for a lead
-router.get('/scoring/:clientId/:leadId/insights', (req, res, next) => {
+router.get('/scoring/:clientId/:leadId/insights', async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId, leadId } = req.params;
@@ -84,7 +84,7 @@ router.get('/scoring/:clientId/:leadId/insights', (req, res, next) => {
     }
 
     const { getLeadInsights } = require('../../utils/leadIntelligence');
-    const insights = getLeadInsights(db, leadId, null, clientId);
+    const insights = await getLeadInsights(db, leadId, null, clientId);
     success(res, insights);
   } catch (err) {
     logger.error('[api] lead insights error:', err);

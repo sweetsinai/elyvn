@@ -196,7 +196,7 @@ async function processFormSubmission(db, body, clientId, req) {
     const { getLeadMemory } = require('../utils/leadMemory');
     const { think } = require('../utils/brain');
     const { executeActions } = require('../utils/actionExecutor');
-    const memory = getLeadMemory(db, phone, clientId);
+    const memory = await getLeadMemory(db, phone, clientId);
     if (memory) {
       const decision = await think('form_submitted', {
         name, phone, email, message, service, source,

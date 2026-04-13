@@ -171,7 +171,7 @@ async function handleSocialMessage(db, { senderId, text, channel, pageId }) {
     const { getLeadMemory } = require('../utils/leadMemory');
     const { think } = require('../utils/brain');
     const { executeActions } = require('../utils/actionExecutor');
-    const memory = getLeadMemory(db, socialId, client.id);
+    const memory = await getLeadMemory(db, socialId, client.id);
     if (memory) {
       const decision = await think('social_message_received', { from: socialId, body: text, channel }, memory, db);
       if (decision?.actions) {

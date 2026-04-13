@@ -210,7 +210,7 @@ router.get('/stats/:clientId/experiments/:name/results', (req, res, next) => {
 });
 
 // GET /stats/:clientId/activity — Aggregated event counts over N days
-router.get('/stats/:clientId/activity', (req, res, next) => {
+router.get('/stats/:clientId/activity', async (req, res, next) => {
   try {
     const { clientId } = req.params;
 
@@ -221,7 +221,7 @@ router.get('/stats/:clientId/activity', (req, res, next) => {
     const { buildClientActivity } = require('../../utils/eventProjections');
     const db = req.app.locals.db;
     const days = Math.min(parseInt(req.query.days) || 30, 365);
-    const activity = buildClientActivity(db, clientId, days);
+    const activity = await buildClientActivity(db, clientId, days);
     success(res, activity);
   } catch (err) {
     logger.error('[api] client activity error:', err);
@@ -230,7 +230,7 @@ router.get('/stats/:clientId/activity', (req, res, next) => {
 });
 
 // GET /stats/:clientId/transitions — Stage transition matrix for funnel analysis
-router.get('/stats/:clientId/transitions', (req, res, next) => {
+router.get('/stats/:clientId/transitions', async (req, res, next) => {
   try {
     const { clientId } = req.params;
 
@@ -240,7 +240,7 @@ router.get('/stats/:clientId/transitions', (req, res, next) => {
 
     const { buildStageTransitionMatrix } = require('../../utils/eventProjections');
     const db = req.app.locals.db;
-    const matrix = buildStageTransitionMatrix(db, clientId);
+    const matrix = await buildStageTransitionMatrix(db, clientId);
     success(res, matrix);
   } catch (err) {
     logger.error('[api] stage transitions error:', err);

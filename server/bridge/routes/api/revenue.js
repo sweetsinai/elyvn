@@ -8,7 +8,7 @@ const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
 // GET /revenue/:clientId — Revenue attribution & ROI
-router.get('/revenue/:clientId', (req, res, next) => {
+router.get('/revenue/:clientId', async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
@@ -20,7 +20,7 @@ router.get('/revenue/:clientId', (req, res, next) => {
     const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 30));
 
     const { getROIMetrics } = require('../../utils/revenueAttribution');
-    const metrics = getROIMetrics(db, clientId, days);
+    const metrics = await getROIMetrics(db, clientId, days);
     success(res, metrics);
   } catch (err) {
     logger.error('[api] revenue error:', err);
@@ -127,7 +127,7 @@ router.get('/revenue/:clientId/funnel', async (req, res, next) => {
 });
 
 // GET /revenue/:clientId/:leadId — Single lead attribution chain
-router.get('/revenue/:clientId/:leadId', (req, res, next) => {
+router.get('/revenue/:clientId/:leadId', async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId, leadId } = req.params;
@@ -137,7 +137,7 @@ router.get('/revenue/:clientId/:leadId', (req, res, next) => {
     }
 
     const { getAttribution } = require('../../utils/revenueAttribution');
-    const attribution = getAttribution(db, leadId, clientId);
+    const attribution = await getAttribution(db, leadId, clientId);
     success(res, attribution);
   } catch (err) {
     logger.error('[api] attribution error:', err);
@@ -146,7 +146,7 @@ router.get('/revenue/:clientId/:leadId', (req, res, next) => {
 });
 
 // GET /revenue/:clientId/channels/performance — Channel performance breakdown
-router.get('/revenue/:clientId/channels/performance', (req, res, next) => {
+router.get('/revenue/:clientId/channels/performance', async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
@@ -156,7 +156,7 @@ router.get('/revenue/:clientId/channels/performance', (req, res, next) => {
     }
 
     const { getChannelPerformance } = require('../../utils/revenueAttribution');
-    const channels = getChannelPerformance(db, clientId);
+    const channels = await getChannelPerformance(db, clientId);
     success(res, channels);
   } catch (err) {
     logger.error('[api] channel performance error:', err);

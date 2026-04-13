@@ -220,7 +220,7 @@ router.put('/leads/:clientId/:leadId', validateBody(LeadUpdateSchema), async (re
 });
 
 // GET /leads/:clientId/priorities — Top 10 leads ranked by feature-derived priority
-router.get('/leads/:clientId/priorities', validateParams(ClientParamsSchema), (req, res, next) => {
+router.get('/leads/:clientId/priorities', validateParams(ClientParamsSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
@@ -229,7 +229,7 @@ router.get('/leads/:clientId/priorities', validateParams(ClientParamsSchema), (r
       return next(new AppError('INVALID_INPUT', 'Invalid client ID format', 400));
     }
 
-    const priorities = getClientLeadPriorities(db, clientId);
+    const priorities = await getClientLeadPriorities(db, clientId);
     return success(res, priorities);
   } catch (err) {
     logger.error('[api] lead priorities error:', err);
@@ -238,7 +238,7 @@ router.get('/leads/:clientId/priorities', validateParams(ClientParamsSchema), (r
 });
 
 // GET /leads/:clientId/:leadId/timeline — Chronological event history for a lead
-router.get('/leads/:clientId/:leadId/timeline', validateParams(ClientParamsSchema), (req, res, next) => {
+router.get('/leads/:clientId/:leadId/timeline', validateParams(ClientParamsSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId, leadId } = req.params;
@@ -247,7 +247,7 @@ router.get('/leads/:clientId/:leadId/timeline', validateParams(ClientParamsSchem
       return next(new AppError('INVALID_INPUT', 'Invalid client ID or lead ID format', 400));
     }
 
-    const timeline = buildLeadTimeline(db, leadId, clientId);
+    const timeline = await buildLeadTimeline(db, leadId, clientId);
     return success(res, timeline);
   } catch (err) {
     logger.error('[api] lead timeline error:', err);

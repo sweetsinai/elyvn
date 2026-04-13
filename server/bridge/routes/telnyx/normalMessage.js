@@ -162,7 +162,7 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
       const { think } = require('../../utils/brain');
       const { executeActions } = require('../../utils/actionExecutor');
 
-      const memory = getLeadMemory(db, from, client.id);
+      const memory = await getLeadMemory(db, from, client.id);
       if (memory) {
         const decision = await think('sms_received', {
           from, body, auto_reply: finalReply, confidence: finalConfidence,
