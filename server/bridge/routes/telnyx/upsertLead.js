@@ -38,8 +38,8 @@ async function upsertLeadAndRecordInbound(db, { clientId, from, body, messageId,
 
       await db.query(`
         INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, confidence, created_at)
-        VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, datetime('now'))
-      `, [inboundId, clientId, leadId, from, body, messageId || null, confidence], 'run');
+        VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, ?)
+      `, [inboundId, clientId, leadId, from, body, messageId || null, confidence, now], 'run');
 
       await db.query('COMMIT', [], 'run');
     } catch (txErr) {
@@ -69,8 +69,8 @@ async function upsertLeadAndRecordInbound(db, { clientId, from, body, messageId,
 
       db.prepare(`
         INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, confidence, created_at)
-        VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, datetime('now'))
-      `).run(inboundId, clientId, lid, from, body, messageId || null, confidence);
+        VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, ?)
+      `).run(inboundId, clientId, lid, from, body, messageId || null, confidence, now);
 
       return { leadId: lid, isNew: !existingLead };
     });

@@ -218,7 +218,7 @@ Reply: ${email.reply_text}`
         try {
           const { sendSMS } = require('../utils/sms');
           const smsText = `Hi! This is ${SENDER_NAME} from ELYVN. Thanks for your interest! Book a quick 10-min demo here: ${BOOKING_LINK}`;
-          await sendSMS(db, prospect.phone, smsText, null);
+          await sendSMS(prospect.phone, smsText, null, db, null);
           logger.info(`[outreach] INTERESTED SMS sent to ${prospect.phone}`);
         } catch (err) {
           logger.error('[outreach] INTERESTED SMS failed:', err.message);

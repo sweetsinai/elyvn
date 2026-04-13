@@ -149,12 +149,13 @@ async function generateDailySchedule(db, clientId) {
   }
 
   // Get all leads that should be contacted today
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const leads = await db.query(
     `SELECT id, phone, name, score, stage, updated_at FROM leads
      WHERE client_id = ? AND stage NOT IN ('booked', 'completed', 'lost')
-     AND updated_at < datetime('now', '-1 day')
+     AND updated_at < ?
      ORDER BY score DESC LIMIT 20`,
-    [clientId]
+    [clientId, oneDayAgo]
   );
 
   const schedule = [];

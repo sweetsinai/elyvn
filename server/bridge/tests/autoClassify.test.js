@@ -147,7 +147,7 @@ describe('autoClassifyReplies', () => {
     // Should have updated leads.stage to 'interested'
     expect(db.query).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE leads'),
-      ['interested', 'lead1'],
+      ['interested', expect.any(String), 'lead1'],
       'run'
     );
   });
@@ -172,7 +172,7 @@ describe('autoClassifyReplies', () => {
     expect(result.classified).toBe(1);
     expect(db.query).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE leads'),
-      ['not_interested', 'lead2'],
+      ['not_interested', expect.any(String), 'lead2'],
       'run'
     );
   });
@@ -197,7 +197,7 @@ describe('autoClassifyReplies', () => {
     expect(result.classified).toBe(1);
     expect(db.query).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE leads'),
-      ['engaged', 'lead3'],
+      ['engaged', expect.any(String), 'lead3'],
       'run'
     );
   });

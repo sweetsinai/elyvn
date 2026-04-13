@@ -69,8 +69,8 @@ async function executeOne(db, action, lead, client) {
       if (lead?.id && result.success && !result.scheduled) {
         await db.query(`
           INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, reply_source, status, created_at)
-          VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'brain', 'sent', datetime('now'))
-        `, [randomUUID(), client?.id, lead.id, to, action.message], 'run');
+          VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'brain', 'sent', ?)
+        `, [randomUUID(), client?.id, lead.id, to, action.message, new Date().toISOString()], 'run');
       }
 
       // Notify owner about brain-initiated SMS (skip in digest mode)
@@ -99,8 +99,8 @@ async function executeOne(db, action, lead, client) {
     case 'cancel_pending_followups': {
       if (!lead?.id) return { cancelled: 0 };
       const result = await db.query(
-        `UPDATE followups SET status = 'cancelled', updated_at = datetime('now') WHERE lead_id = ? AND status = 'scheduled'`,
-        [lead.id], 'run'
+        `UPDATE followups SET status = 'cancelled', updated_at = ? WHERE lead_id = ? AND status = 'scheduled'`,
+        [new Date().toISOString(), lead.id], 'run'
       );
       return { cancelled: result.changes || 0, reason: action.reason };
     }
@@ -113,8 +113,8 @@ async function executeOne(db, action, lead, client) {
         return { updated: false, error: 'invalid_stage' };
       }
       await db.query(
-        `UPDATE leads SET stage = ?, updated_at = datetime('now') WHERE id = ?`,
-        [action.stage, lead.id], 'run'
+        `UPDATE leads SET stage = ?, updated_at = ? WHERE id = ?`,
+        [action.stage, new Date().toISOString(), lead.id], 'run'
       );
       return { new_stage: action.stage };
     }
@@ -123,8 +123,8 @@ async function executeOne(db, action, lead, client) {
       if (!lead?.id) return { updated: false };
       const score = Math.max(0, Math.min(10, Number(action.score) || 0));
       await db.query(
-        `UPDATE leads SET score = ?, updated_at = datetime('now') WHERE id = ?`,
-        [score, lead.id], 'run'
+        `UPDATE leads SET score = ?, updated_at = ? WHERE id = ?`,
+        [score, new Date().toISOString(), lead.id], 'run'
       );
       return { new_score: score, reason: action.reason };
     }
@@ -185,12 +185,12 @@ async function executeOne(db, action, lead, client) {
 
             // Update lead stage
             if (lead?.id) {
-              await db.query("UPDATE leads SET stage = 'booked', score = MAX(score, 9), updated_at = datetime('now') WHERE id = ?", [lead.id], 'run');
+              await db.query("UPDATE leads SET stage = 'booked', score = MAX(score, 9), updated_at = ? WHERE id = ?", [now, lead.id], 'run');
             }
 
             // Cancel pending follow-ups
             if (lead?.id) {
-              await db.query("UPDATE followups SET status = 'cancelled', updated_at = datetime('now') WHERE lead_id = ? AND status = 'scheduled'", [lead.id], 'run');
+              await db.query("UPDATE followups SET status = 'cancelled', updated_at = ? WHERE lead_id = ? AND status = 'scheduled'", [now, lead.id], 'run');
             }
 
             // Notify owner

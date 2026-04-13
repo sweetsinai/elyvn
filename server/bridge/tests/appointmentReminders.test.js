@@ -287,7 +287,8 @@ describe('appointmentReminders', () => {
       expect(sendSMSFn).toHaveBeenCalledWith(
         '+12125551234', // lead phone
         'Reminder text',
-        '+15551234567'  // client twilio_phone
+        '+15551234567', // client phone_number
+        'client1'       // client_id
       );
     });
 

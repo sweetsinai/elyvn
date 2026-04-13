@@ -144,7 +144,7 @@ describe('Forms Route - Comprehensive', () => {
           phone: '+14155551234',
         });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(422);
       expect(response.body.error).toMatch(/invalid/i);
     });
 
@@ -230,8 +230,8 @@ describe('Forms Route - Comprehensive', () => {
           phone: '+14155551234',
         });
 
-      // validateParams rejects invalid UUID with 400
-      expect([400, 429]).toContain(response.status);
+      // validateParams rejects invalid UUID with 422
+      expect([422, 429]).toContain(response.status);
     });
 
     test('should return 404 if client not found or inactive', async () => {

@@ -231,10 +231,25 @@ const CLIENT_COMMANDS = [
   { command: 'help', description: 'Show commands' },
 ];
 
+const PRO_COMMANDS = [
+  ...CLIENT_COMMANDS,
+  { command: 'outreach', description: 'Email campaigns & prospects' },
+  { command: 'intelligence', description: 'AI insights & coaching' },
+];
+
+const PREMIUM_COMMANDS = [
+  ...PRO_COMMANDS,
+  { command: 'brain', description: 'AI Brain activity feed' },
+  { command: 'campaigns', description: 'Manage campaigns' },
+  { command: 'integrations', description: 'Webhook & integration status' },
+];
+
 const PLAN_COMMANDS = {
+  trial: CLIENT_COMMANDS,
+  solo: CLIENT_COMMANDS,
   starter: CLIENT_COMMANDS,
-  pro: CLIENT_COMMANDS,
-  premium: CLIENT_COMMANDS,
+  pro: PRO_COMMANDS,
+  premium: PREMIUM_COMMANDS,
 };
 
 async function setClientCommands(chatId, plan) {

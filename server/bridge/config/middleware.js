@@ -82,16 +82,18 @@ function setupMiddleware(app) {
 
   app.use(cors({
     origin: (origin, callback) => {
-      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      if (!origin && process.env.NODE_ENV !== 'production') {
+        callback(null, true);
+      } else if (ALLOWED_ORIGINS.includes(origin)) {
         callback(null, true);
       } else {
-        logger.warn('[cors] Blocked origin: ' + origin);
+        logger.warn('[cors] Blocked origin: ' + (origin || 'null'));
         callback(new Error('Not allowed by CORS'));
       }
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Client-ID'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Client-ID', 'X-API-Key'],
   }));
 
   // CSRF protection (after CORS, before routes)

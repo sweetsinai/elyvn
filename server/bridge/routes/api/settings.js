@@ -9,6 +9,8 @@ const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { logDataMutation } = require('../../utils/auditLog');
 const { success } = require('../../utils/response');
+const { validateBody } = require('../../middleware/validateRequest');
+const { SettingsUpdateSchema } = require('../../utils/schemas/settings');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -37,7 +39,7 @@ router.get('/settings/:clientId', async (req, res, next) => {
 
     if (!client) return next(new AppError('NOT_FOUND', 'Client not found', 404));
 
-    res.json({
+    success(res, {
       business: {
         business_name: client.business_name,
         owner_name: client.owner_name,
@@ -102,7 +104,7 @@ router.get('/settings/:clientId', async (req, res, next) => {
 });
 
 // PUT /settings/:clientId — Update settings by category
-router.put('/settings/:clientId', async (req, res, next) => {
+router.put('/settings/:clientId', validateBody(SettingsUpdateSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
@@ -136,7 +138,8 @@ router.put('/settings/:clientId', async (req, res, next) => {
       return next(new AppError('VALIDATION_ERROR', 'No valid settings to update', 400));
     }
 
-    updates.push("updated_at = datetime('now')");
+    updates.push('updated_at = ?');
+    params.push(new Date().toISOString());
     params.push(clientId);
 
     await db.query(`UPDATE clients SET ${updates.join(', ')} WHERE id = ?`, params, 'run');

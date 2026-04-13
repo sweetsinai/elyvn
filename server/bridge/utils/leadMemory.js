@@ -14,9 +14,9 @@ async function getLeadMemory(db, phone, clientId) {
   try {
     await db.query(
       `INSERT INTO leads (id, client_id, phone, score, stage, created_at, updated_at)
-       VALUES (?, ?, ?, 0, 'new', datetime('now'), datetime('now'))
+       VALUES (?, ?, ?, 0, 'new', ?, ?)
        ON CONFLICT(client_id, phone) DO NOTHING`,
-      [id, clientId, normalizedPhone], 'run'
+      [id, clientId, normalizedPhone, new Date().toISOString(), new Date().toISOString()], 'run'
     );
   } catch (err) {
     // FK constraint fails if client doesn't exist — continue to lookup

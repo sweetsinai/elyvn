@@ -114,8 +114,8 @@ async function apiAuth(req, res, next) {
     try {
       const hash = crypto.createHash('sha256').update(provided).digest('hex');
       const keyRecord = await db.query(
-        "SELECT * FROM client_api_keys WHERE api_key_hash = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))",
-        [hash],
+        "SELECT * FROM client_api_keys WHERE api_key_hash = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > ?)",
+        [hash, new Date().toISOString()],
         'get'
       );
       if (keyRecord) {
@@ -126,7 +126,7 @@ async function apiAuth(req, res, next) {
           logger.error('[auth] Failed to parse permissions for key:', keyRecord.id, parseErr.message);
           req.keyPermissions = ['read', 'write'];
         }
-        await db.query("UPDATE client_api_keys SET last_used_at = datetime('now') WHERE id = ?", [keyRecord.id], 'run');
+        await db.query("UPDATE client_api_keys SET last_used_at = ? WHERE id = ?", [new Date().toISOString(), keyRecord.id], 'run');
         logAudit(db, { action: 'auth_success', clientId: keyRecord.client_id, ip: req.ip, userAgent: req.get('user-agent'), details: { key_id: keyRecord.id, path: req.path } });
 
         // Enforce per-key rate limit

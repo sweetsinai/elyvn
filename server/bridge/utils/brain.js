@@ -37,9 +37,13 @@ const leadLocks = new Map();
 function sanitizeForPrompt(str, maxLen = 200) {
   if (!str) return '';
   return String(str)
+    .replace(/\x00/g, '')                                    // strip null bytes
     .replace(/[\r\n\t]/g, ' ')
-    .replace(/[<>{}]/g, '')
-    .replace(/Human:|Assistant:|SYSTEM:|<\/?system>|---{3,}/gi, '')
+    .replace(/<[a-z_/][^>]*>/gi, '')                         // strip all XML/HTML tags
+    .replace(/[{}]/g, '')
+    .replace(/Human:|Assistant:|SYSTEM:|---{3,}/gi, '')      // Claude delimiters
+    .replace(/\[INST\]|\[\/INST\]|<<SYS>>|<<\/SYS>>/gi, '') // Llama delimiters
+    .replace(/```[\s\S]*?```/g, ' ')                         // code fences
     .replace(/\s{2,}/g, ' ')
     .trim()
     .substring(0, maxLen);
@@ -472,11 +476,12 @@ async function checkGuardrails(db, lead, client) {
 
   try {
     // Max 3 brain-initiated SMS per 24h
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const recentSMS = await db.query(
       `SELECT COUNT(*) as c FROM messages
        WHERE phone = ? AND client_id = ? AND direction = 'outbound' AND reply_source = 'brain'
-       AND created_at > datetime('now', '-24 hours')`,
-      [lead.phone, client.id], 'get'
+       AND created_at > ?`,
+      [lead.phone, client.id, twentyFourHoursAgo], 'get'
     );
     if (recentSMS && recentSMS.c >= 3) {
       warnings.push('RATE_LIMIT: 3 brain SMS sent in 24h. Do NOT send_sms.');

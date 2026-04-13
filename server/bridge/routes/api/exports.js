@@ -8,6 +8,7 @@ const { isValidUUID } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { logDataMutation } = require('../../utils/auditLog');
+const { success } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -34,7 +35,7 @@ router.get('/exports/:clientId/leads', async (req, res, next) => {
 
     if (format === 'json') {
       res.setHeader('Content-Disposition', `attachment; filename="leads-${clientId.slice(0, 8)}.json"`);
-      return res.json({ data: leads, exported_at: new Date().toISOString(), count: leads.length });
+      return success(res, { leads, exported_at: new Date().toISOString(), count: leads.length });
     }
 
     // CSV format
@@ -81,7 +82,7 @@ router.get('/exports/:clientId/calls', async (req, res, next) => {
 
     if (format === 'json') {
       res.setHeader('Content-Disposition', `attachment; filename="calls-${clientId.slice(0, 8)}.json"`);
-      return res.json({ data: calls, exported_at: new Date().toISOString(), count: calls.length });
+      return success(res, { calls, exported_at: new Date().toISOString(), count: calls.length });
     }
 
     const headers = 'id,call_id,caller_phone,direction,duration,outcome,score,sentiment,summary,created_at';
@@ -141,7 +142,7 @@ router.get('/exports/:clientId/sheets', async (req, res, next) => {
 
     if (format === 'json') {
       res.setHeader('Content-Disposition', `attachment; filename="sheets-${clientId.slice(0, 8)}.json"`);
-      return res.json({
+      return success(res, {
         leads: { data: leads, count: leads.length },
         calls: { data: calls, count: calls.length },
         messages: { data: messages, count: messages.length },

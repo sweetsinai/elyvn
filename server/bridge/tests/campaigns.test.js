@@ -158,31 +158,31 @@ describe('POST /campaign', () => {
     expect(res.status).toBe(401);
   });
 
-  test('returns 400 when name is missing', async () => {
+  test('returns 422 when name is missing', async () => {
     const app = buildApp(createMockDb());
     const res = await request(app)
       .post('/campaign')
       .set('x-api-key', VALID_API_KEY)
       .send({ prospectIds: [testProspectId1] });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
-  test('returns 400 when prospectIds is empty', async () => {
+  test('returns 422 when prospectIds is empty', async () => {
     const app = buildApp(createMockDb());
     const res = await request(app)
       .post('/campaign')
       .set('x-api-key', VALID_API_KEY)
       .send({ name: 'My Campaign', prospectIds: [] });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
-  test('returns 400 when prospectIds contains invalid UUIDs', async () => {
+  test('returns 422 when prospectIds contains invalid UUIDs', async () => {
     const app = buildApp(createMockDb());
     const res = await request(app)
       .post('/campaign')
       .set('x-api-key', VALID_API_KEY)
       .send({ name: 'My Campaign', prospectIds: ['not-a-uuid'] });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   test('sanitizes XSS tags from name — strips tags, keeps inner text', async () => {
@@ -282,12 +282,12 @@ describe('POST /campaign/:campaignId/generate', () => {
     expect(res.status).toBe(401);
   });
 
-  test('returns 400 with invalid campaignId (non-UUID)', async () => {
+  test('returns 422 with invalid campaignId (non-UUID)', async () => {
     const app = buildApp(createMockDb({ campaign: validCampaign(), prospects: validProspects() }));
     const res = await request(app)
       .post('/campaign/not-a-uuid/generate')
       .set('x-api-key', VALID_API_KEY);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   test('returns 404 when campaign does not exist', async () => {
@@ -439,12 +439,12 @@ describe('GET /campaign/:campaignId/ab-results', () => {
     expect(res.status).toBe(401);
   });
 
-  test('returns 400 with invalid campaignId', async () => {
+  test('returns 422 with invalid campaignId', async () => {
     const app = buildApp(buildDbWithVariants());
     const res = await request(app)
       .get('/campaign/not-a-uuid/ab-results')
       .set('x-api-key', VALID_API_KEY);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   test('returns 404 when campaign does not exist', async () => {

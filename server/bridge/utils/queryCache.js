@@ -32,6 +32,11 @@ function invalidate(pattern) {
   for (const key of cache.keys()) {
     if (key.startsWith(pattern)) cache.delete(key);
   }
+  // Rebuild insertionOrder to match remaining cache keys (prevent memory leak)
+  insertionOrder.length = 0;
+  for (const key of cache.keys()) {
+    insertionOrder.push(key);
+  }
 }
 
 function size() { return cache.size; }
@@ -43,6 +48,11 @@ const _evictionInterval = setInterval(() => {
     if (now > entry.expiresAt) {
       cache.delete(key);
     }
+  }
+  // Rebuild insertionOrder to match remaining cache keys (prevent memory leak)
+  insertionOrder.length = 0;
+  for (const key of cache.keys()) {
+    insertionOrder.push(key);
   }
 }, 60000);
 _evictionInterval.unref();

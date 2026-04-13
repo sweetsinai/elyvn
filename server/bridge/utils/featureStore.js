@@ -267,7 +267,7 @@ async function persistFeatures(db, leadId, features) {
     const entries = Object.entries(features);
     const upsertSQL = `
       INSERT INTO feature_store (id, lead_id, feature_name, feature_value, feature_version, computed_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(lead_id, feature_name, feature_version) DO UPDATE SET
         feature_value = excluded.feature_value,
         computed_at = excluded.computed_at
@@ -292,9 +292,10 @@ async function persistFeatures(db, leadId, features) {
     } else {
       // SQLite: sync transaction
       const upsert = db.prepare(upsertSQL);
+      const now = new Date().toISOString();
       const insertAll = db.transaction((items) => {
         for (const [name, value] of items) {
-          upsert.run(randomUUID(), leadId, name, toNumeric(value), FEATURE_VERSION);
+          upsert.run(randomUUID(), leadId, name, toNumeric(value), FEATURE_VERSION, now);
         }
       });
       insertAll(entries);
@@ -315,11 +316,12 @@ async function checkFeatureStaleness(db, clientId, maxAgeDays = 7) {
   if (!db || !clientId) return [];
 
   try {
+    const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString();
     const rows = await db.query(`
       SELECT lead_id, MIN(computed_at) as oldest FROM feature_store
       WHERE lead_id IN (SELECT id FROM leads WHERE client_id = ? AND stage NOT IN ('lost','not_interested'))
-      GROUP BY lead_id HAVING oldest < datetime('now', '-' || ? || ' days')
-    `, [clientId, maxAgeDays]);
+      GROUP BY lead_id HAVING oldest < ?
+    `, [clientId, cutoff]);
 
     return rows || [];
   } catch (err) {

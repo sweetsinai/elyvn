@@ -4,8 +4,8 @@ const { isValidUUID } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { success, paginated } = require('../../utils/response');
-const { validateQuery, validateParams } = require('../../middleware/validateRequest');
-const { CallQuerySchema } = require('../../utils/schemas/calls');
+const { validateBody, validateQuery, validateParams } = require('../../middleware/validateRequest');
+const { CallQuerySchema, TransferSchema } = require('../../utils/schemas/calls');
 const { ClientParamsSchema } = require('../../utils/schemas/client');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
@@ -75,7 +75,23 @@ router.get('/calls/:clientId', validateParams(ClientParamsSchema), validateQuery
 // GET /calls/:clientId/:callId/transcript
 router.get('/calls/:clientId/:callId/transcript', async (req, res, next) => {
   try {
-    const { callId } = req.params;
+    const db = req.app.locals.db;
+    const { clientId, callId } = req.params;
+
+    // Try local DB first (fast, no external dependency)
+    const dbCall = await db.query(
+      'SELECT transcript FROM calls WHERE call_id = ? AND client_id = ?',
+      [callId, clientId], 'get'
+    );
+    if (dbCall?.transcript) {
+      return success(res, { transcript: dbCall.transcript, source: 'db' });
+    }
+
+    // Fallback to Retell API if DB has no transcript
+    const RETELL_API_KEY = process.env.RETELL_API_KEY;
+    if (!RETELL_API_KEY) {
+      return next(new AppError('NOT_FOUND', 'Transcript not available', 404));
+    }
 
     const retellResp = await fetch(`https://api.retellai.com/v2/get-call/${callId}`, {
       headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` },
@@ -83,11 +99,11 @@ router.get('/calls/:clientId/:callId/transcript', async (req, res, next) => {
     });
 
     if (!retellResp.ok) {
-      return res.status(retellResp.status).json({ error: 'Failed to fetch transcript from Retell' });
+      return next(new AppError('NOT_FOUND', 'Transcript not available from Retell', retellResp.status));
     }
 
     const callData = await retellResp.json();
-    return success(res, { transcript: callData.transcript || [] });
+    return success(res, { transcript: callData.transcript || [], source: 'retell' });
   } catch (err) {
     logger.error('[api] transcript error:', err);
     next(err);
@@ -159,7 +175,7 @@ router.get('/calls/:clientId/:callId/transcript/download', async (req, res, next
 });
 
 // POST /calls/:clientId/:callId/transfer — initiate call transfer from dashboard
-router.post('/calls/:clientId/:callId/transfer', async (req, res, next) => {
+router.post('/calls/:clientId/:callId/transfer', validateBody(TransferSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId, callId } = req.params;
@@ -181,8 +197,17 @@ router.post('/calls/:clientId/:callId/transfer', async (req, res, next) => {
       return next(new AppError('VALIDATION_ERROR', 'No transfer phone configured. Set transfer_phone in Settings.', 422));
     }
 
-    // Attempt warm transfer via Retell
-    const { warmTransfer, coldTransfer } = require('../../utils/callTransfer');
+    const { warmTransfer, coldTransfer, isTransferRateLimited, isCircularTransfer } = require('../../utils/callTransfer');
+
+    // Prevent circular transfer (would loop back to AI agent)
+    if (isCircularTransfer(target, client.phone_number)) {
+      return next(new AppError('VALIDATION_ERROR', 'Cannot transfer to the same number that receives calls. Use a different transfer phone.', 422));
+    }
+
+    // Rate limit: 1 transfer per 10s per call
+    if (isTransferRateLimited(callId)) {
+      return next(new AppError('RATE_LIMIT_EXCEEDED', 'Transfer already in progress for this call. Wait 10 seconds.', 429));
+    }
 
     const warmResult = await warmTransfer(callId, target, 'Dashboard-initiated transfer.');
     if (warmResult.success) {

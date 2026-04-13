@@ -51,10 +51,11 @@ router.post('/', validateBody(SignupSchema), async (req, res, next) => {
     // Generate referral code for the new client
     const referralCode = 'ELYVN-' + crypto.randomBytes(4).toString('hex').toUpperCase();
 
+    const now = new Date().toISOString();
     await db.query(`
       INSERT INTO clients (id, business_name, owner_name, owner_email, owner_phone, password_hash, is_active, plan, email_verified, verification_token, verification_expires, referral_code, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 1, 'trial', 0, ?, ?, ?, datetime('now'), datetime('now'))
-    `, [clientId, business_name.trim(), owner_name?.trim() || '', email.toLowerCase().trim(), owner_phone?.trim() || '', passwordHash, verificationToken, verificationExpires, referralCode], 'run');
+      VALUES (?, ?, ?, ?, ?, ?, 1, 'trial', 0, ?, ?, ?, ?, ?)
+    `, [clientId, business_name.trim(), owner_name?.trim() || '', email.toLowerCase().trim(), owner_phone?.trim() || '', passwordHash, verificationToken, verificationExpires, referralCode, now, now], 'run');
 
     const token = createToken({ clientId, email: email.toLowerCase().trim() });
 
@@ -64,10 +65,11 @@ router.post('/', validateBody(SignupSchema), async (req, res, next) => {
       try {
         const referrer = await db.query('SELECT id FROM clients WHERE referral_code = ?', [refCode], 'get');
         if (referrer && referrer.id !== clientId) {
-          await db.query("UPDATE clients SET referred_by = ?, updated_at = datetime('now') WHERE id = ?", [referrer.id, clientId], 'run');
+          const refNow = new Date().toISOString();
+          await db.query("UPDATE clients SET referred_by = ?, updated_at = ? WHERE id = ?", [referrer.id, refNow, clientId], 'run');
           await db.query(
-            `INSERT INTO referrals (id, referrer_id, referred_id, status, credit_cents, created_at) VALUES (?, ?, ?, 'pending', 0, datetime('now'))`,
-            [crypto.randomUUID(), referrer.id, clientId], 'run'
+            `INSERT INTO referrals (id, referrer_id, referred_id, status, credit_cents, created_at) VALUES (?, ?, ?, 'pending', 0, ?)`,
+            [crypto.randomUUID(), referrer.id, clientId, refNow], 'run'
           );
           logger.info(`[auth] Referral code ${refCode} applied for new client ${clientId}`);
         }
@@ -88,8 +90,8 @@ router.post('/', validateBody(SignupSchema), async (req, res, next) => {
       if (isConfigured()) {
         createClientSheet(business_name.trim(), email.toLowerCase().trim()).then(async (sheet) => {
           if (sheet) {
-            await db.query("UPDATE clients SET google_sheet_id = ?, updated_at = datetime('now') WHERE id = ?",
-              [sheet.spreadsheetId, clientId], 'run');
+            await db.query("UPDATE clients SET google_sheet_id = ?, updated_at = ? WHERE id = ?",
+              [sheet.spreadsheetId, new Date().toISOString(), clientId], 'run');
           }
         }).catch(() => {});
       }

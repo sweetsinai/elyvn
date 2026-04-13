@@ -1,13 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const { logger } = require('../../utils/logger');
+const { success } = require('../../utils/response');
 
 // GET /health/detailed — Detailed health with metrics (existing, kept for backward compat)
 router.get('/health/detailed', (req, res) => {
   try {
     const { getMetrics } = require('../../utils/metrics');
     const metrics = getMetrics();
-    res.json({
+    success(res, {
       status: 'ok',
       timestamp: new Date().toISOString(),
       metrics,
@@ -51,9 +52,10 @@ router.get('/health/ready', async (req, res) => {
   // Job queue not stalled: no jobs stuck in 'processing' for > 30 minutes
   try {
     if (db) {
+      const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
       const stalled = await db.query(
-        "SELECT COUNT(*) as c FROM job_queue WHERE status = 'processing' AND updated_at < datetime('now', '-30 minutes')",
-        [],
+        "SELECT COUNT(*) as c FROM job_queue WHERE status = 'processing' AND updated_at < ?",
+        [thirtyMinAgo],
         'get'
       );
       if (stalled.c > 0) {
@@ -142,7 +144,7 @@ router.get('/health/startup', async (req, res) => {
 
 // GET /health/version — Git SHA + build info for deployment verification
 router.get('/health/version', (req, res) => {
-  res.json({
+  success(res, {
     version: process.env.npm_package_version || '1.0.0',
     git_sha: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_SHA || 'unknown',
     node_version: process.version,

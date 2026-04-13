@@ -55,6 +55,8 @@ function createTestDb() {
       telegram_chat_id TEXT,
       calcom_booking_link TEXT,
       niche TEXT,
+      plan TEXT DEFAULT 'trial',
+      calls_this_month INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );
 

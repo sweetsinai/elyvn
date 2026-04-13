@@ -35,7 +35,7 @@ router.get('/referral/:clientId', validateParams(ClientParamsSchema), async (req
     // Auto-generate referral code if none exists
     if (!client.referral_code) {
       const code = 'ELYVN-' + randomBytes(4).toString('hex').toUpperCase();
-      await db.query("UPDATE clients SET referral_code = ?, updated_at = datetime('now') WHERE id = ?", [code, clientId], 'run');
+      await db.query("UPDATE clients SET referral_code = ?, updated_at = ? WHERE id = ?", [code, new Date().toISOString(), clientId], 'run');
       client.referral_code = code;
     }
 
@@ -94,14 +94,15 @@ router.post('/referral/apply', validateBody(ReferralApplySchema), async (req, re
     }
 
     // Create referral record
+    const now = new Date().toISOString();
     await db.query(
       `INSERT INTO referrals (id, referrer_id, referred_id, status, credit_cents, created_at)
-       VALUES (?, ?, ?, 'pending', 0, datetime('now'))`,
-      [randomUUID(), referrer.id, new_client_id], 'run'
+       VALUES (?, ?, ?, 'pending', 0, ?)`,
+      [randomUUID(), referrer.id, new_client_id, now], 'run'
     );
 
     // Mark the new client as referred
-    await db.query("UPDATE clients SET referred_by = ?, updated_at = datetime('now') WHERE id = ?", [referrer.id, new_client_id], 'run');
+    await db.query("UPDATE clients SET referred_by = ?, updated_at = ? WHERE id = ?", [referrer.id, now, new_client_id], 'run');
 
     logger.info(`[referral] Code ${referral_code} applied — referrer ${referrer.id} → new ${new_client_id}`);
     return success(res, { applied: true });

@@ -8,6 +8,8 @@ const { getOnboardingLink } = require('../utils/telegram');
 const { logger } = require('../utils/logger');
 const { logDataMutation } = require('../utils/auditLog');
 const { AppError } = require('../utils/AppError');
+const { validateBody } = require('../middleware/validateRequest');
+const { ProvisionSchema } = require('../utils/schemas/provision');
 
 // NOTE: The 'plan' column is handled by migration 022_auth_and_billing.
 // Removed rogue DB connection that opened a second database handle at module load.
@@ -88,7 +90,7 @@ async function createRetellAgent(businessName, knowledgeBaseSummary, voiceId, la
 /**
  * POST / — Provision a new client with Telnyx number, Retell agent, and knowledge base
  */
-router.post('/', async (req, res, next) => {
+router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
   if (!req.isAdmin) return next(new AppError('FORBIDDEN', 'Admin access required', 403));
   try {
     const db = req.app.locals.db;
@@ -250,8 +252,8 @@ router.post('/', async (req, res, next) => {
       if (isConfigured() && owner_email) {
         createClientSheet(business_name, owner_email).then(async (sheet) => {
           if (sheet) {
-            await db.query("UPDATE clients SET google_sheet_id = ?, updated_at = datetime('now') WHERE id = ?",
-              [sheet.spreadsheetId, clientId], 'run');
+            await db.query("UPDATE clients SET google_sheet_id = ?, updated_at = ? WHERE id = ?",
+              [sheet.spreadsheetId, new Date().toISOString(), clientId], 'run');
           }
         }).catch(() => {});
       }

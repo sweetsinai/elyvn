@@ -54,7 +54,7 @@ function buildDb(overrides = {}) {
       if (sql.includes('SELECT * FROM prospects'))         return cfg.prospectRow;
       if (sql.includes('FROM appointments'))               return cfg.bookingRow;
       if (sql.includes('reply_text IS NOT NULL'))         return cfg.replyRow;
-      if (sql.includes('FROM emails_sent') && sql.includes('datetime')) return cfg.recentEmailRow;
+      if (sql.includes('FROM emails_sent') && sql.includes('created_at')) return cfg.recentEmailRow;
       return null;
     }),
   };

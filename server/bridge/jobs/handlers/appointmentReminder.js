@@ -19,8 +19,8 @@ async function followupSms(db, sendSMS, payload) {
     // Check for recent duplicate SMS to prevent queue retry duplication
     const phone = payload.phone || payload.to;
     const recentSMS = await db.query(
-      "SELECT id FROM messages WHERE phone = ? AND created_at > datetime('now', '-5 minutes') AND direction = 'outbound'",
-      [phone], 'get'
+      "SELECT id FROM messages WHERE phone = ? AND created_at > ? AND direction = 'outbound'",
+      [phone, new Date(Date.now() - 5 * 60 * 1000).toISOString()], 'get'
     );
     if (recentSMS) {
       logger.info(`[jobHandlers] Skipping duplicate SMS to ${phone}`);

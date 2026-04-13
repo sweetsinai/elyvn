@@ -83,7 +83,7 @@ describe('Onboard Route', () => {
           services: ['Installation']
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.success).toBe(false);
       expect(res.body.details.some(d => /business_name/i.test(d))).toBe(true);
     });
@@ -99,7 +99,7 @@ describe('Onboard Route', () => {
           services: ['Installation']
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.details.some(d => /owner_name/i.test(d))).toBe(true);
     });
 
@@ -114,7 +114,7 @@ describe('Onboard Route', () => {
           services: ['Installation']
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.details.some(d => /owner_phone/i.test(d))).toBe(true);
     });
 
@@ -130,7 +130,7 @@ describe('Onboard Route', () => {
           services: ['Installation']
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.details.some(d => /phone|valid/i.test(d))).toBe(true);
     });
 
@@ -145,7 +145,7 @@ describe('Onboard Route', () => {
           services: ['Installation']
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.details.some(d => /owner_email/i.test(d))).toBe(true);
     });
 
@@ -161,7 +161,7 @@ describe('Onboard Route', () => {
           services: ['Installation']
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.details.some(d => /email|valid/i.test(d))).toBe(true);
     });
 
@@ -176,7 +176,7 @@ describe('Onboard Route', () => {
           services: ['Installation']
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.details.some(d => /industry/i.test(d))).toBe(true);
     });
 
@@ -191,7 +191,7 @@ describe('Onboard Route', () => {
           industry: 'Plumbing'
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.details.some(d => /services/i.test(d))).toBe(true);
     });
 
@@ -207,7 +207,7 @@ describe('Onboard Route', () => {
           services: []
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.details.some(d => /services/i.test(d))).toBe(true);
     });
 
@@ -224,7 +224,7 @@ describe('Onboard Route', () => {
           avg_ticket: -100
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toContain('avg_ticket');
     });
 
@@ -241,7 +241,7 @@ describe('Onboard Route', () => {
           booking_link: 'not-a-url'
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/booking_link|booking link|url/i);
     });
 
@@ -258,7 +258,7 @@ describe('Onboard Route', () => {
           faq: [{ question: 'Q?' }] // Missing answer
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/faq|FAQ|answer/i);
     });
   });

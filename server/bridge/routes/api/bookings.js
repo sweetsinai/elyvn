@@ -4,6 +4,7 @@ const { isValidUUID } = require('../../utils/validate');
 const { getBookings } = require('../../utils/calcom');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
+const { success } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -31,11 +32,11 @@ router.get('/bookings/:clientId', async (req, res, next) => {
 
     const client = await db.query('SELECT calcom_event_type_id FROM clients WHERE id = ?', [clientId], 'get');
     if (!client?.calcom_event_type_id) {
-      return res.json({ data: [] });
+      return success(res, []);
     }
 
     const bookings = await getBookings(client.calcom_event_type_id, startDate, endDate);
-    res.json({ data: bookings });
+    success(res, bookings);
   } catch (err) {
     logger.error('[api] bookings error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to fetch bookings', 500));

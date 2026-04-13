@@ -36,7 +36,17 @@ export async function apiFetch(url, options = {}) {
   // Check if response is JSON before parsing
   const contentType = res.headers.get('content-type');
   if (contentType && contentType.includes('application/json')) {
-    return res.json();
+    const json = await res.json();
+    // Unwrap success()/paginated() envelope: { success, data, pagination, timestamp } → data
+    if (json && json.success === true && json.data !== undefined) {
+      const result = json.data;
+      // Attach pagination metadata if present (accessible via result._pagination)
+      if (json.pagination && result && typeof result === 'object') {
+        Object.defineProperty(result, '_pagination', { value: json.pagination, enumerable: false });
+      }
+      return result;
+    }
+    return json;
   } else {
     // Non-JSON response
     throw new Error(`Expected JSON response, got ${contentType || 'unknown'}`);

@@ -144,6 +144,44 @@ async function sendSMS(to, body, from, db, clientId) {
     return { success: false, error: 'SMS not configured' };
   }
 
+  // Plan usage limit enforcement — block SMS if client exceeded their plan's SMS limit
+  if (db && clientId) {
+    try {
+      const client = await db.query('SELECT plan, sms_this_month, telegram_chat_id FROM clients WHERE id = ?', [clientId], 'get');
+      if (client) {
+        const PLAN_SMS_LIMITS = { trial: 100, solo: 300, starter: 1000, pro: 3000, premium: -1 };
+        const limit = PLAN_SMS_LIMITS[client.plan] ?? 100;
+        const used = client.sms_this_month || 0;
+        if (limit !== -1 && used >= limit) {
+          logger.warn(`[sms] Plan limit reached: client ${clientId} on ${client.plan} plan (${used}/${limit} SMS)`);
+          // Telegram alert for SMS limit reached
+          if (client.telegram_chat_id) {
+            try {
+              const { sendMessage } = require('./telegram');
+              sendMessage(client.telegram_chat_id,
+                `&#9888; <b>SMS limit reached</b>\n\nYou've used ${used}/${limit} SMS this month on your ${client.plan} plan.\n\nOutbound messages are paused. Upgrade to resume.`
+              ).catch(() => {});
+            } catch (_) {}
+          }
+          return { success: false, error: `SMS limit reached (${limit}/month on ${client.plan} plan)` };
+        }
+        // Warn at 80% SMS usage
+        if (limit !== -1 && used > 0 && used === Math.floor(limit * 0.8)) {
+          if (client.telegram_chat_id) {
+            try {
+              const { sendMessage } = require('./telegram');
+              sendMessage(client.telegram_chat_id,
+                `&#128276; <b>SMS usage alert</b>: ${used}/${limit} SMS used this month (${Math.round(used/limit*100)}%).`
+              ).catch(() => {});
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('[sms] Usage limit check error (non-fatal):', err.message);
+    }
+  }
+
   // Rate limit check
   const lastSent = lastSendTime.get(to);
   if (lastSent && Date.now() - lastSent < MIN_GAP_MS) {
@@ -208,7 +246,7 @@ async function sendSMSToOwner(db, clientId, body) {
     }
 
     const fromPhone = client.phone_number;
-    return sendSMS(client.owner_phone, body, fromPhone);
+    return sendSMS(client.owner_phone, body, fromPhone, db, clientId);
   } catch (err) {
     logger.error('[sms] sendSMSToOwner error:', err);
     return { success: false, error: err.message };
@@ -222,12 +260,13 @@ function cleanupSMSTimers() {
 async function initRateLimiterFromDB(db) {
   if (!db) return;
   try {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const recentSent = await db.query(`
       SELECT phone, MAX(created_at) as last_sent
       FROM messages
-      WHERE direction = 'outbound' AND created_at > datetime('now', '-1 hour')
+      WHERE direction = 'outbound' AND created_at > ?
       GROUP BY phone
-    `);
+    `, [oneHourAgo]);
     for (const row of recentSent) {
       lastSendTime.set(row.phone, new Date(row.last_sent).getTime());
     }

@@ -247,7 +247,7 @@ router.get('/leads/:clientId/:leadId/timeline', validateParams(ClientParamsSchem
       return next(new AppError('INVALID_INPUT', 'Invalid client ID or lead ID format', 400));
     }
 
-    const timeline = buildLeadTimeline(db, leadId);
+    const timeline = buildLeadTimeline(db, leadId, clientId);
     return success(res, timeline);
   } catch (err) {
     logger.error('[api] lead timeline error:', err);

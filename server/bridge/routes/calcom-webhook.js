@@ -111,18 +111,28 @@ async function handleBookingCreated(db, payload) {
   }
 
   // Find which client this booking belongs to
-  // Match by organizer email first, then fall back to single-tenant default
+  // Priority: 1) organizer email, 2) Cal.com event type ID, 3) single-tenant fallback
   let client = null;
   if (organizer?.email) {
     client = await db.query('SELECT * FROM clients WHERE owner_email = ? AND is_active = 1', [organizer.email], 'get');
   }
+  // Fallback: match by calcom_event_type_id if the booking payload includes it
+  if (!client && payload.eventTypeId) {
+    client = await db.query('SELECT * FROM clients WHERE calcom_event_type_id = ? AND is_active = 1', [String(payload.eventTypeId)], 'get');
+  }
+  // Fallback: match by organizer email domain against any client with matching email domain
+  if (!client && organizer?.email) {
+    const domain = organizer.email.split('@')[1];
+    if (domain) {
+      client = await db.query("SELECT * FROM clients WHERE owner_email LIKE ? AND is_active = 1 LIMIT 1", [`%@${domain}`], 'get');
+    }
+  }
   if (!client && process.env.SINGLE_TENANT_MODE === 'true') {
-    // Single-tenant fallback — only enabled via explicit env flag
     client = await db.query('SELECT * FROM clients WHERE is_active = 1 LIMIT 1', [], 'get');
   }
 
   if (!client) {
-    logger.error('[calcom-webhook] No matching client found for booking');
+    logger.error(`[calcom-webhook] No matching client found for booking (organizer: ${organizer?.email || 'unknown'}, eventTypeId: ${payload.eventTypeId || 'none'})`);
     return;
   }
 
@@ -133,7 +143,7 @@ async function handleBookingCreated(db, payload) {
       INSERT INTO appointments (id, client_id, phone, name, service, datetime, status, calcom_booking_id, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)
     `, [appointmentId, client.id, phone, name, title || 'Demo', startTime, calcomBookingId, now, now], 'run');
-    try { logDataMutation(db, { action: 'client_created', table: 'appointments', recordId: appointmentId, clientId: client.id, newValues: { phone, name, service: title, startTime, calcomBookingId, status: 'confirmed' } }); } catch (_) {}
+    try { logDataMutation(db, { action: 'appointment_created', table: 'appointments', recordId: appointmentId, clientId: client.id, newValues: { phone, name, service: title, startTime, calcomBookingId, status: 'confirmed' } }); } catch (_) {}
   } catch (err) {
     if (!err.message.includes('UNIQUE')) {
       logger.error('[calcom-webhook] Insert appointment error:', err.message);
@@ -302,7 +312,9 @@ async function handleBookingCreated(db, payload) {
     const safePhone = (phone || 'No phone').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const safeTitle = (title || 'Demo').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const msg = `&#128197; <b>New Booking!</b>\n\n<b>${safeName}</b> just booked!\n&#128231; ${safeEmail}\n&#128241; ${safePhone}\n&#128203; ${safeTitle}\n&#128336; ${timeStr}\n\nConfirmation SMS sent automatically.`;
-    await sendTg(client.telegram_chat_id, msg);
+    if (client.telegram_chat_id) {
+      await sendTg(client.telegram_chat_id, msg);
+    }
   } catch (err) {
     logger.error('[calcom-webhook] Telegram notification failed:', err.message);
   }
@@ -348,13 +360,40 @@ async function handleBookingCancelled(db, payload) {
     const calcomBookingId = String(bookingId || uid || '');
     const now = new Date().toISOString();
 
+    // Get appointment before updating (need id for cancelling jobs)
+    const appt = await db.query("SELECT id, client_id, phone FROM appointments WHERE calcom_booking_id = ?", [calcomBookingId], 'get');
+
     // Update appointment
     await db.query("UPDATE appointments SET status = 'cancelled', updated_at = ? WHERE calcom_booking_id = ?", [now, calcomBookingId], 'run');
-    try { logDataMutation(db, { action: 'client_updated', table: 'appointments', recordId: calcomBookingId, newValues: { status: 'cancelled' } }); } catch (_) {}
+    try { logDataMutation(db, { action: 'appointment_cancelled', table: 'appointments', recordId: calcomBookingId, newValues: { status: 'cancelled' } }); } catch (_) {}
 
     // Update lead stage back to contacted
     await db.query("UPDATE leads SET stage = 'contacted', updated_at = ? WHERE calcom_booking_id = ?", [now, calcomBookingId], 'run');
     try { logDataMutation(db, { action: 'lead_updated', table: 'leads', recordId: calcomBookingId, newValues: { stage: 'contacted' } }); } catch (_) {}
+
+    // Cancel scheduled reminders and review requests for this appointment
+    if (appt) {
+      try {
+        const { cancelJobs } = require('../utils/jobQueue');
+        await cancelJobs(db, `reminder_${appt.id}`);
+        await cancelJobs(db, `review_${appt.id}`);
+      } catch (_) {}
+
+      // Telegram notification to client
+      try {
+        const client = await db.query('SELECT telegram_chat_id, business_name FROM clients WHERE id = ?', [appt.client_id], 'get');
+        if (client?.telegram_chat_id) {
+          const { sendMessage } = require('../utils/telegram');
+          const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+          sendMessage(client.telegram_chat_id,
+            `&#10060; <b>Booking Cancelled</b>\n\n` +
+            `${appt.phone ? `&#128222; ${esc(appt.phone)}` : 'Unknown contact'}\n` +
+            `Booking ID: ${esc(calcomBookingId)}\n\n` +
+            `Lead moved back to <b>contacted</b> stage. Follow-up reminders cancelled.`
+          ).catch(e => logger.warn('[calcom-webhook] Cancel Telegram failed:', e.message));
+        }
+      } catch (_) {}
+    }
 
     logger.info(`[calcom-webhook] Booking ${calcomBookingId} cancelled`);
   } catch (err) {
@@ -379,13 +418,14 @@ async function handleBookingRescheduled(db, payload) {
 
     if (appt) {
       // Cancel old reminder jobs for this appointment
+      const cancelNow = new Date().toISOString();
       try {
         await db.query(
-          `UPDATE job_queue SET status = 'cancelled', updated_at = datetime('now')
+          `UPDATE job_queue SET status = 'cancelled', updated_at = ?
            WHERE type = 'appointment_reminder'
            AND json_extract(payload, '$.appointmentId') = ?
            AND status = 'pending'`,
-          [appt.id], 'run'
+          [cancelNow, appt.id], 'run'
         );
       } catch (cancelErr) {
         logger.warn('[calcom-webhook] Failed to cancel old reminders:', cancelErr.message);
@@ -394,11 +434,11 @@ async function handleBookingRescheduled(db, payload) {
       // Cancel old review request job too
       try {
         await db.query(
-          `UPDATE job_queue SET status = 'cancelled', updated_at = datetime('now')
+          `UPDATE job_queue SET status = 'cancelled', updated_at = ?
            WHERE type = 'google_review_request'
            AND json_extract(payload, '$.appointmentId') = ?
            AND status = 'pending'`,
-          [appt.id], 'run'
+          [cancelNow, appt.id], 'run'
         );
       } catch (_) {}
 
@@ -420,7 +460,7 @@ async function handleBookingRescheduled(db, payload) {
       // Reschedule review request if client has a review link
       if (endTime && appt.phone) {
         try {
-          const client = await db.query('SELECT google_review_link, twilio_phone, business_name FROM clients WHERE id = ?', [appt.client_id], 'get');
+          const client = await db.query('SELECT google_review_link, phone_number, business_name FROM clients WHERE id = ?', [appt.client_id], 'get');
           if (client?.google_review_link) {
             const { enqueueJob } = require('../utils/jobQueue');
             const reviewAt = new Date(new Date(endTime).getTime() + 2 * 60 * 60 * 1000).toISOString();
@@ -435,6 +475,25 @@ async function handleBookingRescheduled(db, payload) {
           }
         } catch (_) {}
       }
+    }
+
+    // Telegram notification for reschedule
+    if (appt) {
+      try {
+        const notifyClient = await db.query('SELECT telegram_chat_id FROM clients WHERE id = ?', [appt.client_id], 'get');
+        if (notifyClient?.telegram_chat_id) {
+          const { sendMessage } = require('../utils/telegram');
+          const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+          const timeStr = startTime ? new Date(startTime).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : 'TBD';
+          sendMessage(notifyClient.telegram_chat_id,
+            `&#128260; <b>Booking Rescheduled</b>\n\n` +
+            `${appt.phone ? `&#128222; ${esc(appt.phone)}` : 'Unknown contact'}\n` +
+            `${appt.name ? `&#128100; ${esc(appt.name)}` : ''}\n` +
+            `&#128197; New time: <b>${esc(timeStr)}</b>\n\n` +
+            `Reminders updated automatically.`
+          ).catch(e => logger.warn('[calcom-webhook] Reschedule Telegram failed:', e.message));
+        }
+      } catch (_) {}
     }
 
     logger.info(`[calcom-webhook] Booking ${calcomBookingId} rescheduled to ${startTime}`);

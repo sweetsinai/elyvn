@@ -44,8 +44,8 @@ async function recordOptOut(db, phone, clientId, reason = 'user_request') {
     const { randomUUID } = require('crypto');
     await db.query(`
       INSERT OR REPLACE INTO sms_opt_outs (id, phone, client_id, opted_out_at, reason)
-      VALUES (?, ?, ?, datetime('now'), ?)
-    `, [randomUUID(), phone, clientId, reason], 'run');
+      VALUES (?, ?, ?, ?, ?)
+    `, [randomUUID(), phone, clientId, new Date().toISOString(), reason], 'run');
 
     logger.info(`[optOut] Recorded opt-out for ${phone} (${reason})`);
 

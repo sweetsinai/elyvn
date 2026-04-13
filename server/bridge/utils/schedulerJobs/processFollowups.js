@@ -11,8 +11,9 @@ async function processFollowups(db) {
       `SELECT f.*, l.phone, l.client_id as lead_client_id
        FROM followups f
        JOIN leads l ON f.lead_id = l.id
-       WHERE f.status = 'scheduled' AND f.scheduled_at <= datetime('now')
-       LIMIT 10`
+       WHERE f.status = 'scheduled' AND f.scheduled_at <= ?
+       LIMIT 10`,
+      [new Date().toISOString()]
     );
 
     if (due.length === 0) return;
@@ -39,7 +40,7 @@ async function processFollowups(db) {
         }, memory, db);
 
         await executeActions(db, decision.actions, memory);
-        await db.query("UPDATE followups SET status = 'sent', sent_at = datetime('now') WHERE id = ?", [followup.id], 'run');
+        await db.query("UPDATE followups SET status = 'sent', sent_at = ? WHERE id = ?", [new Date().toISOString(), followup.id], 'run');
         processed++;
       } catch (err) {
         logger.error(`[processFollowups] Follow-up ${followup.id} failed:`, err.message);

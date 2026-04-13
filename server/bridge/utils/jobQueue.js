@@ -115,11 +115,12 @@ async function processJobs(db, handlers) {
   try {
     // Clean up old completed/failed/cancelled jobs (older than 7 days) to prevent table bloat
     try {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const result = await db.query(`
         DELETE FROM job_queue
         WHERE status IN ('completed', 'failed', 'cancelled')
-        AND updated_at < datetime('now', '-7 days')
-      `, [], 'run');
+        AND updated_at < ?
+      `, [sevenDaysAgo], 'run');
       if (result.changes > 0) {
         logger.info(`[jobQueue] Cleaned up ${result.changes} old jobs`);
       }
@@ -127,13 +128,14 @@ async function processJobs(db, handlers) {
       logger.warn('[jobQueue] Cleanup error:', err.message);
     }
 
+    const now = new Date().toISOString();
     const due = await db.query(`
       SELECT * FROM job_queue
       WHERE status = 'pending'
-      AND datetime(scheduled_at) <= datetime('now')
+      AND datetime(scheduled_at) <= ?
       ORDER BY priority DESC, scheduled_at ASC
       LIMIT 20
-    `);
+    `, [now]);
 
     for (const job of due) {
       try {
@@ -141,8 +143,8 @@ async function processJobs(db, handlers) {
         if (!handler) {
           logger.warn(`[jobQueue] No handler for job type: ${job.type}`);
           await db.query(
-            "UPDATE job_queue SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?",
-            ['Unknown job type', job.id], 'run'
+            "UPDATE job_queue SET status = 'failed', error = ?, updated_at = ? WHERE id = ?",
+            ['Unknown job type', now, job.id], 'run'
           );
           failed++;
           continue;
@@ -150,8 +152,8 @@ async function processJobs(db, handlers) {
 
         // Atomically claim the job — if another worker already claimed it, changes === 0 → skip
         const claimed = await db.query(
-          "UPDATE job_queue SET status = 'processing', updated_at = datetime('now') WHERE id = ? AND status = 'pending'",
-          [job.id], 'run'
+          "UPDATE job_queue SET status = 'processing', updated_at = ? WHERE id = ? AND status = 'pending'",
+          [now, job.id], 'run'
         );
         if (claimed.changes === 0) continue;
 
@@ -161,8 +163,8 @@ async function processJobs(db, handlers) {
             payload = JSON.parse(payload);
           } catch (parseErr) {
             logger.error(`[jobQueue] Failed to parse payload for job ${job.id}: ${parseErr.message}`);
-            await db.query("UPDATE job_queue SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?",
-              ['Payload parse error: ' + parseErr.message, job.id], 'run');
+            await db.query("UPDATE job_queue SET status = 'failed', error = ?, updated_at = ? WHERE id = ?",
+              ['Payload parse error: ' + parseErr.message, now, job.id], 'run');
             continue;
           }
         }
@@ -172,8 +174,8 @@ async function processJobs(db, handlers) {
 
         // Mark as completed
         await db.query(
-          "UPDATE job_queue SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-          [job.id], 'run'
+          "UPDATE job_queue SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
+          [now, now, job.id], 'run'
         );
 
         processed++;
@@ -187,8 +189,8 @@ async function processJobs(db, handlers) {
           const backoffMs = Math.pow(2, attempts) * JOB_RETRY_BACKOFF_BASE_MS; // 2min, 4min, 8min
           const nextScheduled = new Date(Date.now() + backoffMs).toISOString();
           await db.query(
-            "UPDATE job_queue SET status = 'pending', attempts = ?, scheduled_at = ?, error = ?, updated_at = datetime('now') WHERE id = ?",
-            [attempts, nextScheduled, err.message.substring(0, 255), job.id], 'run'
+            "UPDATE job_queue SET status = 'pending', attempts = ?, scheduled_at = ?, error = ?, updated_at = ? WHERE id = ?",
+            [attempts, nextScheduled, err.message.substring(0, 255), now, job.id], 'run'
           );
 
           logger.warn(`[jobQueue] Job ${job.id} failed (attempt ${attempts}/${job.max_attempts}), rescheduled`);
@@ -198,16 +200,16 @@ async function processJobs(db, handlers) {
             await ensureSchemaOnce(db);
             await db.query(`
               INSERT INTO dead_letter_queue (id, original_job_id, job_type, payload, error, failed_at)
-              VALUES (?, ?, ?, ?, ?, datetime('now'))
-            `, [randomUUID(), job.id, job.type, job.payload, err.message.substring(0, 1000)], 'run');
+              VALUES (?, ?, ?, ?, ?, ?)
+            `, [randomUUID(), job.id, job.type, job.payload, err.message.substring(0, 1000), now], 'run');
           } catch (dlqErr) {
             logger.error('[jobQueue] DLQ insert failed:', dlqErr.message);
           }
 
           // Mark as permanently failed
           await db.query(
-            "UPDATE job_queue SET status = 'failed', error = ?, failed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-            [err.message.substring(0, 255), job.id], 'run'
+            "UPDATE job_queue SET status = 'failed', error = ?, failed_at = ?, updated_at = ? WHERE id = ?",
+            [err.message.substring(0, 255), now, now, job.id], 'run'
           );
 
           logger.error(`[jobQueue] Job ${job.id} permanently failed (moved to DLQ):`, err.message);
@@ -294,11 +296,15 @@ async function recoverStalledJobs(db) {
 
     // Recover jobs stuck in 'processing' status (crash scenario)
     // Only recover if they've been stuck for > STALLED_JOB_THRESHOLD_MS
+    const now = new Date().toISOString();
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
     const processingResult = await db.query(`
       UPDATE job_queue
-      SET status = 'pending', attempts = attempts + 1, updated_at = datetime('now')
-      WHERE status = 'processing' AND updated_at < datetime('now', '-30 minutes')
-    `, [], 'run');
+      SET status = 'pending', attempts = attempts + 1, updated_at = ?
+      WHERE status = 'processing' AND updated_at < ?
+    `, [now, thirtyMinAgo], 'run');
 
     if (processingResult.changes > 0) {
       logger.info(`[jobQueue] Recovered ${processingResult.changes} jobs stuck in 'processing' status (crash recovery)`);
@@ -309,15 +315,15 @@ async function recoverStalledJobs(db) {
     // Jobs with remaining retries get reset; exhausted jobs get failed
     const stalePending = await db.query(`
       SELECT id, type, payload, attempts, max_attempts FROM job_queue
-      WHERE status = 'pending' AND updated_at < datetime('now', '-1 hour')
-    `);
+      WHERE status = 'pending' AND updated_at < ?
+    `, [oneHourAgo]);
 
     for (const job of stalePending) {
       if ((job.attempts || 0) < (job.max_attempts || 3)) {
         // Reset with warning — give it another chance
         await db.query(
-          "UPDATE job_queue SET attempts = attempts + 1, scheduled_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-          [job.id], 'run'
+          "UPDATE job_queue SET attempts = attempts + 1, scheduled_at = ?, updated_at = ? WHERE id = ?",
+          [now, now, job.id], 'run'
         );
         totalRecovered++;
         logger.warn(`[jobQueue] Reset stale pending job ${job.id} (${job.type}) — was pending > 1 hour`);
@@ -326,14 +332,14 @@ async function recoverStalledJobs(db) {
         try {
           await db.query(`
             INSERT INTO dead_letter_queue (id, original_job_id, job_type, payload, error, failed_at)
-            VALUES (?, ?, ?, ?, ?, datetime('now'))
-          `, [randomUUID(), job.id, job.type, job.payload, 'Stale pending job exceeded max attempts'], 'run');
+            VALUES (?, ?, ?, ?, ?, ?)
+          `, [randomUUID(), job.id, job.type, job.payload, 'Stale pending job exceeded max attempts', now], 'run');
         } catch (dlqErr) {
           logger.error('[jobQueue] DLQ insert failed for stale job:', dlqErr.message);
         }
         await db.query(
-          "UPDATE job_queue SET status = 'failed', error = 'Stale pending > 1 hour, max attempts exhausted', failed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-          [job.id], 'run'
+          "UPDATE job_queue SET status = 'failed', error = 'Stale pending > 1 hour, max attempts exhausted', failed_at = ?, updated_at = ? WHERE id = ?",
+          [now, now, job.id], 'run'
         );
         stalePendingFailed++;
         logger.warn(`[jobQueue] Failed stale pending job ${job.id} (${job.type}) — max attempts exhausted`);

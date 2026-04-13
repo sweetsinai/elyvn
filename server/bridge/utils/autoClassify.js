@@ -68,9 +68,9 @@ async function autoClassifyReplies(db) {
         // Single write with the final classification
         await db.query(`
           UPDATE emails_sent
-          SET reply_classification = ?, updated_at = datetime('now')
+          SET reply_classification = ?, updated_at = ?
           WHERE id = ?
-        `, [finalClassification, email.id], 'run');
+        `, [finalClassification, new Date().toISOString(), email.id], 'run');
 
         // Update lead stage based on classification (only if confident)
         const newStage = CLASSIFICATION_STAGE_MAP[cls];
@@ -87,8 +87,8 @@ async function autoClassifyReplies(db) {
 
             if (lead) {
               await db.query(
-                "UPDATE leads SET stage = ?, updated_at = datetime('now') WHERE id = ?",
-                [newStage, lead.id], 'run'
+                "UPDATE leads SET stage = ?, updated_at = ? WHERE id = ?",
+                [newStage, new Date().toISOString(), lead.id], 'run'
               );
               logger.info(`[autoClassify] Lead ${lead.id} stage → ${newStage} (${cls}, confidence=${confidence.toFixed(2)})`);
             }

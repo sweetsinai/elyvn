@@ -106,8 +106,9 @@ function calcIntent(lead, calls, messages) {
   if (messages.length > 0) {
     const lastCallWithSentiment = [...calls].reverse().find(c => c.sentiment);
     if (lastCallWithSentiment) {
-      const latestSentiment = parseInt(lastCallWithSentiment.sentiment) || 0;
-      intentFactor += latestSentiment * 10;
+      const sentimentMap = { positive: 3, neutral: 1, negative: -2 };
+      const sentimentValue = sentimentMap[lastCallWithSentiment.sentiment] ?? (parseInt(lastCallWithSentiment.sentiment) || 0);
+      intentFactor += sentimentValue * 10;
       signalCount += 1;
     }
   }

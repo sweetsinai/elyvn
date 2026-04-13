@@ -32,7 +32,7 @@ async function sendDailySummaries(db) {
     );
 
     const tomorrowSchedule = await db.query(
-      `SELECT * FROM calls WHERE client_id = ? AND outcome = 'booked' AND date(created_at) = ? ORDER BY created_at ASC`,
+      `SELECT id, client_id, phone, name, service, datetime, status FROM appointments WHERE client_id = ? AND date(datetime) = ? AND status = 'confirmed' ORDER BY datetime ASC`,
       [client.id, tomorrow]
     );
 

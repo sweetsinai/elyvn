@@ -3,6 +3,7 @@ const router = express.Router();
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { isValidUUID } = require('../../utils/validate');
+const { success } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -20,7 +21,7 @@ router.get('/revenue/:clientId', (req, res, next) => {
 
     const { getROIMetrics } = require('../../utils/revenueAttribution');
     const metrics = getROIMetrics(db, clientId, days);
-    res.json({ data: metrics });
+    success(res, metrics);
   } catch (err) {
     logger.error('[api] revenue error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to get revenue metrics', 500));
@@ -47,7 +48,8 @@ router.get('/revenue/:clientId/funnel', async (req, res, next) => {
       JOIN campaigns c ON c.id = es.campaign_id
       WHERE es.sent_at >= ?
         AND es.status != 'draft'
-    `, [since], 'get');
+        AND c.client_id = ?
+    `, [since, clientId], 'get');
 
     // Opened
     const openedRow = await db.query(`
@@ -56,7 +58,8 @@ router.get('/revenue/:clientId/funnel', async (req, res, next) => {
       JOIN campaigns c ON c.id = es.campaign_id
       WHERE es.sent_at >= ?
         AND es.opened_at IS NOT NULL
-    `, [since], 'get');
+        AND c.client_id = ?
+    `, [since, clientId], 'get');
 
     // Clicked
     const clickedRow = await db.query(`
@@ -65,7 +68,8 @@ router.get('/revenue/:clientId/funnel', async (req, res, next) => {
       JOIN campaigns c ON c.id = es.campaign_id
       WHERE es.sent_at >= ?
         AND es.clicked_at IS NOT NULL
-    `, [since], 'get');
+        AND c.client_id = ?
+    `, [since, clientId], 'get');
 
     // Replied (has reply_text set)
     const repliedRow = await db.query(`
@@ -75,7 +79,8 @@ router.get('/revenue/:clientId/funnel', async (req, res, next) => {
       WHERE es.sent_at >= ?
         AND es.reply_text IS NOT NULL
         AND es.reply_text != ''
-    `, [since], 'get');
+        AND c.client_id = ?
+    `, [since, clientId], 'get');
 
     // Booked — leads that converted, linked via prospect_id on leads table
     const bookedRow = await db.query(`
@@ -98,23 +103,21 @@ router.get('/revenue/:clientId/funnel', async (req, res, next) => {
     // Conversion rates between each stage (as percentages, rounded to 2dp)
     const pct = (num, denom) => (denom > 0 ? Math.round((num / denom) * 10000) / 100 : 0);
 
-    res.json({
-      data: {
-        period_days: days,
-        stages: {
-          sent,
-          opened,
-          clicked,
-          replied,
-          booked,
-        },
-        conversion_rates: {
-          sent_to_opened:   pct(opened,  sent),
-          opened_to_clicked: pct(clicked, opened),
-          clicked_to_replied: pct(replied, clicked),
-          replied_to_booked:  pct(booked,  replied),
-          overall:            pct(booked,  sent),
-        },
+    success(res, {
+      period_days: days,
+      stages: {
+        sent,
+        opened,
+        clicked,
+        replied,
+        booked,
+      },
+      conversion_rates: {
+        sent_to_opened:   pct(opened,  sent),
+        opened_to_clicked: pct(clicked, opened),
+        clicked_to_replied: pct(replied, clicked),
+        replied_to_booked:  pct(booked,  replied),
+        overall:            pct(booked,  sent),
       },
     });
   } catch (err) {
@@ -135,7 +138,7 @@ router.get('/revenue/:clientId/:leadId', (req, res, next) => {
 
     const { getAttribution } = require('../../utils/revenueAttribution');
     const attribution = getAttribution(db, leadId, clientId);
-    res.json({ data: attribution });
+    success(res, attribution);
   } catch (err) {
     logger.error('[api] attribution error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to get lead attribution', 500));
@@ -154,7 +157,7 @@ router.get('/revenue/:clientId/channels/performance', (req, res, next) => {
 
     const { getChannelPerformance } = require('../../utils/revenueAttribution');
     const channels = getChannelPerformance(db, clientId);
-    res.json({ data: channels });
+    success(res, channels);
   } catch (err) {
     logger.error('[api] channel performance error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to get channel performance', 500));
@@ -210,7 +213,7 @@ router.get('/revenue/:clientId/cohorts', async (req, res, next) => {
       avg_days_to_convert: c.avg_days_to_convert != null ? Math.round(c.avg_days_to_convert * 10) / 10 : null,
     }));
 
-    res.json({ data: { granularity, cohorts: data } });
+    success(res, { granularity, cohorts: data });
   } catch (err) {
     logger.error('[api] cohorts error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to get cohort analysis', 500));

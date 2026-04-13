@@ -206,11 +206,11 @@ describe('Lead Lifecycle — Integration', () => {
       expect(typeof res.body.pagination.offset).toBe('number');
     });
 
-    test('returns 400 for a non-UUID clientId', async () => {
+    test('returns 422 for a non-UUID clientId', async () => {
       await request(app)
         .get('/api/leads/not-a-uuid')
         .set('x-api-key', TEST_KEY)
-        .expect(400);
+        .expect(422);
     });
 
     test('returns 401 with no API key', async () => {
@@ -254,14 +254,14 @@ describe('Lead Lifecycle — Integration', () => {
       expect(row.stage).toBe('contacted');
     });
 
-    test('returns 400 for an invalid stage value', async () => {
+    test('returns 422 for an invalid stage value', async () => {
       const id = seedLead(db, clientId, { stage: 'new' });
 
       await request(app)
         .put(`/api/leads/${clientId}/${id}`)
         .set('x-api-key', TEST_KEY)
         .send({ stage: 'invalid_stage' })
-        .expect(400);
+        .expect(422);
     });
 
     test('returns 404 for a non-existent lead', async () => {

@@ -5,6 +5,9 @@
 const express = require('express');
 const router = express.Router();
 const { logger } = require('../../utils/logger');
+const { success } = require('../../utils/response');
+const { validateBody } = require('../../middleware/validateRequest');
+const { ROICalculatorSchema } = require('../../utils/schemas/calculator');
 
 // Industry benchmarks (from market research)
 const BENCHMARKS = {
@@ -23,7 +26,7 @@ const BENCHMARKS = {
 };
 
 // POST /calculator/roi — Calculate ROI for prospect
-router.post('/roi', (req, res) => {
+router.post('/roi', validateBody(ROICalculatorSchema), (req, res) => {
   try {
     const { industry, weekly_calls, avg_ticket, plan } = req.body;
 
@@ -46,7 +49,7 @@ router.post('/roi', (req, res) => {
     const roi = annualCost > 0 ? Math.round(((annualRevenue - annualCost) / annualCost) * 100) : 0;
     const paybackDays = monthlyRevenue > 0 ? Math.round((monthlyCost / monthlyRevenue) * 30) : 999;
 
-    res.json({
+    success(res, {
       industry: benchmark.label,
       inputs: { weekly_calls: calls, avg_ticket: ticket, plan: plan || 'starter' },
       results: {
@@ -83,7 +86,7 @@ router.get('/benchmarks', (req, res) => {
     avg_ticket: b.avgTicket,
     miss_rate_pct: Math.round(b.missRate * 100),
   }));
-  res.json({ industries: list });
+  success(res, { industries: list });
 });
 
 module.exports = router;

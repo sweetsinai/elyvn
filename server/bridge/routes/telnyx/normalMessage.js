@@ -28,9 +28,10 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
     }
 
     // Rate limit: skip auto-reply if we already replied to this number in the last 5 minutes
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const recentOutbound = await db.query(
-      "SELECT COUNT(*) as c FROM messages WHERE phone = ? AND direction = 'outbound' AND created_at >= datetime('now','-5 minutes')",
-      [from],
+      "SELECT COUNT(*) as c FROM messages WHERE phone = ? AND client_id = ? AND direction = 'outbound' AND created_at >= ?",
+      [from, client.id, fiveMinAgo],
       'get'
     );
     if (recentOutbound.c > 0) {
@@ -38,14 +39,15 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
       const existingLead2 = await db.query('SELECT id FROM leads WHERE phone = ? AND client_id = ?', [from, client.id], 'get');
       if (existingLead2) {
         const convId = await ensureConversation(db, client.id, from, existingLead2.id);
+        const rlNow = new Date().toISOString();
         await db.query(`
           INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, conversation_id, delivery_status, created_at)
-          VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, 'received', datetime('now'))
-        `, [randomUUID(), client.id, existingLead2.id, from, body, messageId || null, convId], 'run');
+          VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, 'received', ?)
+        `, [randomUUID(), client.id, existingLead2.id, from, body, messageId || null, convId, rlNow], 'run');
         // Update conversation preview
         try {
           const preview = (body || '').substring(0, 100);
-          await db.query("UPDATE conversations SET last_message_at = datetime('now'), last_message_preview = ?, updated_at = datetime('now') WHERE id = ?", [preview, convId], 'run');
+          await db.query("UPDATE conversations SET last_message_at = ?, last_message_preview = ?, updated_at = ? WHERE id = ?", [rlNow, preview, rlNow, convId], 'run');
         } catch (_) {}
       }
       return;
@@ -77,10 +79,11 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
           "UPDATE messages SET conversation_id = ?, delivery_status = 'received' WHERE id = ?",
           [conversationId, inboundId], 'run'
         );
+        const linkNow = new Date().toISOString();
         const preview = (body || '').substring(0, 100);
         await db.query(
-          "UPDATE conversations SET last_message_at = datetime('now'), last_message_preview = ?, updated_at = datetime('now') WHERE id = ?",
-          [preview, conversationId], 'run'
+          "UPDATE conversations SET last_message_at = ?, last_message_preview = ?, updated_at = ? WHERE id = ?",
+          [linkNow, preview, linkNow, conversationId], 'run'
         );
       } catch (_) { /* linking must not break request */ }
     }
@@ -101,21 +104,22 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
 
     // Send reply via Telnyx REST API (max SMS_MAX_LENGTH chars = 10 concatenated segments)
     const truncatedReply = finalReply.slice(0, SMS_MAX_LENGTH);
-    await sendSMS(from, truncatedReply, to);
+    await sendSMS(from, truncatedReply, to, db, client.id);
 
     // Record outbound message (with conversation_id + delivery_status)
+    const outNow = new Date().toISOString();
     await db.query(`
       INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, confidence, conversation_id, delivery_status, created_at)
-      VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'auto_replied', ?, ?, 'sent', datetime('now'))
-    `, [outboundId, client.id, leadId, from, finalReply, finalConfidence, conversationId], 'run');
+      VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'auto_replied', ?, ?, 'sent', ?)
+    `, [outboundId, client.id, leadId, from, finalReply, finalConfidence, conversationId, outNow], 'run');
 
     // Update conversation with latest message
     try {
       const preview = finalReply.substring(0, 100);
       await db.query(`
-        UPDATE conversations SET last_message_at = datetime('now'), last_message_preview = ?, updated_at = datetime('now')
+        UPDATE conversations SET last_message_at = ?, last_message_preview = ?, updated_at = ?
         WHERE id = ?
-      `, [preview, conversationId], 'run');
+      `, [outNow, preview, outNow, conversationId], 'run');
     } catch (_) { /* conversation update must not break request */ }
 
     try { appendEvent(db, leadId, 'message', Events.SMSSent, { phone: from, channel: 'sms', messageId: outboundId }, client.id); } catch (_) {}
@@ -129,7 +133,7 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
     // Broadcast real-time update
     try {
       const { broadcast } = require('../../utils/websocket');
-      broadcast('new_message', { id: inboundId, conversationId, phone: from, direction: 'inbound', body, confidence: finalConfidence, lead_id: leadId });
+      broadcast('new_message', { id: inboundId, conversationId, phone: from, direction: 'inbound', body, confidence: finalConfidence, lead_id: leadId }, client.id);
     } catch (err) {
       logger.warn('[telnyx] WebSocket broadcast error:', err.message);
     }
@@ -192,13 +196,14 @@ async function handleAiPaused(db, client, from, to, body, messageId) {
     try { appendEvent(db, leadId, 'lead', Events.LeadCreated, { phone: from, source: 'sms_inbound', ai_paused: true }, client.id); } catch (_) {}
   }
   const convId = await ensureConversation(db, client.id, from, leadId);
+  const pausedNow = new Date().toISOString();
   await db.query(`
     INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, message_sid, conversation_id, delivery_status, created_at)
-    VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, 'received', datetime('now'))
-  `, [randomUUID(), client.id, leadId, from, body, messageId || null, convId], 'run');
+    VALUES (?, ?, ?, ?, 'sms', 'inbound', ?, 'received', ?, ?, 'received', ?)
+  `, [randomUUID(), client.id, leadId, from, body, messageId || null, convId, pausedNow], 'run');
   try {
     const preview = (body || '').substring(0, 100);
-    await db.query("UPDATE conversations SET last_message_at = datetime('now'), last_message_preview = ?, updated_at = datetime('now') WHERE id = ?", [preview, convId], 'run');
+    await db.query("UPDATE conversations SET last_message_at = ?, last_message_preview = ?, updated_at = ? WHERE id = ?", [pausedNow, preview, pausedNow, convId], 'run');
   } catch (_) {}
 
   if (client.telegram_chat_id) {
@@ -277,7 +282,7 @@ async function handleConfidence(client, from, body, reply, confidence) {
   const finalReply = 'Great question! Let me check with the team and get back to you shortly.';
   if (client.owner_phone) {
     Promise.resolve().then(() =>
-      sendSMS(client.owner_phone, `[ELYVN] Question from ${from} that needs your input:\n"${body}"`)
+      sendSMS(client.owner_phone, `[ELYVN] Question from ${from} that needs your input:\n"${body}"`, client.phone_number, db, client.id)
     ).catch(err => logger.error('[telnyx] Owner notification failed:', err.message));
   }
   return { finalReply, finalConfidence: 'low' };
@@ -319,8 +324,8 @@ async function ensureConversation(db, clientId, phone, leadId) {
     if (existing) {
       // Increment unread count for inbound
       await db.query(
-        "UPDATE conversations SET unread_count = unread_count + 1, updated_at = datetime('now') WHERE id = ?",
-        [existing.id], 'run'
+        "UPDATE conversations SET unread_count = unread_count + 1, updated_at = ? WHERE id = ?",
+        [new Date().toISOString(), existing.id], 'run'
       );
       // Update lead_id if it was null and we now have one
       if (leadId) {
@@ -338,10 +343,11 @@ async function ensureConversation(db, clientId, phone, leadId) {
       const lead = await db.query('SELECT name FROM leads WHERE id = ?', [leadId], 'get');
       leadName = lead?.name || null;
     }
+    const convNow = new Date().toISOString();
     await db.query(`
       INSERT INTO conversations (id, client_id, lead_id, lead_phone, lead_name, unread_count, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
-    `, [convId, clientId, leadId, phone, leadName], 'run');
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    `, [convId, clientId, leadId, phone, leadName, convNow, convNow], 'run');
     return convId;
   } catch (err) {
     logger.warn('[telnyx] ensureConversation error:', err.message);

@@ -5,6 +5,7 @@ const { CircuitBreaker } = require('../../utils/resilience');
 const { isValidUUID } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
+const { success } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -59,7 +60,7 @@ router.get('/reports/:clientId', async (req, res, next) => {
       'all'
     );
 
-    res.json({ data: reports });
+    success(res, reports);
   } catch (err) {
     logger.error('[api] reports error:', err);
     next(err);
@@ -81,7 +82,7 @@ router.get('/reports/:clientId/insights', async (req, res, next) => {
     const cacheKey = `insights:${clientId}:${days}`;
     const cached = insightsCache.get(cacheKey);
     if (cached && (Date.now() - cached.ts) < INSIGHTS_CACHE_TTL) {
-      return res.json(cached.data);
+      return success(res, cached.data);
     }
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
@@ -214,7 +215,7 @@ Write exactly 5 bullets. Each bullet = one actionable insight or observation. No
     // Cache for 5 minutes
     insightsCache.set(cacheKey, { data: result, ts: Date.now() });
 
-    res.json(result);
+    success(res, result);
   } catch (err) {
     logger.error('[api] reports/insights error:', err);
     next(err);

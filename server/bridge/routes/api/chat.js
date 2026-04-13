@@ -10,6 +10,8 @@ const { logger } = require('../../utils/logger');
 const { LENGTH_LIMITS } = require('../../utils/inputValidation');
 const { emailSendLimit } = require('../../middleware/rateLimits');
 const { AppError } = require('../../utils/AppError');
+const { validateBody } = require('../../middleware/validateRequest');
+const { ChatSchema } = require('../../utils/schemas/chat');
 
 const { ANTHROPIC_TIMEOUT } = require('../../config/timing');
 const anthropic = new Anthropic();
@@ -18,7 +20,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const sanitize = (s, max) => String(s || '').replace(/[\r\n\t<>{}]/g, ' ').substring(0, max);
 
 // POST /chat — Anthropic API proxy for dashboard AI features — 20/min per client
-router.post('/chat', emailSendLimit, async (req, res, next) => {
+router.post('/chat', emailSendLimit, validateBody(ChatSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     let { messages, clientId } = req.body;

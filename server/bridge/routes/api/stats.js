@@ -4,6 +4,7 @@ const { isValidUUID } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const queryCache = require('../../utils/queryCache');
+const { success } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -24,7 +25,7 @@ router.get('/stats/:clientId', async (req, res, next) => {
     const cacheKey = `stats:${clientId}`;
     const cached = queryCache.get(cacheKey);
     if (cached) {
-      return res.json({ data: cached });
+      return success(res, cached);
     }
 
     const now = new Date();
@@ -72,7 +73,7 @@ router.get('/stats/:clientId', async (req, res, next) => {
     const estimatedRevenue = bookingsThisWeek * avgTicket;
 
     // Leads by stage — single GROUP BY query instead of N+1
-    const stages = ['new', 'contacted', 'qualified', 'booked', 'completed', 'lost'];
+    const stages = ['new', 'contacted', 'warm', 'hot', 'qualified', 'booked', 'completed', 'lost', 'nurture'];
     const leadsByStage = {};
     stages.forEach(s => { leadsByStage[s] = 0; });
     const stageRows = await db.query(
@@ -96,7 +97,7 @@ router.get('/stats/:clientId', async (req, res, next) => {
     };
 
     queryCache.set(cacheKey, statsData, STATS_TTL);
-    res.json({ data: statsData });
+    success(res, statsData);
   } catch (err) {
     logger.error('[api] stats error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to fetch stats', 500));
@@ -146,16 +147,14 @@ router.get('/stats/:clientId/timeseries', async (req, res, next) => {
       `, [clientId, since], 'all'),
     ]);
 
-    res.json({
-      data: {
-        period_days: days,
-        series: {
-          calls: callSeries,
-          messages_sent: messagesSentSeries,
-          messages_received: messagesReceivedSeries,
-          leads: leadsSeries,
-          bookings: bookingsSeries,
-        },
+    success(res, {
+      period_days: days,
+      series: {
+        calls: callSeries,
+        messages_sent: messagesSentSeries,
+        messages_received: messagesReceivedSeries,
+        leads: leadsSeries,
+        bookings: bookingsSeries,
       },
     });
   } catch (err) {
@@ -164,9 +163,10 @@ router.get('/stats/:clientId/timeseries', async (req, res, next) => {
   }
 });
 
-// GET /stats/:clientId/experiments — List all experiments
+// GET /stats/:clientId/experiments — List all experiments (admin-only: experiments are global)
 router.get('/stats/:clientId/experiments', (req, res, next) => {
   try {
+    if (!req.isAdmin) return next(new AppError('FORBIDDEN', 'Experiments are admin-only', 403));
     const { clientId } = req.params;
 
     if (!isValidUUID(clientId)) {
@@ -177,16 +177,17 @@ router.get('/stats/:clientId/experiments', (req, res, next) => {
     const db = req.app.locals.db;
     const status = req.query.status || undefined;
     const experiments = listExperiments(db, status);
-    res.json({ data: experiments });
+    success(res, experiments);
   } catch (err) {
     logger.error('[api] experiments list error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to list experiments', 500));
   }
 });
 
-// GET /stats/:clientId/experiments/:name/results — Experiment results with significance
+// GET /stats/:clientId/experiments/:name/results — Experiment results (admin-only)
 router.get('/stats/:clientId/experiments/:name/results', (req, res, next) => {
   try {
+    if (!req.isAdmin) return next(new AppError('FORBIDDEN', 'Experiments are admin-only', 403));
     const { clientId, name } = req.params;
 
     if (!isValidUUID(clientId)) {
@@ -201,7 +202,7 @@ router.get('/stats/:clientId/experiments/:name/results', (req, res, next) => {
       return next(new AppError('NOT_FOUND', 'Experiment not found', 404));
     }
 
-    res.json({ data: results });
+    success(res, results);
   } catch (err) {
     logger.error('[api] experiment results error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to get experiment results', 500));
@@ -221,7 +222,7 @@ router.get('/stats/:clientId/activity', (req, res, next) => {
     const db = req.app.locals.db;
     const days = Math.min(parseInt(req.query.days) || 30, 365);
     const activity = buildClientActivity(db, clientId, days);
-    res.json({ data: activity });
+    success(res, activity);
   } catch (err) {
     logger.error('[api] client activity error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to build client activity', 500));
@@ -240,7 +241,7 @@ router.get('/stats/:clientId/transitions', (req, res, next) => {
     const { buildStageTransitionMatrix } = require('../../utils/eventProjections');
     const db = req.app.locals.db;
     const matrix = buildStageTransitionMatrix(db, clientId);
-    res.json({ data: matrix });
+    success(res, matrix);
   } catch (err) {
     logger.error('[api] stage transitions error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to build stage transition matrix', 500));
@@ -322,7 +323,7 @@ router.get('/stats/:clientId/roi', async (req, res, next) => {
     const estimatedLostCalls = afterHours + (callStats.voicemail_handled || 0);
     const estimatedLostRevenue = estimatedLostCalls * avgTicket * 0.15; // ~15% of after-hours calls would convert
 
-    res.json({
+    success(res, {
       period_days: days,
       proof: {
         total_calls_handled: totalCalls,

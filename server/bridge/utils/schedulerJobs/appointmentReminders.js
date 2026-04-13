@@ -65,8 +65,8 @@ async function processAppointmentReminders(db) {
     const { processDueReminders } = require('../appointmentReminders');
     const { sendSMS } = require('../sms');
 
-    await processDueReminders(db, async (phone, message, from) => {
-      return sendSMS(phone, message, from, db);
+    await processDueReminders(db, async (phone, message, from, clientId) => {
+      return sendSMS(phone, message, from, db, clientId);
     });
   } catch (err) {
     logger.error('[Scheduler] processAppointmentReminders error:', err.message);

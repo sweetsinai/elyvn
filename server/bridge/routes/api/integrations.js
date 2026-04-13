@@ -7,6 +7,8 @@ const { isValidUUID } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { success } = require('../../utils/response');
+const { validateBody } = require('../../middleware/validateRequest');
+const { WebhookTestSchema } = require('../../utils/schemas/integrations');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -61,11 +63,11 @@ router.get('/integrations/:clientId/webhook-log', async (req, res, next) => {
 });
 
 // POST /integrations/:clientId/webhook-test — send a test webhook to a configured URL
-router.post('/integrations/:clientId/webhook-test', async (req, res, next) => {
+router.post('/integrations/:clientId/webhook-test', validateBody(WebhookTestSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
-    const { event_type } = req.body || {};
+    const { event_type } = req.body;
     if (!isValidUUID(clientId)) return next(new AppError('INVALID_INPUT', 'Invalid client ID', 400));
 
     const WEBHOOK_FIELDS = {

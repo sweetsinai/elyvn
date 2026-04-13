@@ -242,8 +242,8 @@ describe('Call Transfer', () => {
       });
 
       mockDb.query
+        .mockResolvedValueOnce({ client_id: 'client-1', twilio_call_sid: null }) // SELECT from calls (callRecord)
         .mockResolvedValueOnce({ changes: 1 }) // UPDATE calls
-        .mockResolvedValueOnce({ client_id: 'client-1' }) // SELECT from calls
         .mockResolvedValueOnce({ // SELECT from clients
           owner_phone: '+15550001111',
           transfer_phone: '+15550002222',
@@ -281,8 +281,8 @@ describe('Call Transfer', () => {
       });
 
       mockDb.query
-        .mockResolvedValueOnce({ changes: 1 })
-        .mockResolvedValueOnce({ client_id: 'client-1' })
+        .mockResolvedValueOnce({ client_id: 'client-1', twilio_call_sid: 'CA_twilio_123' }) // SELECT from calls (callRecord)
+        .mockResolvedValueOnce({ changes: 1 }) // UPDATE calls
         .mockResolvedValueOnce({
           owner_phone: '+15550001111',
           transfer_phone: '+15550002222',
@@ -316,8 +316,8 @@ describe('Call Transfer', () => {
       });
 
       mockDb.query
-        .mockResolvedValueOnce({ changes: 1 })
-        .mockResolvedValueOnce({ client_id: 'client-1' })
+        .mockResolvedValueOnce({ client_id: 'client-1', twilio_call_sid: 'CA123' }) // SELECT from calls (callRecord)
+        .mockResolvedValueOnce({ changes: 1 }) // UPDATE calls
         .mockResolvedValueOnce({
           owner_phone: '+15550001111',
           transfer_phone: '+15550002222',
@@ -331,7 +331,10 @@ describe('Call Transfer', () => {
       // Should send fallback SMS to owner
       expect(sms.sendSMS).toHaveBeenCalledWith(
         '+15550001111',
-        expect.stringContaining('URGENT')
+        expect.stringContaining('URGENT'),
+        '+15550003333',
+        expect.anything(),
+        'client-1'
       );
       // Should send Telegram fallback
       expect(telegram.sendMessage).toHaveBeenCalledWith(
@@ -356,8 +359,8 @@ describe('Call Transfer', () => {
       });
 
       mockDb.query
-        .mockResolvedValueOnce({ changes: 1 })
-        .mockResolvedValueOnce({ client_id: 'client-1' })
+        .mockResolvedValueOnce({ client_id: 'client-1', twilio_call_sid: null }) // SELECT from calls (callRecord)
+        .mockResolvedValueOnce({ changes: 1 }) // UPDATE calls
         .mockResolvedValueOnce({
           owner_phone: '+15550001111',
           transfer_phone: null,
@@ -389,8 +392,8 @@ describe('Call Transfer', () => {
       });
 
       mockDb.query
-        .mockResolvedValueOnce({ changes: 1 })
-        .mockResolvedValueOnce({ client_id: 'client-1' })
+        .mockResolvedValueOnce({ client_id: 'client-1', twilio_call_sid: null }) // SELECT from calls (callRecord)
+        .mockResolvedValueOnce({ changes: 1 }) // UPDATE calls
         .mockResolvedValueOnce({
           owner_phone: null,
           transfer_phone: null,
@@ -434,8 +437,8 @@ describe('Call Transfer', () => {
       });
 
       mockDb.query
-        .mockResolvedValueOnce({ changes: 1 })
-        .mockResolvedValueOnce({ client_id: 'client-1' })
+        .mockResolvedValueOnce({ client_id: 'client-1', twilio_call_sid: null }) // SELECT from calls (callRecord)
+        .mockResolvedValueOnce({ changes: 1 }) // UPDATE calls
         .mockResolvedValueOnce({
           owner_phone: '+15550001111',
           transfer_phone: '+15550002222',
@@ -449,12 +452,18 @@ describe('Call Transfer', () => {
       // Transfer target gets SMS
       expect(sms.sendSMS).toHaveBeenCalledWith(
         '+15550002222',
-        expect.stringContaining('transfer')
+        expect.stringContaining('transfer'),
+        '+15550003333',
+        expect.anything(),
+        'client-1'
       );
       // Owner also gets notified since phones differ
       expect(sms.sendSMS).toHaveBeenCalledWith(
         '+15550001111',
-        expect.stringContaining('Transfer routed')
+        expect.stringContaining('Transfer routed'),
+        '+15550003333',
+        expect.anything(),
+        'client-1'
       );
     });
   });

@@ -1,7 +1,7 @@
 'use strict';
 
 const { z } = require('zod');
-const { OffsetPaginationSchema } = require('./common');
+const { OffsetPaginationSchema, PhoneSchema } = require('./common');
 
 const CallQuerySchema = OffsetPaginationSchema.extend({
   outcome: z.string().optional(),
@@ -10,4 +10,8 @@ const CallQuerySchema = OffsetPaginationSchema.extend({
   minScore: z.coerce.number().int().min(0).max(100).optional(),
 });
 
-module.exports = { CallQuerySchema };
+const TransferSchema = z.object({
+  transfer_phone: PhoneSchema.optional(),
+}).strict();
+
+module.exports = { CallQuerySchema, TransferSchema };

@@ -115,21 +115,21 @@ describe('API Endpoints', () => {
       const res = await request(app)
         .get('/api/calls/test-client')
         .set('x-api-key', 'test-api-key');
-      expect([200, 400]).toContain(res.status);
+      expect([200, 422]).toContain(res.status);
     });
 
     test('GET /api/leads/:clientId returns leads', async () => {
       const res = await request(app)
         .get('/api/leads/test-client')
         .set('x-api-key', 'test-api-key');
-      expect([200, 400]).toContain(res.status);
+      expect([200, 422]).toContain(res.status);
     });
 
     test('GET /api/messages/:clientId returns messages', async () => {
       const res = await request(app)
         .get('/api/messages/test-client')
         .set('x-api-key', 'test-api-key');
-      expect([200, 400]).toContain(res.status);
+      expect([200, 422]).toContain(res.status);
     });
 
     test('GET /api/stats/:clientId returns stats', async () => {

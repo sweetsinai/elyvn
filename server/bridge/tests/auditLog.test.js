@@ -316,7 +316,7 @@ describe('Audit Log Utility', () => {
 
       expect(mockDb.query).toHaveBeenCalledWith(
         expect.stringContaining('DELETE FROM audit_log'),
-        [90],
+        [expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)],
         'run'
       );
       expect(result).toBe(42);
@@ -329,7 +329,7 @@ describe('Audit Log Utility', () => {
 
       expect(mockDb.query).toHaveBeenCalledWith(
         expect.any(String),
-        [90],
+        [expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)],
         'run'
       );
     });
@@ -341,7 +341,7 @@ describe('Audit Log Utility', () => {
 
       expect(mockDb.query).toHaveBeenCalledWith(
         expect.any(String),
-        [30],
+        [expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)],
         'run'
       );
     });

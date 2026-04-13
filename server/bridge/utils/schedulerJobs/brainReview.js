@@ -7,17 +7,18 @@ async function dailyLeadReview(db) {
   let errors = 0;
 
   try {
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
     const stale = await db.query(`
       SELECT l.*, c.id as cid
       FROM leads l
       JOIN clients c ON l.client_id = c.id
       WHERE c.is_active = 1
       AND l.stage NOT IN ('booked', 'lost')
-      AND l.updated_at < datetime('now', '-2 days')
+      AND l.updated_at < ?
       AND l.score >= 5
       ORDER BY l.score DESC
       LIMIT 10
-    `);
+    `, [twoDaysAgo]);
 
     if (stale.length === 0) {
       logger.info('[brainReview] START — no stale leads to process');

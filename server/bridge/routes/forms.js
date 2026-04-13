@@ -161,23 +161,24 @@ async function processFormSubmission(db, body, clientId, req) {
 
   // Atomic upsert using INSERT ... ON CONFLICT (no race conditions)
   const leadId = randomUUID();
+  const now = new Date().toISOString();
   await db.query(`
     INSERT INTO leads (id, client_id, phone, phone_encrypted, name, email, email_encrypted, source, score, stage, last_contact, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 7, 'new', datetime('now'), datetime('now'), datetime('now'))
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 7, 'new', ?, ?, ?)
     ON CONFLICT(client_id, phone) DO UPDATE SET
       name = COALESCE(excluded.name, leads.name),
       email = COALESCE(excluded.email, leads.email),
       email_encrypted = COALESCE(excluded.email_encrypted, leads.email_encrypted),
       source = COALESCE(excluded.source, leads.source),
-      last_contact = datetime('now'),
-      updated_at = datetime('now')
-  `, [leadId, clientId, phone, encrypt(phone), name || null, email || null, email ? encrypt(email) : null, source], 'run');
+      last_contact = excluded.last_contact,
+      updated_at = excluded.updated_at
+  `, [leadId, clientId, phone, encrypt(phone), name || null, email || null, email ? encrypt(email) : null, source, now, now, now], 'run');
 
   // Log inbound message
   await db.query(`
     INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'form', 'inbound', ?, 'received', datetime('now'), datetime('now'))
-  `, [randomUUID(), clientId, leadId, phone, message || `Form submission: ${service || 'General inquiry'}`], 'run');
+    VALUES (?, ?, ?, ?, 'form', 'inbound', ?, 'received', ?, ?)
+  `, [randomUUID(), clientId, leadId, phone, message || `Form submission: ${service || 'General inquiry'}`, now, now], 'run');
 
   // Deduplication: only trigger speed-to-lead if not a duplicate within 5 minutes
   if (!isDuplicateSpeedToLead(phone, email)) {

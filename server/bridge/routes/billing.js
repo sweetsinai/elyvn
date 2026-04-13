@@ -163,6 +163,48 @@ router.post('/create-checkout', requireAuth, validateBody(CreateCheckoutSchema),
   }
 });
 
+// POST /billing/generate-link — Admin: generate a checkout link for any client
+router.post('/generate-link', requireAuth, validateBody(z.object({
+  clientId: z.string().uuid(),
+  planId: z.enum(['solo', 'starter', 'pro', 'premium']),
+})), async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    // Verify caller is admin
+    const caller = await db.query('SELECT plan FROM clients WHERE id = ?', [req.clientId], 'get');
+    const provided = req.headers['x-api-key'] || '';
+    const expected = process.env.ELYVN_API_KEY || '';
+    const isAdmin = provided.length > 0 && expected.length > 0 &&
+      provided.length === expected.length &&
+      require('crypto').timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+    if (!isAdmin) return res.status(403).json({ error: 'Admin access required' });
+
+    const { clientId, planId } = req.body;
+    const plan = PLANS[planId];
+    const client = await db.query('SELECT id, owner_email, business_name FROM clients WHERE id = ?', [clientId], 'get');
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+
+    const appUrl = process.env.APP_URL || 'https://api.elyvn.net';
+    const session = await dodoRequest('POST', '/checkouts', {
+      product_cart: [{ product_id: plan.productId, quantity: 1 }],
+      customer: {
+        email: client.owner_email || 'unknown@elyvn.net',
+        name: client.business_name || 'ELYVN Customer',
+      },
+      metadata: { clientId, planId },
+      return_url: `${appUrl}/dashboard?payment=success`,
+    });
+
+    const checkoutUrl = session.checkout_url || session.url;
+    logger.info(`[billing] Admin generated checkout link for client ${clientId} — plan: ${planId}`);
+    res.json({ url: checkoutUrl, clientId, planId, clientEmail: client.owner_email });
+  } catch (err) {
+    logger.error('[billing] Generate link error:', err.message);
+    if (err instanceof AppError) throw err;
+    res.status(500).json({ error: 'Failed to generate checkout link' });
+  }
+});
+
 // POST /billing/webhook — Dodo webhook handler (Standard Webhooks)
 router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const webhookSecret = process.env.DODO_WEBHOOK_SECRET;
@@ -219,16 +261,17 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         const customerId = data.customer_id || data.customer?.customer_id;
 
         if (clientId) {
+          const now = new Date().toISOString();
           await db.query(`
             UPDATE clients SET
               dodo_customer_id = ?,
               dodo_subscription_id = ?,
               plan = ?,
               subscription_status = 'active',
-              plan_started_at = datetime('now'),
-              updated_at = datetime('now')
+              plan_started_at = ?,
+              updated_at = ?
             WHERE id = ?
-          `, [customerId, subscriptionId, planId || 'starter', clientId], 'run');
+          `, [customerId, subscriptionId, planId || 'starter', now, now, clientId], 'run');
 
           logger.info(`[billing] Client ${clientId} activated — plan: ${planId}, event: ${eventType}`);
           try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: clientId, newValues: { plan: planId, subscription_status: 'active' } }); } catch (_) {}
@@ -237,7 +280,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           if (customerId) {
             const client = await db.query('SELECT id FROM clients WHERE dodo_customer_id = ?', [customerId], 'get');
             if (client) {
-              await db.query("UPDATE clients SET subscription_status = 'active', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
+              await db.query("UPDATE clients SET subscription_status = 'active', updated_at = ? WHERE id = ?", [new Date().toISOString(), client.id], 'run');
               logger.info(`[billing] Payment succeeded for client ${client.id} (via customer lookup)`);
             }
           }
@@ -258,7 +301,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             : null;
 
         if (client) {
-          await db.query("UPDATE clients SET subscription_status = 'past_due', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
+          await db.query("UPDATE clients SET subscription_status = 'past_due', updated_at = ? WHERE id = ?", [new Date().toISOString(), client.id], 'run');
           logger.warn(`[billing] Subscription ${eventType} for client ${client.id}`);
           try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'past_due' } }); } catch (_) {}
         }
@@ -278,7 +321,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             : null;
 
         if (client) {
-          await db.query("UPDATE clients SET subscription_status = 'canceled', plan = 'canceled', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
+          await db.query("UPDATE clients SET subscription_status = 'canceled', plan = 'canceled', updated_at = ? WHERE id = ?", [new Date().toISOString(), client.id], 'run');
           logger.info(`[billing] Subscription ${eventType} for client ${client.id}`);
           try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'canceled', plan: 'canceled' } }); } catch (_) {}
         }
@@ -302,8 +345,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
         if (client) {
           const updates = { subscription_status: status, dodo_subscription_id: subscriptionId };
-          let sql = "UPDATE clients SET subscription_status = ?, dodo_subscription_id = ?, updated_at = datetime('now')";
-          const params = [status, subscriptionId];
+          const now = new Date().toISOString();
+          let sql = "UPDATE clients SET subscription_status = ?, dodo_subscription_id = ?, updated_at = ?";
+          const params = [status, subscriptionId, now];
 
           if (newPlanId && PLANS[newPlanId]) {
             sql += ', plan = ?';

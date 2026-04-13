@@ -44,7 +44,8 @@ router.get('/conversations/:clientId',
 
       if (search) {
         conditions.push('(c.lead_phone LIKE ? OR c.lead_name LIKE ? OR c.last_message_preview LIKE ?)');
-        const like = `%${search}%`;
+        const escaped = search.replace(/[%_\\]/g, '\\$&');
+        const like = `%${escaped}%`;
         params.push(like, like, like);
       }
 
@@ -94,30 +95,29 @@ router.get('/conversations/:clientId/:conversationId/timeline',
         return next(new AppError('NOT_FOUND', 'Conversation not found', 404));
       }
 
-      // Get messages for this conversation
-      const messages = await db.query(`
-        SELECT id, direction, body, status, channel, delivery_status, delivered_at,
-               read_at, confidence, reply_text, created_at, message_sid,
-               'message' as entry_type
-        FROM messages
-        WHERE conversation_id = ? AND client_id = ?
-        ORDER BY created_at ASC
-      `, [conversationId, clientId], 'all');
-
-      // Decrypt body if encrypted
-      for (const msg of messages) {
-        if (msg.body_encrypted) {
-          try {
-            const decrypted = decrypt(msg.body_encrypted);
-            if (decrypted && decrypted !== msg.body_encrypted) msg.body = decrypted;
-          } catch (_) { /* fall back */ }
-        }
-      }
-
-      let timeline = messages;
-
-      // Merge calls if requested
       if (include_calls) {
+        // Merged path: fetch messages with a buffer to allow for interleaving with calls
+        const msgBuffer = limit * 2;
+        const messages = await db.query(`
+          SELECT id, direction, body, body_encrypted, status, channel, delivery_status, delivered_at,
+                 read_at, confidence, reply_text, created_at, message_sid,
+                 'message' as entry_type
+          FROM messages
+          WHERE conversation_id = ? AND client_id = ?
+          ORDER BY created_at ASC
+          LIMIT ? OFFSET ?
+        `, [conversationId, clientId, msgBuffer, offset], 'all');
+
+        // Decrypt body if encrypted
+        for (const msg of messages) {
+          if (msg.body_encrypted) {
+            try {
+              const decrypted = decrypt(msg.body_encrypted);
+              if (decrypted && decrypted !== msg.body_encrypted) msg.body = decrypted;
+            } catch (_) { /* fall back */ }
+          }
+        }
+
         const calls = await db.query(`
           SELECT id, call_id, direction, duration, summary, sentiment, score,
                  outcome, caller_phone, created_at, recording_url,
@@ -127,16 +127,55 @@ router.get('/conversations/:clientId/:conversationId/timeline',
           ORDER BY created_at ASC
         `, [clientId, conversation.lead_phone], 'all');
 
-        timeline = [...messages, ...calls].sort(
+        const timeline = [...messages, ...calls].sort(
           (a, b) => new Date(a.created_at) - new Date(b.created_at)
         );
+
+        // Slice merged timeline to requested page size
+        const paged = timeline.slice(0, limit);
+
+        // Get total counts for pagination metadata
+        const msgCount = await db.query(
+          'SELECT COUNT(*) as count FROM messages WHERE conversation_id = ? AND client_id = ?',
+          [conversationId, clientId], 'get'
+        );
+        const callCount = await db.query(
+          'SELECT COUNT(*) as count FROM calls WHERE client_id = ? AND caller_phone = ?',
+          [clientId, conversation.lead_phone], 'get'
+        );
+        const total = msgCount.count + callCount.count;
+
+        return paginated(res, { data: paged, total, limit, offset });
+      } else {
+        // Messages-only path: use SQL LIMIT/OFFSET directly
+        const countResult = await db.query(
+          'SELECT COUNT(*) as count FROM messages WHERE conversation_id = ? AND client_id = ?',
+          [conversationId, clientId], 'get'
+        );
+        const total = countResult.count;
+
+        const messages = await db.query(`
+          SELECT id, direction, body, body_encrypted, status, channel, delivery_status, delivered_at,
+                 read_at, confidence, reply_text, created_at, message_sid,
+                 'message' as entry_type
+          FROM messages
+          WHERE conversation_id = ? AND client_id = ?
+          ORDER BY created_at ASC
+          LIMIT ? OFFSET ?
+        `, [conversationId, clientId, limit, offset], 'all');
+
+        // Decrypt body if encrypted
+        for (const msg of messages) {
+          if (msg.body_encrypted) {
+            try {
+              const decrypted = decrypt(msg.body_encrypted);
+              if (decrypted && decrypted !== msg.body_encrypted) msg.body = decrypted;
+            } catch (_) { /* fall back */ }
+          }
+        }
+
+        return paginated(res, { data: messages, total, limit, offset });
       }
-
-      // Apply pagination to merged timeline
-      const total = timeline.length;
-      const paged = timeline.slice(offset, offset + limit);
-
-      return paginated(res, { data: paged, total, limit, offset });
     } catch (err) {
       logger.error('[api] conversation timeline error:', err);
       return next(new AppError('INTERNAL_ERROR', 'Failed to fetch timeline', 500));
@@ -289,6 +328,9 @@ router.put('/conversations/:clientId/:conversationId/archive',
         [now, conversationId, clientId], 'run'
       );
 
+      if (result.changes === 0) {
+        return next(new AppError('NOT_FOUND', 'Conversation not found', 404));
+      }
       return success(res, { conversationId, status: 'archived' });
     } catch (err) {
       logger.error('[api] conversation archive error:', err);

@@ -48,16 +48,16 @@ function labelForEvent(eventType, eventData) {
  * @param {string} leadId
  * @returns {Array<{ timestamp: string, event: string, details: object }>}
  */
-async function buildLeadTimeline(db, leadId) {
+async function buildLeadTimeline(db, leadId, clientId) {
   if (!db || !leadId) return [];
 
   try {
     const rows = await db.query(`
       SELECT event_type, event_data, created_at
       FROM event_store
-      WHERE aggregate_id = ? AND aggregate_type = 'lead'
+      WHERE aggregate_id = ? AND aggregate_type = 'lead' AND client_id = ?
       ORDER BY created_at ASC, rowid ASC
-    `, [leadId]);
+    `, [leadId, clientId]);
 
     return rows.map(row => {
       let data;
@@ -91,12 +91,13 @@ async function buildClientActivity(db, clientId, days = 30) {
   try {
     const safeDays = Math.max(1, Math.min(365, parseInt(days) || 30));
 
+    const since = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000).toISOString();
     const rows = await db.query(`
       SELECT event_type, COUNT(*) as count
       FROM event_store
-      WHERE client_id = ? AND created_at >= datetime('now', '-${safeDays} days')
+      WHERE client_id = ? AND created_at >= ?
       GROUP BY event_type
-    `, [clientId]);
+    `, [clientId, since]);
 
     // Map event types to friendly keys
     const KEY_MAP = {

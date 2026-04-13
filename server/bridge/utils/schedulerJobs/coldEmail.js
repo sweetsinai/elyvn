@@ -54,11 +54,11 @@ async function dailyOutreach(db) {
       }
     }
 
-    // Notify owner via Telegram
-    const clients = await db.query('SELECT telegram_chat_id FROM clients WHERE telegram_chat_id IS NOT NULL LIMIT 1');
-    const remainingRow = await db.query("SELECT COUNT(*) as c FROM prospects WHERE status = 'new' AND email IS NOT NULL", [], 'get');
-    for (const c of clients) {
-      telegram.sendMessage(c.telegram_chat_id,
+    // Notify admin via Telegram (outreach is admin-scoped, not per-client)
+    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+    if (adminChatId) {
+      const remainingRow = await db.query("SELECT COUNT(*) as c FROM prospects WHERE status = 'new' AND email IS NOT NULL", [], 'get');
+      telegram.sendMessage(adminChatId,
         `<b>Daily Outreach Complete</b>\n\nSent: ${sent}\nFailed: ${failed}\nRemaining prospects: ${remainingRow.c}`
       ).catch(err => logger.warn('[scheduler] Outreach Telegram notify failed', err.message));
     }

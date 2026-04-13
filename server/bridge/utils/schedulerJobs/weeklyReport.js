@@ -125,8 +125,8 @@ async function sendWeeklyReports(db) {
       const reportId = `wr-${client.id}-${weekEnd}`;
       await db.query(
         `INSERT OR REPLACE INTO weekly_reports (id, client_id, week_start, week_end, calls_answered, appointments_booked, messages_handled, estimated_revenue, missed_call_rate, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-        [reportId, client.id, weekStart, weekEnd, report.total_calls, report.booked, report.messages, report.revenue, report.missed_rate / 100], 'run'
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [reportId, client.id, weekStart, weekEnd, report.total_calls, report.booked, report.messages, report.revenue, report.missed_rate / 100, new Date().toISOString()], 'run'
       );
 
       // Format and send to Telegram

@@ -211,7 +211,7 @@ describe('Integration Tests - Webhook → DB Flows', () => {
         .expect(400);
     });
 
-    test('POST /webhooks/form with invalid client_id → returns 400', async () => {
+    test('POST /webhooks/form with invalid client_id → returns 422', async () => {
       const formData = {
         client_id: 'not-a-uuid',
         name: 'Bob Smith',
@@ -221,7 +221,7 @@ describe('Integration Tests - Webhook → DB Flows', () => {
       await request(app)
         .post('/webhooks/form')
         .send(formData)
-        .expect(400);
+        .expect(422);
     });
 
     test('POST /webhooks/form with invalid email → returns 400', async () => {
@@ -409,16 +409,16 @@ describe('Integration Tests - Webhook → DB Flows', () => {
   // Test 4: Onboard endpoint
   // ─────────────────────────────────────────────────────────────
   describe('Onboard endpoint', () => {
-    test('POST /api/onboard without required fields → returns 400 or 429', async () => {
+    test('POST /api/onboard without required fields → returns 422 or 429', async () => {
       const response = await request(app)
         .post('/api/onboard')
         .send({});
 
-      // Accept either error response or rate limit
-      expect([400, 429]).toContain(response.status);
+      // Accept either validation error or rate limit
+      expect([422, 429]).toContain(response.status);
     });
 
-    test('POST /api/onboard without business_name → returns 400 or 429', async () => {
+    test('POST /api/onboard without business_name → returns 422 or 429', async () => {
       const response = await request(app)
         .post('/api/onboard')
         .send({
@@ -429,10 +429,10 @@ describe('Integration Tests - Webhook → DB Flows', () => {
           services: ['Service1']
         });
 
-      expect([400, 429]).toContain(response.status);
+      expect([422, 429]).toContain(response.status);
     });
 
-    test('POST /api/onboard without owner_email → returns 400 or 429', async () => {
+    test('POST /api/onboard without owner_email → returns 422 or 429', async () => {
       const response = await request(app)
         .post('/api/onboard')
         .send({
@@ -443,10 +443,10 @@ describe('Integration Tests - Webhook → DB Flows', () => {
           services: ['Service1']
         });
 
-      expect([400, 429]).toContain(response.status);
+      expect([422, 429]).toContain(response.status);
     });
 
-    test('POST /api/onboard with invalid email → returns 400 or 429', async () => {
+    test('POST /api/onboard with invalid email → returns 422 or 429', async () => {
       const response = await request(app)
         .post('/api/onboard')
         .send({
@@ -458,10 +458,10 @@ describe('Integration Tests - Webhook → DB Flows', () => {
           services: ['Service1']
         });
 
-      expect([400, 429]).toContain(response.status);
+      expect([422, 429]).toContain(response.status);
     });
 
-    test('POST /api/onboard with invalid phone → returns 400 or 429', async () => {
+    test('POST /api/onboard with invalid phone → returns 422 or 429', async () => {
       const response = await request(app)
         .post('/api/onboard')
         .send({
@@ -473,7 +473,7 @@ describe('Integration Tests - Webhook → DB Flows', () => {
           services: ['Service1']
         });
 
-      expect([400, 429]).toContain(response.status);
+      expect([422, 429]).toContain(response.status);
     });
 
     test('POST /api/onboard with valid data → responds', async () => {

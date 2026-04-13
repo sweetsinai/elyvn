@@ -482,11 +482,11 @@ describe('API Routes - Comprehensive Coverage', () => {
   });
 
   describe('GET /api/leads/:clientId', () => {
-    test('should return 400 with invalid client ID', async () => {
+    test('should return 422 with invalid client ID', async () => {
       const res = await request(app)
         .get('/api/leads/invalid-id')
         .set('x-api-key', 'test-api-key-12345');
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/Invalid client ID format|Invalid UUID|clientId/);
     });
 
@@ -560,11 +560,11 @@ describe('API Routes - Comprehensive Coverage', () => {
   });
 
   describe('GET /api/calls/:clientId', () => {
-    test('should return 400 with invalid client ID', async () => {
+    test('should return 422 with invalid client ID', async () => {
       const res = await request(app)
         .get('/api/calls/invalid-id')
         .set('x-api-key', 'test-api-key-12345');
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/Invalid client ID format|Invalid UUID|clientId/);
     });
 
@@ -654,12 +654,12 @@ describe('API Routes - Comprehensive Coverage', () => {
       expect(res.body.error).toContain('Invalid');
     });
 
-    test('should return 400 with invalid stage', async () => {
+    test('should return 422 with invalid stage', async () => {
       const res = await request(app)
         .put(`/api/leads/${testClientId}/${testLeadId}`)
         .set('x-api-key', 'test-api-key-12345')
         .send({ stage: 'invalid_stage' });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/Invalid stage|Invalid option|stage/);
     });
 
@@ -703,7 +703,7 @@ describe('API Routes - Comprehensive Coverage', () => {
         .post('/api/clients')
         .set('x-api-key', 'test-api-key-12345')
         .send({});
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/business_name|required/);
     });
 
@@ -722,12 +722,12 @@ describe('API Routes - Comprehensive Coverage', () => {
   });
 
   describe('PUT /api/clients/:clientId', () => {
-    test('should return 400 with invalid client ID', async () => {
+    test('should return 422 with invalid client ID', async () => {
       const res = await request(app)
         .put('/api/clients/invalid-id')
         .set('x-api-key', 'test-api-key-12345')
         .send({ business_name: 'Updated' });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/Invalid client ID format|Invalid UUID|clientId/);
     });
 
@@ -774,11 +774,11 @@ describe('API Routes - Comprehensive Coverage', () => {
   });
 
   describe('GET /api/messages/:clientId', () => {
-    test('should return 400 with invalid client ID', async () => {
+    test('should return 422 with invalid client ID', async () => {
       const res = await request(app)
         .get('/api/messages/invalid-id')
         .set('x-api-key', 'test-api-key-12345');
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/Invalid client ID format|Invalid UUID|clientId/);
     });
 

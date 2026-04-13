@@ -128,6 +128,21 @@ async function initializeDatabase(app) {
 
   app.locals.db = db;
 
+  // Validate schema — catch missing columns BEFORE any request hits the DB
+  try {
+    const { validateSchema } = require('../utils/schemaValidator');
+    const { valid, missing } = validateSchema(db._db || db);
+    if (!valid) {
+      logger.error(`[FATAL] Schema validation failed — ${missing.length} missing column(s). Fix migrations and restart.`);
+      if (process.env.NODE_ENV === 'production') {
+        await alertCriticalError('Schema validation failed', new Error(`${missing.length} missing columns: ${missing.map(m => m.table + '.' + m.column).join(', ')}`));
+        process.exit(1);
+      }
+    }
+  } catch (err) {
+    logger.warn(`[startup] Schema validation error (non-fatal): ${err.message}`);
+  }
+
   // Cancel all pending followup_sms jobs
   try {
     const cancelled = await db.query("UPDATE job_queue SET status = 'cancelled' WHERE status = 'pending' AND type = 'followup_sms'", [], 'run');
@@ -217,7 +232,7 @@ function initializeServer(app, server, routeHandles) {
           captureException(err, { context: 'jobQueue.setInterval' });
         }
       }
-    }, JOB_PROCESSOR_INTERVAL);
+    }, JOB_PROCESSOR_INTERVAL).unref();
 
     // Start outbound webhook delivery processor
     const { startProcessor: startWebhookProcessor } = require('../utils/webhookQueue');
@@ -245,7 +260,7 @@ function initializeServer(app, server, routeHandles) {
         logger.error('[auto-classify] Periodic check error:', err.message);
         if (captureException) captureException(err, { context: 'auto-classify.periodic' });
       }
-    }, AUTO_CLASSIFY_INTERVAL_MS);
+    }, AUTO_CLASSIFY_INTERVAL_MS).unref();
 
     // Register timers for graceful shutdown
     const { onShutdown } = require('../utils/gracefulShutdown');

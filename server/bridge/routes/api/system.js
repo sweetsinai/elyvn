@@ -9,6 +9,7 @@ const router = express.Router();
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { checkDatabaseHealth, getMemoryStatus, getJobQueueStats } = require('../../utils/systemHealth');
+const { success } = require('../../utils/response');
 
 // GET /system/stats — admin-only
 router.get('/system/stats', async (req, res, next) => {
@@ -35,7 +36,7 @@ router.get('/system/stats', async (req, res, next) => {
       jobStats,
     ] = await Promise.all([
       db.query('SELECT COUNT(*) as c FROM clients', [], 'get'),
-      db.query("SELECT COUNT(*) as c FROM clients WHERE status = 'active'", [], 'get'),
+      db.query("SELECT COUNT(*) as c FROM clients WHERE is_active = 1", [], 'get'),
       db.query('SELECT COUNT(*) as c FROM leads', [], 'get'),
       db.query('SELECT COUNT(*) as c FROM calls WHERE created_at >= ?', [weekStr], 'get'),
       checkDatabaseHealth(db),
@@ -43,7 +44,7 @@ router.get('/system/stats', async (req, res, next) => {
     ]);
 
     // Leads by stage
-    const stages = ['new', 'contacted', 'qualified', 'booked', 'completed', 'lost'];
+    const stages = ['new', 'contacted', 'warm', 'hot', 'qualified', 'booked', 'completed', 'lost', 'nurture'];
     const leadsByStage = {};
     stages.forEach(s => { leadsByStage[s] = 0; });
     const stageRows = await db.query(
@@ -54,9 +55,8 @@ router.get('/system/stats', async (req, res, next) => {
       if (stages.includes(row.stage)) leadsByStage[row.stage] = row.c;
     }
 
-    res.json({
+    success(res, {
       status: 'ok',
-      timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       clients: {
         total: totalClientsRow?.c ?? 0,

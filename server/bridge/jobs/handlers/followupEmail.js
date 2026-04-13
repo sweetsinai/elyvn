@@ -25,8 +25,8 @@ async function interestedFollowupEmail(db, captureException, payload) {
     }
     // Check for recent duplicate email to prevent queue retry duplication
     const recentEmail = await db.query(
-      "SELECT id FROM emails_sent WHERE to_email = ? AND prospect_id = ? AND created_at > datetime('now', '-5 minutes')",
-      [payload.to_email, payload.prospect_id], 'get'
+      "SELECT id FROM emails_sent WHERE to_email = ? AND prospect_id = ? AND created_at > ?",
+      [payload.to_email, payload.prospect_id, new Date(Date.now() - 5 * 60 * 1000).toISOString()], 'get'
     );
     if (recentEmail) {
       logger.info(`[jobHandlers] Skipping duplicate email to ${payload.to_email}`);
@@ -78,8 +78,8 @@ async function noreplyFollowup(db, captureException, payload) {
     }
     // Check for recent duplicate email to prevent queue retry duplication
     const recentEmail = await db.query(
-      "SELECT id FROM emails_sent WHERE to_email = ? AND prospect_id = ? AND created_at > datetime('now', '-5 minutes')",
-      [payload.to_email, payload.prospect_id], 'get'
+      "SELECT id FROM emails_sent WHERE to_email = ? AND prospect_id = ? AND created_at > ?",
+      [payload.to_email, payload.prospect_id, new Date(Date.now() - 5 * 60 * 1000).toISOString()], 'get'
     );
     if (recentEmail) {
       logger.info(`[jobHandlers] Skipping duplicate email to ${payload.to_email}`);

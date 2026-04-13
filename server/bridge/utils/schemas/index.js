@@ -9,6 +9,9 @@ const form = require('./form');
 const onboard = require('./onboard');
 const message = require('./message');
 const scrape = require('./scrape');
+const settings = require('./settings');
+const usage = require('./usage');
+const integrations = require('./integrations');
 
 module.exports = {
   ...common,
@@ -20,4 +23,7 @@ module.exports = {
   ...onboard,
   ...message,
   ...scrape,
+  ...settings,
+  ...usage,
+  ...integrations,
 };

@@ -55,8 +55,8 @@ async function appendEvent(db, aggregateId, aggregateType, eventType, eventData,
   try {
     await db.query(`
       INSERT INTO event_store (id, aggregate_id, aggregate_type, event_type, event_data, client_id, created_at, version)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 1)
-    `, [id, aggregateId, aggregateType, eventType, serialised, clientId || null], 'run');
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    `, [id, aggregateId, aggregateType, eventType, serialised, clientId || null, new Date().toISOString()], 'run');
 
     return id;
   } catch (err) {

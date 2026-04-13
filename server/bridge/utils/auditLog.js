@@ -164,7 +164,8 @@ async function verifyAuditChain(db) {
 async function cleanupAuditLog(db, retentionDays = 90) {
   if (!db) return 0;
   try {
-    const result = await db.query("DELETE FROM audit_log WHERE created_at < datetime('now', '-' || ? || ' days')", [retentionDays], 'run');
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    const result = await db.query("DELETE FROM audit_log WHERE created_at < ?", [cutoff], 'run');
     getLogger().info(`[audit] Cleaned up ${result.changes} entries older than ${retentionDays} days`);
     return result.changes;
   } catch (e) {

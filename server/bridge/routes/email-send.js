@@ -7,11 +7,13 @@ const { logger } = require('../utils/logger');
 const { logDataMutation } = require('../utils/auditLog');
 const { emailSendLimit } = require('../middleware/rateLimits');
 const { AppError } = require('../utils/AppError');
+const { validateBody } = require('../middleware/validateRequest');
+const { EmailUpdateSchema } = require('../utils/schemas/email');
 
 const DAILY_SEND_LIMIT = config.outreach.dailySendLimit;
 
 // PUT /campaign/:campaignId/email/:emailId
-router.put('/campaign/:campaignId/email/:emailId', async (req, res, next) => {
+router.put('/campaign/:campaignId/email/:emailId', validateBody(EmailUpdateSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { campaignId, emailId } = req.params;

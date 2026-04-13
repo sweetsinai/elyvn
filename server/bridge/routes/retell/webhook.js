@@ -25,8 +25,10 @@ const {
 router.use((req, res, next) => {
   const secret = process.env.RETELL_WEBHOOK_SECRET;
   if (!secret) {
-    // Allow webhooks through without signature check — Retell is a trusted source.
-    // Set RETELL_WEBHOOK_SECRET to the API key from Retell dashboard to enable verification.
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[retell] RETELL_WEBHOOK_SECRET not set in production — rejecting webhook');
+      return next(new AppError('SERVER_ERROR', 'Webhook verification not configured', 500));
+    }
     return next();
   }
   const signature = req.headers['x-retell-signature'];
@@ -34,7 +36,7 @@ router.use((req, res, next) => {
     logger.warn('[retell] Missing webhook signature header');
     return next(new AppError('MISSING_SIGNATURE', 'Missing signature', 401));
   }
-  const payload = JSON.stringify(req.body);
+  const payload = req.rawBody || JSON.stringify(req.body);
   const expected = require('crypto').createHmac('sha256', secret).update(payload).digest('hex');
   const sigBuf = Buffer.from(signature, 'utf8');
   const expBuf = Buffer.from(expected, 'utf8');

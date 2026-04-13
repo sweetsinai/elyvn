@@ -9,10 +9,26 @@ const { isValidUUID } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { logDataMutation } = require('../../utils/auditLog');
+const { success, created } = require('../../utils/response');
 const { hashPassword, createToken, verifyPassword, verifyToken } = require('../auth/utils');
+const { validateBody } = require('../../middleware/validateRequest');
+const { ResellerRegisterSchema, ResellerLoginSchema, ResellerCreateClientSchema } = require('../../utils/schemas/reseller');
+
+// Brute-force protection for reseller login
+const resellerLoginAttempts = new Map(); // ip+email -> { count, lockedUntil }
+const RESELLER_LOGIN_MAX_ATTEMPTS = 5;
+const RESELLER_LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+// Evict expired lockout entries every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of resellerLoginAttempts) {
+    if (val.lockedUntil < now) resellerLoginAttempts.delete(key);
+  }
+}, 10 * 60 * 1000).unref();
 
 // POST /reseller/register — Create a reseller account
-router.post('/register', async (req, res, next) => {
+router.post('/register', validateBody(ResellerRegisterSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { name, email, password, brand_name } = req.body;
@@ -38,15 +54,16 @@ router.post('/register', async (req, res, next) => {
     const id = randomUUID();
     const passwordHash = await hashPassword(password);
 
+    const now = new Date().toISOString();
     await db.query(`
       INSERT INTO resellers (id, name, email, password_hash, brand_name, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-    `, [id, name.trim(), email.toLowerCase().trim(), passwordHash, brand_name || name.trim()], 'run');
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [id, name.trim(), email.toLowerCase().trim(), passwordHash, brand_name || name.trim(), now, now], 'run');
 
     const token = createToken({ resellerId: id, email: email.toLowerCase().trim(), role: 'reseller' });
 
     logger.info(`[reseller] New reseller registered: ${id}`);
-    res.status(201).json({ token, reseller_id: id });
+    created(res, { token, reseller_id: id });
   } catch (err) {
     logger.error('[reseller] Register error:', err);
     next(err);
@@ -54,20 +71,47 @@ router.post('/register', async (req, res, next) => {
 });
 
 // POST /reseller/login
-router.post('/login', async (req, res, next) => {
+router.post('/login', validateBody(ResellerLoginSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { email, password } = req.body;
     if (!email || !password) return next(new AppError('VALIDATION_ERROR', 'email and password required', 400));
 
+    const attemptKey = `${req.ip}:${(email || '').toLowerCase()}`;
+    const attempts = resellerLoginAttempts.get(attemptKey) || { count: 0, lockedUntil: 0 };
+    if (Date.now() < attempts.lockedUntil) {
+      const remaining = Math.ceil((attempts.lockedUntil - Date.now()) / 60000);
+      return next(new AppError('RATE_LIMITED', `Too many failed attempts. Try again in ${remaining} minutes.`, 429));
+    }
+
     const reseller = await db.query('SELECT id, email, password_hash, brand_name FROM resellers WHERE email = ? AND is_active = 1', [email.toLowerCase().trim()], 'get');
-    if (!reseller) return next(new AppError('AUTH_FAILED', 'Invalid credentials', 401));
+    if (!reseller) {
+      attempts.count = (attempts.count || 0) + 1;
+      if (attempts.count >= RESELLER_LOGIN_MAX_ATTEMPTS) {
+        attempts.lockedUntil = Date.now() + RESELLER_LOGIN_LOCKOUT_MS;
+        attempts.count = 0;
+        logger.warn(`[reseller] Account ${email} locked for 15 min after ${RESELLER_LOGIN_MAX_ATTEMPTS} failed attempts`);
+      }
+      resellerLoginAttempts.set(attemptKey, attempts);
+      return next(new AppError('AUTH_FAILED', 'Invalid credentials', 401));
+    }
 
     const valid = await verifyPassword(password, reseller.password_hash);
-    if (!valid) return next(new AppError('AUTH_FAILED', 'Invalid credentials', 401));
+    if (!valid) {
+      attempts.count = (attempts.count || 0) + 1;
+      if (attempts.count >= RESELLER_LOGIN_MAX_ATTEMPTS) {
+        attempts.lockedUntil = Date.now() + RESELLER_LOGIN_LOCKOUT_MS;
+        attempts.count = 0;
+        logger.warn(`[reseller] Account ${email} locked for 15 min after ${RESELLER_LOGIN_MAX_ATTEMPTS} failed attempts`);
+      }
+      resellerLoginAttempts.set(attemptKey, attempts);
+      return next(new AppError('AUTH_FAILED', 'Invalid credentials', 401));
+    }
+
+    resellerLoginAttempts.delete(attemptKey);
 
     const token = createToken({ resellerId: reseller.id, email: reseller.email, role: 'reseller' });
-    res.json({ token, reseller_id: reseller.id, brand_name: reseller.brand_name });
+    success(res, { token, reseller_id: reseller.id, brand_name: reseller.brand_name });
   } catch (err) {
     logger.error('[reseller] Login error:', err);
     next(err);
@@ -98,7 +142,7 @@ router.get('/:resellerId/clients', requireReseller, async (req, res, next) => {
       [resellerId], 'all'
     );
 
-    res.json({ data: clients, count: clients.length });
+    success(res, { clients, count: clients.length });
   } catch (err) {
     logger.error('[reseller] Clients error:', err);
     next(err);
@@ -106,7 +150,7 @@ router.get('/:resellerId/clients', requireReseller, async (req, res, next) => {
 });
 
 // POST /reseller/:resellerId/create-client — Create a sub-account (white-label client)
-router.post('/:resellerId/create-client', requireReseller, async (req, res, next) => {
+router.post('/:resellerId/create-client', requireReseller, validateBody(ResellerCreateClientSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { resellerId } = req.params;
@@ -128,15 +172,15 @@ router.post('/:resellerId/create-client', requireReseller, async (req, res, next
     await db.query(`
       INSERT INTO clients (id, name, business_name, owner_name, owner_email, owner_phone, industry,
                            reseller_id, white_label_brand, plan, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'trial', 1, datetime('now'), datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'trial', 1, ?, ?)
     `, [clientId, business_name.trim(), business_name.trim(), owner_name?.trim() || '',
         owner_email.toLowerCase().trim(), owner_phone?.trim() || '', industry || '',
-        resellerId, reseller.brand_name], 'run');
+        resellerId, reseller.brand_name, new Date().toISOString(), new Date().toISOString()], 'run');
 
     try { logDataMutation(db, { action: 'reseller_client_created', table: 'clients', recordId: clientId, newValues: { resellerId, business_name } }); } catch (_) {}
 
     logger.info(`[reseller] Client ${clientId} created by reseller ${resellerId}`);
-    res.status(201).json({ client_id: clientId, business_name: business_name.trim() });
+    created(res, { client_id: clientId, business_name: business_name.trim() });
   } catch (err) {
     logger.error('[reseller] Create client error:', err);
     next(err);
@@ -161,7 +205,7 @@ router.get('/:resellerId/stats', requireReseller, async (req, res, next) => {
       `, [resellerId], 'get'),
     ]);
 
-    res.json({
+    success(res, {
       total_clients: clientCount.c,
       active_paying: activeCount.c,
       monthly_revenue: revenue.mrr || 0,

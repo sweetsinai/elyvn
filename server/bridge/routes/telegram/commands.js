@@ -300,12 +300,14 @@ async function handleCommand(db, message) {
           if (c.summary) msg += `  ${c.summary.substring(0, 120)}\n`;
           msg += '\n';
         }
+        const buttons = recent
+          .filter(c => c.call_id && c.transcript)
+          .map(c => [{
+            text: `📄 ${(c.caller_phone || 'Unknown').slice(-4)} — ${timeAgo(c.created_at)}`,
+            callback_data: `transcript:${c.call_id}`
+          }]);
         await telegram.sendMessage(chatId, msg, {
-          reply_markup: recent[0]?.call_id ? {
-            inline_keyboard: [[
-              { text: '📄 Full transcript', callback_data: `transcript:${recent[0].call_id}` }
-            ]]
-          } : undefined
+          reply_markup: buttons.length > 0 ? { inline_keyboard: buttons } : undefined
         });
       }
       break;
@@ -327,13 +329,13 @@ async function handleCommand(db, message) {
     }
 
     case '/digest': {
-      await db.query("UPDATE clients SET notification_mode = 'digest', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
+      await db.query("UPDATE clients SET notification_mode = 'digest', updated_at = ? WHERE id = ?", [new Date().toISOString(), client.id], 'run');
       await telegram.sendMessage(chatId, 'Digest mode on. Individual call/SMS alerts silenced — you\'ll only get the daily summary.\n\nUse /alerts to switch back.');
       break;
     }
 
     case '/alerts': {
-      await db.query("UPDATE clients SET notification_mode = 'all', updated_at = datetime('now') WHERE id = ?", [client.id], 'run');
+      await db.query("UPDATE clients SET notification_mode = 'all', updated_at = ? WHERE id = ?", [new Date().toISOString(), client.id], 'run');
       await telegram.sendMessage(chatId, 'Alert mode on. You\'ll get a notification for every call, SMS, and brain action.\n\nUse /digest for daily summaries only.');
       break;
     }
@@ -360,10 +362,11 @@ async function handleCommand(db, message) {
           // Postgres: async transaction
           await db.query('BEGIN', [], 'run');
           try {
+            const completeNow = new Date().toISOString();
             await db.query(
-              `UPDATE appointments SET status = 'completed', updated_at = datetime('now')
+              `UPDATE appointments SET status = 'completed', updated_at = ?
                WHERE phone = ? AND client_id = ? AND status IN ('confirmed', 'pending')`,
-              [phone, client.id], 'run'
+              [completeNow, phone, client.id], 'run'
             );
 
             const lead = await db.query('SELECT id, name FROM leads WHERE phone = ? AND client_id = ?', [phone, client.id], 'get');
@@ -373,7 +376,7 @@ async function handleCommand(db, message) {
                 [lead.id], 'run'
               );
 
-              await db.query("UPDATE leads SET stage = 'completed', updated_at = datetime('now') WHERE id = ?", [lead.id], 'run');
+              await db.query("UPDATE leads SET stage = 'completed', updated_at = ? WHERE id = ?", [completeNow, lead.id], 'run');
 
               const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
               await db.query(`
@@ -405,10 +408,11 @@ async function handleCommand(db, message) {
         } else {
           // SQLite: sync transaction
           const transaction = db.transaction(() => {
+            const txNow = new Date().toISOString();
             db.prepare(
-              `UPDATE appointments SET status = 'completed', updated_at = datetime('now')
+              `UPDATE appointments SET status = 'completed', updated_at = ?
                WHERE phone = ? AND client_id = ? AND status IN ('confirmed', 'pending')`
-            ).run(phone, client.id);
+            ).run(txNow, phone, client.id);
 
             const lead = db.prepare('SELECT id, name FROM leads WHERE phone = ? AND client_id = ?').get(phone, client.id);
             if (lead) {
@@ -416,7 +420,7 @@ async function handleCommand(db, message) {
                 "UPDATE followups SET status = 'cancelled' WHERE lead_id = ? AND type = 'reminder' AND status = 'scheduled'"
               ).run(lead.id);
 
-              db.prepare("UPDATE leads SET stage = 'completed', updated_at = datetime('now') WHERE id = ?").run(lead.id);
+              db.prepare("UPDATE leads SET stage = 'completed', updated_at = ? WHERE id = ?").run(txNow, lead.id);
 
               const scheduledAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
               db.prepare(`
@@ -478,7 +482,7 @@ async function handleCommand(db, message) {
           await telegram.sendMessage(chatId, 'Invalid URL. Must start with https:// or http://');
           break;
         }
-        await db.query("UPDATE clients SET google_review_link = ?, updated_at = datetime('now') WHERE id = ?", [value, client.id], 'run');
+        await db.query("UPDATE clients SET google_review_link = ?, updated_at = ? WHERE id = ?", [value, new Date().toISOString(), client.id], 'run');
         await telegram.sendMessage(chatId, `✅ Review link updated.`);
       } else if (key === 'ticket') {
         const amount = parseFloat(value);
@@ -486,10 +490,10 @@ async function handleCommand(db, message) {
           await telegram.sendMessage(chatId, 'Invalid amount. Usage: /set ticket 150');
           break;
         }
-        await db.query("UPDATE clients SET avg_ticket = ?, updated_at = datetime('now') WHERE id = ?", [amount, client.id], 'run');
+        await db.query("UPDATE clients SET avg_ticket = ?, updated_at = ? WHERE id = ?", [amount, new Date().toISOString(), client.id], 'run');
         await telegram.sendMessage(chatId, `✅ Average ticket set to $${amount}.`);
       } else if (key === 'name') {
-        await db.query("UPDATE clients SET business_name = ?, updated_at = datetime('now') WHERE id = ?", [value, client.id], 'run');
+        await db.query("UPDATE clients SET business_name = ?, updated_at = ? WHERE id = ?", [value, new Date().toISOString(), client.id], 'run');
         await telegram.sendMessage(chatId, `✅ Business name updated to "${value}".`);
       } else if (key === 'transfer') {
         // Validate phone number format
@@ -498,7 +502,7 @@ async function handleCommand(db, message) {
           await telegram.sendMessage(chatId, 'Invalid phone number. Use format: +15551234567');
           break;
         }
-        await db.query("UPDATE clients SET transfer_phone = ?, updated_at = datetime('now') WHERE id = ?", [phone, client.id], 'run');
+        await db.query("UPDATE clients SET transfer_phone = ?, updated_at = ? WHERE id = ?", [phone, new Date().toISOString(), client.id], 'run');
         await telegram.sendMessage(chatId,
           `✅ Transfer number set to ${phone}.\n\n`
           + `When a caller says "transfer" or presses *, the AI will forward the call to this number.\n\n`
@@ -674,9 +678,10 @@ async function handleCommand(db, message) {
       }
 
       // Brain stats
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const brainCount = await db.query(
-        `SELECT COUNT(*) as c FROM audit_log WHERE client_id = ? AND action = 'brain_decision' AND created_at >= datetime('now', '-7 days')`,
-        [client.id], 'get'
+        `SELECT COUNT(*) as c FROM audit_log WHERE client_id = ? AND action = 'brain_decision' AND created_at >= ?`,
+        [client.id, sevenDaysAgo], 'get'
       );
       msg += `\n<b>7-day total:</b> ${brainCount.c || 0} decisions`;
 
@@ -867,7 +872,7 @@ async function handleCommand(db, message) {
         break;
       }
 
-      await db.query("UPDATE clients SET google_review_link = ?, updated_at = datetime('now') WHERE id = ?", [link, client.id], 'run');
+      await db.query("UPDATE clients SET google_review_link = ?, updated_at = ? WHERE id = ?", [link, new Date().toISOString(), client.id], 'run');
       await telegram.sendMessage(chatId, '✅ Google review link updated. Customers will get this link after /complete.');
       break;
     }

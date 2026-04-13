@@ -67,9 +67,9 @@ async function checkMissedJobs(db) {
 async function recordJobRun(db, jobName) {
   try {
     await db.query(
-      `INSERT INTO scheduler_state (job_name, last_run_at, last_status) VALUES (?, datetime('now'), 'ok')
-       ON CONFLICT(job_name) DO UPDATE SET last_run_at = datetime('now'), last_status = 'ok'`,
-      [jobName], 'run'
+      `INSERT INTO scheduler_state (job_name, last_run_at, last_status) VALUES (?, ?, 'ok')
+       ON CONFLICT(job_name) DO UPDATE SET last_run_at = excluded.last_run_at, last_status = 'ok'`,
+      [jobName, new Date().toISOString()], 'run'
     );
     failureCounts[jobName] = 0;
   } catch (_) {}
@@ -115,7 +115,7 @@ function initScheduler(db) {
         else if (jobName === 'daily_outreach') dailyOutreach(db).catch(() => {});
         else if (jobName === 'daily_summary') sendDailySummaries(db).catch(() => {});
         else if (jobName === 'weekly_report') sendWeeklyReports(db).catch(() => {});
-      }, stagger);
+      }, stagger).unref();
       stagger += 30000; // 30s between missed jobs to avoid thundering herd
     }
   }).catch(() => {});
@@ -127,8 +127,8 @@ function initScheduler(db) {
   timerHandles.push(setTimeout(() => {
     if (!schedulerInitialized) return;
     trackedDailySummary();
-    timerHandles.push(setInterval(trackedDailySummary, SCHEDULER_DAILY_INTERVAL_MS));
-  }, dailyDelay));
+    timerHandles.push(setInterval(trackedDailySummary, SCHEDULER_DAILY_INTERVAL_MS).unref());
+  }, dailyDelay).unref());
 
   logger.info(`[Scheduler] Daily summary scheduled ${formatDelay(dailyDelay)} (7 PM)`);
 
@@ -139,21 +139,21 @@ function initScheduler(db) {
   timerHandles.push(setTimeout(() => {
     if (!schedulerInitialized) return;
     trackedWeeklyReport();
-    timerHandles.push(setInterval(trackedWeeklyReport, SCHEDULER_WEEKLY_INTERVAL_MS));
-  }, weeklyDelay));
+    timerHandles.push(setInterval(trackedWeeklyReport, SCHEDULER_WEEKLY_INTERVAL_MS).unref());
+  }, weeklyDelay).unref());
 
   logger.info(`[Scheduler] Weekly report scheduled ${formatDelay(weeklyDelay)} (Monday 8 AM)`);
 
   // Follow-up processor — every 5 minutes
   timerHandles.push(setInterval(() => {
     processFollowups(db).catch(err => logger.error('[Scheduler] followup processor error:', err));
-  }, SCHEDULER_FOLLOWUP_INTERVAL_MS));
+  }, SCHEDULER_FOLLOWUP_INTERVAL_MS).unref());
   logger.info('[Scheduler] Follow-up processor running every 5 minutes');
 
   // Appointment reminder processor — every 2 minutes
   timerHandles.push(setInterval(() => {
     processAppointmentReminders(db).catch(err => logger.error('[Scheduler] appointment reminder error:', err));
-  }, SCHEDULER_APPOINTMENT_REMINDER_INTERVAL_MS));
+  }, SCHEDULER_APPOINTMENT_REMINDER_INTERVAL_MS).unref());
   logger.info('[Scheduler] Appointment reminder processor running every 2 minutes');
 
   // Daily lead review — 9 AM
@@ -163,8 +163,8 @@ function initScheduler(db) {
   timerHandles.push(setTimeout(() => {
     if (!schedulerInitialized) return;
     trackedLeadReview();
-    timerHandles.push(setInterval(trackedLeadReview, SCHEDULER_DAILY_INTERVAL_MS));
-  }, reviewDelay));
+    timerHandles.push(setInterval(trackedLeadReview, SCHEDULER_DAILY_INTERVAL_MS).unref());
+  }, reviewDelay).unref());
   logger.info(`[Scheduler] Daily lead review scheduled ${formatDelay(reviewDelay)} (9 AM)`);
 
   // Engine 2: Daily outreach at 10 AM
@@ -174,14 +174,14 @@ function initScheduler(db) {
   timerHandles.push(setTimeout(() => {
     if (!schedulerInitialized) return;
     trackedOutreach();
-    timerHandles.push(setInterval(trackedOutreach, SCHEDULER_DAILY_INTERVAL_MS));
-  }, outreachDelay));
+    timerHandles.push(setInterval(trackedOutreach, SCHEDULER_DAILY_INTERVAL_MS).unref());
+  }, outreachDelay).unref());
   logger.info(`[Scheduler] Daily outreach scheduled ${formatDelay(outreachDelay)} (10 AM)`);
 
   // Engine 2: Check replies every 30 minutes
   timerHandles.push(setInterval(() => {
     checkReplies(db).catch(err => logger.error('[Scheduler] reply check error:', err));
-  }, SCHEDULER_REPLY_CHECK_INTERVAL_MS));
+  }, SCHEDULER_REPLY_CHECK_INTERVAL_MS).unref());
   logger.info('[Scheduler] Reply checker running every 30 minutes');
 
   // Predictive lead scoring — rescore all leads daily at 6 AM
@@ -191,8 +191,8 @@ function initScheduler(db) {
   timerHandles.push(setTimeout(() => {
     if (!schedulerInitialized) return;
     trackedScoring();
-    timerHandles.push(setInterval(trackedScoring, SCHEDULER_DAILY_INTERVAL_MS));
-  }, scoreDelay));
+    timerHandles.push(setInterval(trackedScoring, SCHEDULER_DAILY_INTERVAL_MS).unref());
+  }, scoreDelay).unref());
   logger.info(`[Scheduler] Daily lead scoring scheduled ${formatDelay(scoreDelay)} (6 AM)`);
 
   // Data retention cleanup — daily at 3 AM
@@ -205,8 +205,8 @@ function initScheduler(db) {
   timerHandles.push(setTimeout(() => {
     if (!schedulerInitialized) return;
     trackedRetention();
-    timerHandles.push(setInterval(trackedRetention, SCHEDULER_DAILY_INTERVAL_MS));
-  }, retentionDelay));
+    timerHandles.push(setInterval(trackedRetention, SCHEDULER_DAILY_INTERVAL_MS).unref());
+  }, retentionDelay).unref());
   logger.info(`[Scheduler] Data retention scheduled ${formatDelay(retentionDelay)} (3 AM)`);
 }
 

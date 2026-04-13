@@ -100,9 +100,9 @@ async function checkReplies(db) {
 
             // Update the emails_sent record with reply data
             await db.query(`
-              UPDATE emails_sent SET reply_text = ?, reply_at = datetime('now'), updated_at = datetime('now')
+              UPDATE emails_sent SET reply_text = ?, reply_at = ?, updated_at = ?
               WHERE id = ?
-            `, [body.substring(0, 2000), sentEmail.id], 'run');
+            `, [body.substring(0, 2000), new Date().toISOString(), new Date().toISOString(), sentEmail.id], 'run');
             // NOTE: reply_classification left NULL — auto-classify cron will handle it
 
             // Act on reply — update prospect status, notify owner
@@ -112,10 +112,10 @@ async function checkReplies(db) {
               // Mark prospect as replied so auto-classify picks it up
               await db.query("UPDATE prospects SET status = 'replied', updated_at = ? WHERE id = ?", [now, prospect.id], 'run');
 
-              // Telegram notification for all replies
-              const clients = await db.query('SELECT telegram_chat_id, calcom_booking_link FROM clients WHERE telegram_chat_id IS NOT NULL');
-              for (const c of clients) {
-                telegram.sendMessage(c.telegram_chat_id,
+              // Telegram notification to admin only (outreach is admin-scoped)
+              const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+              if (adminChatId) {
+                telegram.sendMessage(adminChatId,
                   `<b>New reply from prospect</b>\n\n<b>${prospect.business_name || from}</b>\n"${result.summary}"\n\nAuto-classification pending.`
                 ).catch(err => logger.warn('[scheduler] Reply Telegram notify failed', err.message));
               }

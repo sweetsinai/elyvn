@@ -116,6 +116,7 @@ async function scheduleReminders(db, appointment) {
 async function processDueReminders(db, sendSMSFn) {
   if (!db || !sendSMSFn) return 0;
 
+  const now = new Date().toISOString();
   try {
     const due = await db.query(`
       SELECT f.*, l.phone, c.phone_number
@@ -124,21 +125,21 @@ async function processDueReminders(db, sendSMSFn) {
       JOIN clients c ON f.client_id = c.id
       WHERE f.type = 'reminder'
       AND f.status = 'scheduled'
-      AND f.scheduled_at <= datetime('now')
+      AND f.scheduled_at <= ?
       AND f.touch_number IN (10, 11, 12)
       LIMIT 20
-    `);
+    `, [now]);
 
     let sent = 0;
     for (const reminder of due) {
       try {
         const fromPhone = reminder.phone_number;
-        const result = await sendSMSFn(reminder.phone, reminder.content, fromPhone);
+        const result = await sendSMSFn(reminder.phone, reminder.content, fromPhone, reminder.client_id);
 
         if (result && result.success) {
           await db.query(
-            "UPDATE followups SET status = 'sent', sent_at = datetime('now') WHERE id = ?",
-            [reminder.id], 'run'
+            "UPDATE followups SET status = 'sent', sent_at = ? WHERE id = ?",
+            [now, reminder.id], 'run'
           );
           sent++;
           logger.info(`[appointmentReminders] Sent reminder ${reminder.id} to ${reminder.phone}`);

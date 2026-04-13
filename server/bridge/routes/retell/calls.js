@@ -34,7 +34,7 @@ async function lookupClientByAgentId(db, agentId) {
   const cacheKey = `agent:${agentId}`;
   const cached = queryCache.get(cacheKey);
   if (cached !== null) return cached;
-  const client = await db.query('SELECT id FROM clients WHERE retell_agent_id = ?', [agentId], 'get');
+  const client = await db.query('SELECT id, plan, telegram_chat_id FROM clients WHERE retell_agent_id = ?', [agentId], 'get');
   queryCache.set(cacheKey, client || null, AGENT_CONFIG_TTL);
   return client || null;
 }
@@ -51,7 +51,7 @@ async function handleCallStarted(db, call, correlationId) {
     const direction = call.direction || 'inbound';
 
     let client = await db.query(
-      `SELECT id FROM clients WHERE phone_number = ?`,
+      `SELECT id, plan, telegram_chat_id FROM clients WHERE phone_number = ?`,
       [toNumber],
       'get'
     );
@@ -70,8 +70,57 @@ async function handleCallStarted(db, call, correlationId) {
     await db.query(`
       INSERT INTO calls (id, call_id, client_id, caller_phone, direction, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(call_id) DO UPDATE SET updated_at = datetime('now')
+      ON CONFLICT(call_id) DO UPDATE SET created_at = created_at
     `, [randomUUID(), callId, clientId, callerPhone, direction, new Date().toISOString()], 'run');
+
+    // Plan usage limit check — hard-block calls that exceed limit, warn at 80%
+    try {
+      const PLAN_CALL_LIMITS = { trial: 50, solo: 100, starter: 500, pro: 1500, premium: -1 };
+      const limit = PLAN_CALL_LIMITS[client.plan] ?? 50;
+      if (limit !== -1) {
+        const usageRow = await db.query('SELECT calls_this_month FROM clients WHERE id = ?', [clientId], 'get');
+        const used = (usageRow?.calls_this_month || 0) + 1;
+        if (used > limit) {
+          logger.warn(`[retell] Call BLOCKED: client ${clientId} on ${client.plan} plan (${used}/${limit})`);
+          if (client.telegram_chat_id) {
+            const { sendMessage } = require('../../utils/telegram');
+            sendMessage(client.telegram_chat_id,
+              `&#9888; <b>Call blocked — limit exceeded</b>\n\nYou've used ${used - 1}/${limit} calls this month on your ${client.plan} plan.\n\nThis call was sent to voicemail. Upgrade to continue receiving AI-answered calls.`
+            ).catch(() => {});
+          }
+          // End the call via Retell API — caller gets voicemail
+          try {
+            const RETELL_API_KEY = process.env.RETELL_API_KEY;
+            if (RETELL_API_KEY) {
+              fetch(`https://api.retellai.com/v2/end-call/${callId}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${RETELL_API_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ end_call_reason: 'plan_limit_exceeded' }),
+                signal: AbortSignal.timeout(5000),
+              }).catch(e => logger.warn('[retell] End call on limit failed:', e.message));
+            }
+          } catch (_) {}
+          return; // Stop processing — call is terminated
+        } else if (used === limit) {
+          // Last call allowed — warn
+          if (client.telegram_chat_id) {
+            const { sendMessage } = require('../../utils/telegram');
+            sendMessage(client.telegram_chat_id,
+              `&#9888; <b>Last call on your plan</b>\n\nYou've used ${used}/${limit} calls this month. Next call will be blocked.\n\nUpgrade now to avoid missing calls.`
+            ).catch(() => {});
+          }
+        } else if (used >= Math.floor(limit * 0.8)) {
+          if (client.telegram_chat_id) {
+            const { sendMessage } = require('../../utils/telegram');
+            sendMessage(client.telegram_chat_id,
+              `&#128276; <b>Usage alert</b>: ${used}/${limit} calls used this month (${Math.round(used/limit*100)}%).`
+            ).catch(() => {});
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('[retell] Usage limit check error (non-fatal):', err.message);
+    }
 
     // Broadcast call_started for real-time dashboard updates
     try {
@@ -141,7 +190,7 @@ async function fetchCallDataFromRetell(db, call, correlationId) {
       await db.query(`
         INSERT INTO calls (id, call_id, client_id, caller_phone, direction, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(call_id) DO UPDATE SET updated_at = datetime('now')
+        ON CONFLICT(call_id) DO UPDATE SET created_at = created_at
       `, [randomUUID(), callId, insertedClientId, fromNumber || null, callData.direction || call.direction || 'inbound', new Date().toISOString()], 'run');
 
       callRecord = await db.query('SELECT * FROM calls WHERE call_id = ?', [callId], 'get');
@@ -184,7 +233,7 @@ async function analyzeCallConversation(db, callRecord, callData, call, correlati
     const { summary, score } = await generateCallSummaryAndScore(transcriptText, callAnalysis, duration);
 
     const bookingId = customAnalysis.calcom_booking_id || callData.metadata?.calcom_booking_id;
-    const outcome = determineOutcome(call, call, callAnalysis, customAnalysis, duration, bookingId);
+    const outcome = determineOutcome(callData, call, callAnalysis, customAnalysis, duration, bookingId);
 
     try {
       const { recordMetric } = require('../../utils/metrics');
@@ -194,7 +243,7 @@ async function analyzeCallConversation(db, callRecord, callData, call, correlati
     }
 
     // Track usage for billing
-    try { const { trackUsage } = require('../../utils/usageTracker'); trackUsage(db, clientId, 'call'); } catch (_) {}
+    try { const { trackUsage } = require('../../utils/usageTracker'); trackUsage(db, callRecord.client_id, 'call'); } catch (_) {}
 
     const sentiment = callAnalysis.user_sentiment || 'neutral';
 
@@ -212,7 +261,7 @@ async function analyzeCallConversation(db, callRecord, callData, call, correlati
 
     try {
       const { broadcast } = require('../../utils/websocket');
-      broadcast('new_call', { id: callId, phone: callRecord.caller_phone, status: outcome, duration, score, summary });
+      broadcast('new_call', { id: callId, phone: callRecord.caller_phone, status: outcome, duration, score, summary }, callRecord.client_id);
     } catch (err) {
       logger.warn('[retell] WebSocket broadcast error:', err.message);
     }
@@ -256,7 +305,7 @@ async function generateAndSendNotifications(db, callRecord, callData, call, anal
       const { getLeadMemory } = require('../../utils/leadMemory');
       const { think } = require('../../utils/brain');
       const { executeActions } = require('../../utils/actionExecutor');
-      const memory = getLeadMemory(db, callerPhone, clientId);
+      const memory = await getLeadMemory(db, callerPhone, clientId);
       if (memory) {
         const decision = await think('call_ended', { call_id: callId, duration, outcome, summary, score }, memory, db);
         await executeActions(db, decision.actions, memory);
@@ -338,6 +387,13 @@ async function handleCallAnalyzed(db, call) {
 
     const callSummary = analysis.call_summary || '';
 
+    // Verify call exists and get client_id for tenant-scoped update
+    const existingCall = await db.query('SELECT client_id FROM calls WHERE call_id = ?', [callId], 'get');
+    if (!existingCall) {
+      logger.warn(`[retell] call_analyzed: no call record for ${callId}`);
+      return;
+    }
+
     await db.query(`
       UPDATE calls SET
         transcript = CASE WHEN (transcript IS NULL OR transcript = '') AND ? != '' THEN ? ELSE transcript END,
@@ -345,14 +401,15 @@ async function handleCallAnalyzed(db, call) {
         sentiment = COALESCE(?, sentiment),
         analysis_data = ?,
         updated_at = ?
-      WHERE call_id = ?
+      WHERE call_id = ? AND client_id = ?
     `, [
       transcriptText, transcriptText,
       callSummary, callSummary,
       analysis.user_sentiment || null,
       JSON.stringify(analysis),
       new Date().toISOString(),
-      callId
+      callId,
+      existingCall.client_id
     ], 'run');
 
     logger.info(`[retell] call_analyzed: ${callId} transcript=${transcriptText.length}chars summary=${callSummary.length}chars`);

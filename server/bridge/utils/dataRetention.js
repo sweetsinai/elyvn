@@ -63,12 +63,13 @@ async function _logRetentionToAudit(db, table, rowsDeleted) {
 
     await db.query(`
       INSERT INTO audit_log (id, client_id, user_id, action, resource_type, resource_id, ip_address, user_agent, details, created_at)
-      VALUES (?, NULL, NULL, ?, ?, NULL, NULL, NULL, ?, datetime('now'))
+      VALUES (?, NULL, NULL, ?, ?, NULL, NULL, NULL, ?, ?)
     `, [
       randomUUID(),
       'data_retention_deletion',
       table,
-      JSON.stringify({ table, rows_deleted: rowsDeleted, policy: RETENTION_POLICIES[table]?.condition })
+      JSON.stringify({ table, rows_deleted: rowsDeleted, retention_days: RETENTION_POLICIES[table]?.days }),
+      new Date().toISOString()
     ], 'run');
   } catch (err) {
     // Non-fatal — retention must not fail just because audit logging failed

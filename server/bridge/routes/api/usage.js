@@ -9,6 +9,9 @@ const { isValidUUID } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { logDataMutation } = require('../../utils/auditLog');
+const { success } = require('../../utils/response');
+const { validateBody } = require('../../middleware/validateRequest');
+const { UsageRecordSchema, OnboardingStepSchema, PlanUpgradeSchema } = require('../../utils/schemas/usage');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -46,7 +49,7 @@ router.get('/usage/:clientId', async (req, res, next) => {
     const callsUsed = usage?.calls_count || client.calls_this_month || 0;
     const smsUsed = usage?.sms_count || client.sms_this_month || 0;
 
-    res.json({
+    success(res, {
       month,
       plan: client.plan,
       usage: {
@@ -72,15 +75,12 @@ router.get('/usage/:clientId', async (req, res, next) => {
 });
 
 // POST /usage/:clientId/record — Record a usage event (internal, called by brain/sms/call handlers)
-router.post('/usage/:clientId/record', async (req, res, next) => {
+router.post('/usage/:clientId/record', validateBody(UsageRecordSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
-    const { type } = req.body; // 'call', 'sms', 'ai_decision', 'email'
+    const { type } = req.body;
     if (!isValidUUID(clientId)) return next(new AppError('INVALID_INPUT', 'Invalid client ID', 400));
-
-    const validTypes = ['call', 'sms', 'ai_decision', 'email'];
-    if (!validTypes.includes(type)) return next(new AppError('VALIDATION_ERROR', 'Invalid usage type', 400));
 
     const month = new Date().toISOString().slice(0, 7);
 
@@ -104,7 +104,7 @@ router.post('/usage/:clientId/record', async (req, res, next) => {
       await db.query('UPDATE clients SET sms_this_month = COALESCE(sms_this_month, 0) + 1 WHERE id = ?', [clientId], 'run');
     }
 
-    res.json({ recorded: true });
+    success(res, { recorded: true });
   } catch (err) {
     logger.error('[usage] Record error:', err);
     next(err);
@@ -143,7 +143,7 @@ router.get('/onboarding/:clientId', async (req, res, next) => {
     const pct = Math.round((completedCount / steps.length) * 100);
     const canGoLive = essentialDone === essentialSteps.length;
 
-    res.json({
+    success(res, {
       steps,
       essential_complete: essentialDone,
       essential_total: essentialSteps.length,
@@ -159,15 +159,12 @@ router.get('/onboarding/:clientId', async (req, res, next) => {
 });
 
 // POST /onboarding/:clientId/complete-step — Mark a step as complete
-router.post('/onboarding/:clientId/complete-step', async (req, res, next) => {
+router.post('/onboarding/:clientId/complete-step', validateBody(OnboardingStepSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
     const { step } = req.body;
     if (!isValidUUID(clientId)) return next(new AppError('INVALID_INPUT', 'Invalid client ID', 400));
-    if (!step || typeof step !== 'number' || step < 1 || step > 7) {
-      return next(new AppError('VALIDATION_ERROR', 'Step must be 1-7', 400));
-    }
 
     const client = await db.query('SELECT onboarding_step FROM clients WHERE id = ?', [clientId], 'get');
     if (!client) return next(new AppError('NOT_FOUND', 'Client not found', 404));
@@ -176,13 +173,13 @@ router.post('/onboarding/:clientId/complete-step', async (req, res, next) => {
     const completed = newStep >= 7 ? 1 : 0;
 
     await db.query(
-      "UPDATE clients SET onboarding_step = ?, onboarding_completed = ?, updated_at = datetime('now') WHERE id = ?",
-      [newStep, completed, clientId], 'run'
+      "UPDATE clients SET onboarding_step = ?, onboarding_completed = ?, updated_at = ? WHERE id = ?",
+      [newStep, completed, new Date().toISOString(), clientId], 'run'
     );
 
     try { logDataMutation(db, { action: 'onboarding_step', table: 'clients', recordId: clientId, newValues: { step: newStep, completed } }); } catch (_) {}
 
-    res.json({ step: newStep, completed: completed === 1 });
+    success(res, { step: newStep, completed: completed === 1 });
   } catch (err) {
     logger.error('[onboarding] Step error:', err);
     next(err);
@@ -190,17 +187,12 @@ router.post('/onboarding/:clientId/complete-step', async (req, res, next) => {
 });
 
 // POST /plan/:clientId/upgrade — Self-serve plan upgrade via Dodo Payments
-router.post('/plan/:clientId/upgrade', async (req, res, next) => {
+router.post('/plan/:clientId/upgrade', validateBody(PlanUpgradeSchema), async (req, res, next) => {
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
     const { planId } = req.body;
     if (!isValidUUID(clientId)) return next(new AppError('INVALID_INPUT', 'Invalid client ID', 400));
-
-    const validPlans = ['solo', 'starter', 'pro', 'premium'];
-    if (!validPlans.includes(planId)) {
-      return next(new AppError('VALIDATION_ERROR', 'Invalid plan. Choose: solo, starter, pro, or premium', 400));
-    }
 
     const client = await db.query('SELECT plan, dodo_customer_id, owner_email, business_name FROM clients WHERE id = ?', [clientId], 'get');
     if (!client) return next(new AppError('NOT_FOUND', 'Client not found', 404));
@@ -215,9 +207,9 @@ router.post('/plan/:clientId/upgrade', async (req, res, next) => {
         };
 
         if (!productIds[planId]) {
-          await db.query("UPDATE clients SET plan = ?, updated_at = datetime('now') WHERE id = ?", [planId, clientId], 'run');
+          await db.query("UPDATE clients SET plan = ?, updated_at = ? WHERE id = ?", [planId, new Date().toISOString(), clientId], 'run');
           try { logDataMutation(db, { action: 'plan_upgrade', table: 'clients', recordId: clientId, newValues: { plan: planId } }); } catch (_) {}
-          return res.json({ upgraded: true, plan: planId });
+          return success(res, { upgraded: true, plan: planId });
         }
 
         const DODO_BASE_URL = process.env.DODO_ENV === 'live'
@@ -240,7 +232,7 @@ router.post('/plan/:clientId/upgrade', async (req, res, next) => {
         });
         const session = await resp.json();
         if (!resp.ok) throw new Error(session.message || 'Dodo checkout failed');
-        return res.json({ checkout_url: session.checkout_url || session.url });
+        return success(res, { checkout_url: session.checkout_url || session.url });
       } catch (dodoErr) {
         logger.error('[plan] Dodo error:', dodoErr.message);
         return next(new AppError('INTERNAL_ERROR', 'Failed to create checkout', 500));
@@ -248,9 +240,9 @@ router.post('/plan/:clientId/upgrade', async (req, res, next) => {
     }
 
     // No Dodo — direct update (dev/test)
-    await db.query("UPDATE clients SET plan = ?, updated_at = datetime('now') WHERE id = ?", [planId, clientId], 'run');
+    await db.query("UPDATE clients SET plan = ?, updated_at = ? WHERE id = ?", [planId, new Date().toISOString(), clientId], 'run');
     try { logDataMutation(db, { action: 'plan_upgrade', table: 'clients', recordId: clientId, newValues: { plan: planId } }); } catch (_) {}
-    res.json({ upgraded: true, plan: planId });
+    success(res, { upgraded: true, plan: planId });
   } catch (err) {
     logger.error('[plan] Upgrade error:', err);
     next(err);

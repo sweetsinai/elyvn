@@ -107,36 +107,36 @@ describe('POST /scrape', () => {
   });
 
   // Validation
-  test('returns 400 when industry is missing', async () => {
+  test('returns 422 when industry is missing', async () => {
     const app = buildApp({ query: jest.fn() });
     const res = await request(app)
       .post('/scrape')
       .send({ city: 'San Francisco' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
-  test('returns 400 when city is missing', async () => {
+  test('returns 422 when city is missing', async () => {
     const app = buildApp({ query: jest.fn() });
     const res = await request(app)
       .post('/scrape')
       .send({ industry: 'Plumbing' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
-  test('returns 400 when maxResults exceeds 20', async () => {
+  test('returns 422 when maxResults exceeds 20', async () => {
     const app = buildApp({ query: jest.fn() });
     const res = await request(app)
       .post('/scrape')
       .send({ industry: 'Plumbing', city: 'SF', maxResults: 100 });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
-  test('returns 400 when industry is empty string', async () => {
+  test('returns 422 when industry is empty string', async () => {
     const app = buildApp({ query: jest.fn() });
     const res = await request(app)
       .post('/scrape')
       .send({ industry: '', city: 'SF' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   // Happy path
@@ -254,20 +254,20 @@ describe('POST /blast', () => {
   });
 
   // Validation
-  test('returns 400 when industry is missing', async () => {
+  test('returns 422 when industry is missing', async () => {
     const app = buildApp({ query: jest.fn() });
     const res = await request(app)
       .post('/blast')
       .send({ city: 'San Francisco' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
-  test('returns 400 when city is missing', async () => {
+  test('returns 422 when city is missing', async () => {
     const app = buildApp({ query: jest.fn() });
     const res = await request(app)
       .post('/blast')
       .send({ industry: 'Plumbing' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   // Happy path — no prospects scraped

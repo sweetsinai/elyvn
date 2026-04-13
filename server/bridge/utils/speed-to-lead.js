@@ -8,16 +8,16 @@ const { appendEvent, Events } = require('./eventStore');
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
 
 // Named delay constants
-const TOUCH_2_DELAY_MS = 2 * 60 * 1000;   // 2 minutes (gives prospect time to read SMS first)
-const TOUCH_3_DELAY_MS = 10 * 60 * 1000;  // 10 minutes (gives prospect time to book from callback)
+const TOUCH_2_DEFAULT_DELAY_MS = 60 * 1000; // 60s default (overridden by smart scheduler if confident)
+const TOUCH_3_OFFSET_MS = 5 * 60 * 1000;   // 5 minutes after callback completes
 const FOLLOWUP_24H_MS = 24 * 60 * 60 * 1000;
 const FOLLOWUP_72H_MS = 72 * 60 * 60 * 1000;
 
 /**
  * Trigger the full speed-to-lead sequence for a new lead from ANY channel.
  * Touch 1 (0s):   SMS with booking link
- * Touch 2 (60s):  AI callback via Retell
- * Touch 3 (5min): Follow-up SMS if no booking
+ * Touch 2 (60s default, smart-scheduled up to 24h):  AI callback via Retell
+ * Touch 3 (callback + 5min): Follow-up SMS if no booking
  * Touch 4/5:      Insert 24h + 72h followups into followups table
  *
  * @param {object} db - better-sqlite3 sync db instance
@@ -32,12 +32,13 @@ async function triggerSpeedSequence(db, leadData) {
   }
 
   // P1: Double trigger prevention — skip if active sequence already exists for this lead
+  const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
   const activeSpeed = await db.query(`
     SELECT 1 FROM followups
     WHERE lead_id = ? AND status = 'scheduled'
-    AND scheduled_at > datetime('now', '-6 hours')
+    AND scheduled_at > ?
     LIMIT 1
-  `, [leadId], 'get');
+  `, [leadId, sixHoursAgo], 'get');
   if (activeSpeed) {
     logger.info(`[SpeedToLead] Active sequence found for lead ${leadId} — skipping duplicate trigger`);
     return;
@@ -75,8 +76,8 @@ async function triggerSpeedSequence(db, leadData) {
 
     await db.query(`
       INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, reply_text, reply_source, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'sms', 'outbound', NULL, ?, 'system', 'sent', datetime('now'), datetime('now'))
-    `, [randomUUID(), clientId, leadId, phone, smsText], 'run');
+      VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, NULL, 'system', 'sent', ?, ?)
+    `, [randomUUID(), clientId, leadId, phone, smsText, new Date().toISOString(), new Date().toISOString()], 'run');
 
     logger.info(`[SpeedToLead] Touch 1 SMS queued for ${phone}`);
   } catch (err) {
@@ -84,7 +85,7 @@ async function triggerSpeedSequence(db, leadData) {
   }
 
   // === TOUCH 2: AI Callback (smart timing or 60s fallback) ===
-  let callbackDelay = 60000;
+  let callbackDelay = TOUCH_2_DEFAULT_DELAY_MS;
   try {
     const { getOptimalContactTime } = require('./smartScheduler');
     const timing = await getOptimalContactTime(db, leadId, clientId);
@@ -110,7 +111,7 @@ async function triggerSpeedSequence(db, leadData) {
   });
 
   // === TOUCH 3: Follow-up SMS (5 min AFTER the callback, not a hardcoded 5min from now) ===
-  const touch3DelayMs = callbackDelay + (5 * 60 * 1000); // always 5 min AFTER the callback
+  const touch3DelayMs = callbackDelay + TOUCH_3_OFFSET_MS; // always 5 min AFTER the callback
   await scheduleFollowUpSMS(db, { leadId, clientId, phone, name, delayMs: touch3DelayMs, client });
 
   // === TOUCH 4/5: Standard follow-ups (24h + 72h) — dedup by touch_number ===
@@ -203,7 +204,7 @@ async function scheduleCallback(db, options) {
     await enqueueJob(db, 'speed_to_lead_callback', {
       leadId, clientId, phone, name, message, service, reason,
       retell_agent_id: client.retell_agent_id,
-      retell_phone: client.retell_phone,
+      retell_phone: client.phone_number || client.retell_phone,
     }, scheduledAt, `stl_cb_${leadId}`, 10);
 
     logger.info(`[SpeedToLead] AI callback to ${phone} queued for ${totalDelayMs / 1000}s`);

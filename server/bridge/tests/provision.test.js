@@ -133,7 +133,7 @@ describe('Provision Route', () => {
           plan: 'growth',
         });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(422);
       expect(response.body.error).toContain('business_name');
     });
 
@@ -145,7 +145,7 @@ describe('Provision Route', () => {
           plan: 'growth',
         });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(422);
       expect(response.body.error).toContain('owner_phone');
     });
 
@@ -157,7 +157,7 @@ describe('Provision Route', () => {
           owner_phone: '+14155551234',
         });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(422);
       expect(response.body.error).toContain('plan');
     });
 
@@ -166,7 +166,7 @@ describe('Provision Route', () => {
         .post('/provision')
         .send({});
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(422);
     });
   });
 
@@ -609,17 +609,6 @@ describe('Provision Route', () => {
     });
 
     test('should sanitize email field', async () => {
-      mockDb.prepare.mockReturnValue({
-        run: jest.fn(),
-        get: jest.fn().mockReturnValue({
-          id: 'client-123',
-          business_name: 'Test Business',
-          owner_email: 'test@example.com',
-          owner_phone: '+14155551234',
-          created_at: new Date().toISOString(),
-        }),
-      });
-
       const response = await request(app)
         .post('/provision')
         .send({
@@ -629,7 +618,8 @@ describe('Provision Route', () => {
           plan: 'growth',
         });
 
-      expect(response.status).toBe(201);
+      // Zod schema rejects invalid email format before it reaches the handler
+      expect(response.status).toBe(422);
     });
   });
 

@@ -14,7 +14,7 @@ const { logDataMutation } = require('../../utils/auditLog');
 const { validateParams, validateBody, validateQuery } = require('../../middleware/validateRequest');
 const { ClientParamsSchema, ClientCreateSchema } = require('../../utils/schemas/client');
 const { PaginationSchema } = require('../../utils/schemas/common');
-const { paginated } = require('../../utils/response');
+const { paginated, success, created } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -32,7 +32,7 @@ const ALLOWED_CLIENT_FIELDS = new Set([
   'retell_agent_id', 'retell_phone', 'retell_voice', 'retell_language',
   'twilio_phone', 'transfer_phone', 'phone_number',
   'calcom_event_type_id', 'calcom_booking_link', 'telegram_chat_id',
-  'avg_ticket', 'is_active', 'plan',
+  'avg_ticket',
   'notification_mode', 'whatsapp_phone',
   'facebook_page_id', 'instagram_user_id',
   'lead_webhook_url', 'booking_webhook_url', 'call_webhook_url',
@@ -189,7 +189,7 @@ router.post('/clients', validateBody(ClientCreateSchema), async (req, res, next)
     }
 
     const client = await db.query(`SELECT ${CLIENT_SAFE_COLS} FROM clients WHERE id = ?`, [id], 'get');
-    res.status(201).json({ data: client });
+    created(res, client);
   } catch (err) {
     logger.error('[api] create client error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to create client', 500));
@@ -335,7 +335,7 @@ router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req,
       }
     }
 
-    res.json({ data: client });
+    success(res, client);
   } catch (err) {
     logger.error('[api] update client error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to update client', 500));

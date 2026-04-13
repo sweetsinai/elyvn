@@ -108,7 +108,7 @@ async function coldTransfer(twilioCallSid, transferPhone) {
   const formData = new URLSearchParams({ Twiml: twiml }).toString();
 
   try {
-    const resp = await fetch(
+    const resp = await twilioTransferBreaker.call(
       `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${twilioCallSid}.json`,
       {
         method: 'POST',
@@ -117,13 +117,11 @@ async function coldTransfer(twilioCallSid, transferPhone) {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: formData,
-        signal: AbortSignal.timeout(10000),
       }
     );
 
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      throw new Error(`Twilio call update ${resp.status}: ${body}`);
+    if (resp.fallback) {
+      return { success: false, error: 'Twilio transfer service unavailable (circuit open)' };
     }
 
     const data = await resp.json().catch(() => ({}));
@@ -140,8 +138,51 @@ function escapeXml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Circuit breaker for Twilio cold transfer API
+const twilioTransferBreaker = new CircuitBreaker(
+  async (url, opts) => {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10000), ...opts });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      throw new Error(`Twilio call update ${resp.status}: ${body}`);
+    }
+    return resp;
+  },
+  {
+    failureThreshold: 3,
+    failureWindow: 60000,
+    cooldownPeriod: 30000,
+    serviceName: 'TwilioColdTransfer',
+    fallback: () => ({ ok: false, fallback: true }),
+  }
+);
+
+// Rate limiter: max 1 transfer per 10s per call_id
+const _transferTimestamps = new Map();
+function isTransferRateLimited(callId) {
+  const last = _transferTimestamps.get(callId);
+  if (last && Date.now() - last < 10000) return true;
+  _transferTimestamps.set(callId, Date.now());
+  // Cleanup old entries every 100 calls
+  if (_transferTimestamps.size > 100) {
+    const cutoff = Date.now() - 60000;
+    for (const [k, v] of _transferTimestamps) { if (v < cutoff) _transferTimestamps.delete(k); }
+  }
+  return false;
+}
+
+// Circular transfer check
+function isCircularTransfer(transferPhone, clientPhone) {
+  if (!transferPhone || !clientPhone) return false;
+  const normalize = p => p.replace(/\D/g, '').slice(-10);
+  return normalize(transferPhone) === normalize(clientPhone);
+}
+
 module.exports = {
   warmTransfer,
   coldTransfer,
+  isTransferRateLimited,
+  isCircularTransfer,
   _retellTransferBreaker: retellTransferBreaker,
+  _twilioTransferBreaker: twilioTransferBreaker,
 };

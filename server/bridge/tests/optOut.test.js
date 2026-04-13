@@ -150,6 +150,7 @@ describe('optOut.js', () => {
         mockUUID,
         '+1234567890',
         'client-123',
+        expect.any(String),
         'user_request'
       );
     });
@@ -168,6 +169,7 @@ describe('optOut.js', () => {
         mockUUID,
         '+1234567890',
         'client-123',
+        expect.any(String),
         'STOP'
       );
     });
@@ -186,6 +188,7 @@ describe('optOut.js', () => {
         mockUUID,
         '+1234567890',
         'client-123',
+        expect.any(String),
         'STOP'
       );
     });
@@ -204,6 +207,7 @@ describe('optOut.js', () => {
         mockUUID,
         '+1234567890',
         'client-123',
+        expect.any(String),
         'UNSUBSCRIBE'
       );
     });
@@ -221,8 +225,8 @@ describe('optOut.js', () => {
       await recordOptOut(db, '+2222222222', 'client-123');
 
       expect(crypto.randomUUID).toHaveBeenCalledTimes(2);
-      expect(mockStatement.run).toHaveBeenCalledWith('uuid-1', '+1111111111', 'client-123', 'user_request');
-      expect(mockStatement.run).toHaveBeenCalledWith('uuid-2', '+2222222222', 'client-123', 'user_request');
+      expect(mockStatement.run).toHaveBeenCalledWith('uuid-1', '+1111111111', 'client-123', expect.any(String), 'user_request');
+      expect(mockStatement.run).toHaveBeenCalledWith('uuid-2', '+2222222222', 'client-123', expect.any(String), 'user_request');
     });
 
     test('should return false if db is null', async () => {
@@ -296,7 +300,7 @@ describe('optOut.js', () => {
       await recordOptOut(db, '+1234567890', 'client-123');
 
       const query = db.prepare.mock.calls[0][0];
-      expect(query).toContain("datetime('now')");
+      expect(query).toContain('VALUES (?, ?, ?, ?, ?)');
     });
 
     test('should return false for undefined db', async () => {
@@ -332,12 +336,14 @@ describe('optOut.js', () => {
         mockUUID,
         '+1234567890',
         'client-1',
+        expect.any(String),
         'user_request'
       );
       expect(mockStatement.run).toHaveBeenCalledWith(
         mockUUID,
         '+1234567890',
         'client-2',
+        expect.any(String),
         'user_request'
       );
     });
@@ -522,6 +528,7 @@ describe('optOut.js', () => {
         mockUUID,
         '+1234567890',
         'client-123',
+        expect.any(String),
         'STOP'
       );
     });
@@ -540,6 +547,7 @@ describe('optOut.js', () => {
         mockUUID,
         '+1234567890',
         'client-123',
+        expect.any(String),
         'UNSUBSCRIBE'
       );
     });

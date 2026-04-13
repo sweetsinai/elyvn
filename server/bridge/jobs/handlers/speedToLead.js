@@ -36,8 +36,8 @@ async function speedToLeadSms(db, sendSMS, payload) {
   }
   // Check for recent duplicate SMS to prevent queue retry duplication
   const recentSMS = await db.query(
-    "SELECT id FROM messages WHERE phone = ? AND created_at > datetime('now', '-5 minutes') AND direction = 'outbound'",
-    [payload.phone], 'get'
+    "SELECT id FROM messages WHERE phone = ? AND created_at > ? AND direction = 'outbound'",
+    [payload.phone, new Date(Date.now() - 5 * 60 * 1000).toISOString()], 'get'
   );
   if (recentSMS) {
     logger.info(`[jobHandlers] Skipping duplicate SMS to ${payload.phone}`);
@@ -45,7 +45,10 @@ async function speedToLeadSms(db, sendSMS, payload) {
   }
   // Truncate to SMS max for concatenated messages (Telnyx/Twilio compat)
   const message = (payload.message || '').slice(0, SMS_MAX_LENGTH);
-  await sendSMS(payload.phone, message, payload.from, db, payload.clientId);
+  const result = await sendSMS(payload.phone, message, payload.from, db, payload.clientId);
+  if (result && !result.success) {
+    throw new Error(`speed_to_lead_sms failed: ${result.error || result.reason || 'unknown'}`);
+  }
 }
 
 /**
@@ -73,8 +76,8 @@ async function speedToLeadCallback(db, sendSMS, captureException, payload) {
   }
   // Check for recent duplicate call to prevent queue retry duplication
   const recentCall = await db.query(
-    "SELECT id FROM calls WHERE phone = ? AND created_at > datetime('now', '-5 minutes')",
-    [payload.phone], 'get'
+    "SELECT id FROM calls WHERE phone = ? AND created_at > ?",
+    [payload.phone, new Date(Date.now() - 5 * 60 * 1000).toISOString()], 'get'
   );
   if (recentCall) {
     logger.info(`[jobHandlers] Skipping duplicate call to ${payload.phone}`);
@@ -82,7 +85,7 @@ async function speedToLeadCallback(db, sendSMS, captureException, payload) {
   }
   // Actually make the Retell outbound call
   const agentId = payload.retell_agent_id || client.retell_agent_id;
-  const fromPhone = payload.retell_phone || client.retell_phone;
+  const fromPhone = payload.retell_phone || client.phone_number || client.retell_phone;
   if (!agentId || !fromPhone || !payload.phone) {
     logger.warn(`[jobQueue] speed_to_lead_callback — missing agent_id (${agentId}), from (${fromPhone}), or to (${payload.phone})`);
     // Fallback: send SMS instead

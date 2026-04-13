@@ -10,7 +10,10 @@ function isLeadComplete(lead) {
 /**
  * Get count of records since a date for a client
  */
+const ALLOWED_TABLES = new Set(['leads', 'calls', 'messages', 'appointments', 'followups', 'emails_sent']);
+
 function getCountSince(db, table, clientId, since) {
+  if (!ALLOWED_TABLES.has(table)) throw new Error(`Invalid table: ${table}`);
   return db.prepare(
     `SELECT COUNT(*) as count FROM ${table} WHERE client_id = ? AND created_at >= ?`
   ).get(clientId, since).count;

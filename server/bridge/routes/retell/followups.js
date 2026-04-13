@@ -77,10 +77,11 @@ async function handleMissedCall(db, clientId, callerPhone, client) {
     const missedLead = await db.query('SELECT id FROM leads WHERE phone = ? AND client_id = ?', [callerPhone, clientId], 'get');
     const missedLeadId = missedLead?.id || randomUUID();
     if (!missedLead) {
+      const now = new Date().toISOString();
       await db.query(`
         INSERT INTO leads (id, client_id, phone, source, score, stage, last_contact, created_at, updated_at)
-        VALUES (?, ?, ?, 'missed_call', 5, 'new', datetime('now'), datetime('now'), datetime('now'))
-      `, [missedLeadId, clientId, callerPhone], 'run');
+        VALUES (?, ?, ?, 'missed_call', 5, 'new', ?, ?, ?)
+      `, [missedLeadId, clientId, callerPhone, now, now, now], 'run');
     }
 
     const textBackMsg = `Hi! Sorry we missed your call. How can we help you today? — ${client.business_name || 'Our team'}`;
@@ -90,8 +91,8 @@ async function handleMissedCall(db, clientId, callerPhone, client) {
 
     await db.query(`
       INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at)
-      VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'missed_call_textback', datetime('now'))
-    `, [randomUUID(), clientId, missedLeadId, callerPhone, textBackMsg], 'run');
+      VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'missed_call_textback', ?)
+    `, [randomUUID(), clientId, missedLeadId, callerPhone, textBackMsg, new Date().toISOString()], 'run');
 
     if (client.telegram_chat_id) {
       await telegram.sendMessage(client.telegram_chat_id,
@@ -99,21 +100,21 @@ async function handleMissedCall(db, clientId, callerPhone, client) {
       ).catch(err => logger.error('[retell] Telegram missed-call alert failed:', err.message));
     }
 
+    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
     const activeSequence = await db.query(
-      "SELECT id FROM followups WHERE lead_id = ? AND status = 'scheduled' AND scheduled_at >= datetime('now', '-6 hours') LIMIT 1",
-      [missedLeadId],
+      "SELECT id FROM followups WHERE lead_id = ? AND status = 'scheduled' AND scheduled_at >= ? LIMIT 1",
+      [missedLeadId, sixHoursAgo],
       'get'
     );
     if (activeSequence) {
       logger.info(`[retell] Skipping speed sequence for ${callerPhone} — active sequence already exists`);
     } else {
       const { triggerSpeedSequence } = require('../../utils/speed-to-lead');
-      triggerSpeedSequence(db, {
+      await triggerSpeedSequence(db, {
         leadId: missedLeadId, clientId, phone: callerPhone,
         name: null, email: null, message: null, service: null,
         source: 'missed_call', client
-      })
-        .catch(err => logger.error('[retell] Missed call speed sequence failed:', err.message));
+      }).catch(err => logger.error('[retell] Missed call speed sequence failed:', err.message));
     }
 
     // Brain decision for missed calls is handled by the general post-call brain
@@ -151,10 +152,11 @@ async function handleVoicemail(db, clientId, callerPhone, voicemailLeadInitial) 
     const voicemailLead = voicemailLeadInitial || await db.query('SELECT id FROM leads WHERE phone = ? AND client_id = ?', [callerPhone, clientId], 'get');
     const voicemailLeadId = voicemailLead?.id || randomUUID();
     if (!voicemailLead) {
+      const now = new Date().toISOString();
       await db.query(`
         INSERT INTO leads (id, client_id, phone, source, score, stage, last_contact, created_at, updated_at)
-        VALUES (?, ?, ?, 'voicemail', 3, 'new', datetime('now'), datetime('now'), datetime('now'))
-      `, [voicemailLeadId, clientId, callerPhone], 'run');
+        VALUES (?, ?, ?, 'voicemail', 3, 'new', ?, ?, ?)
+      `, [voicemailLeadId, clientId, callerPhone, now, now, now], 'run');
     }
 
     const voicemailClient = await db.query('SELECT * FROM clients WHERE id = ?', [clientId], 'get');
@@ -167,8 +169,8 @@ async function handleVoicemail(db, clientId, callerPhone, voicemailLeadInitial) 
 
     await db.query(`
       INSERT INTO messages (id, client_id, lead_id, phone, channel, direction, body, status, created_at)
-      VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'voicemail_textback', datetime('now'))
-    `, [randomUUID(), clientId, voicemailLeadId, callerPhone, voicemailMsg], 'run');
+      VALUES (?, ?, ?, ?, 'sms', 'outbound', ?, 'voicemail_textback', ?)
+    `, [randomUUID(), clientId, voicemailLeadId, callerPhone, voicemailMsg, new Date().toISOString()], 'run');
 
     const { isWithinBusinessHours, getNextBusinessHour } = require('../../utils/businessHours');
     if (!isWithinBusinessHours(voicemailClient)) {
@@ -198,15 +200,16 @@ async function processLeadFromCall(db, { callRecord, callId, outcome, summary, s
 
   if (!callerPhone || !clientId) return;
 
+  const now = new Date().toISOString();
   await db.query(`
     INSERT INTO leads (id, client_id, phone, score, stage, last_contact, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'new', datetime('now'), datetime('now'), datetime('now'))
+    VALUES (?, ?, ?, ?, 'new', ?, ?, ?)
     ON CONFLICT(client_id, phone) DO UPDATE SET
       score = MAX(score, excluded.score),
       last_contact = excluded.last_contact,
       stage = CASE WHEN stage = 'new' THEN 'contacted' ELSE stage END,
-      updated_at = datetime('now')
-  `, [uuid(), clientId, callerPhone, score], 'run');
+      updated_at = ?
+  `, [uuid(), clientId, callerPhone, score, now, now, now, now], 'run');
 
   // Lead lifecycle events
   try {
@@ -238,9 +241,8 @@ async function processLeadFromCall(db, { callRecord, callId, outcome, summary, s
   if (outcome === 'voicemail') {
     const vmLead = await db.query('SELECT id FROM leads WHERE phone = ? AND client_id = ?', [callerPhone, clientId], 'get');
     await handleVoicemail(db, clientId, callerPhone, vmLead);
-  }
-
-  if (outcome === 'missed' || duration === 0) {
+  } else if (outcome === 'missed' || duration === 0) {
+    // Use else-if to prevent double handler when voicemail has duration=0
     const missedClient = await db.query('SELECT * FROM clients WHERE id = ?', [clientId], 'get');
     if (missedClient) await handleMissedCall(db, clientId, callerPhone, missedClient);
   }
@@ -248,12 +250,13 @@ async function processLeadFromCall(db, { callRecord, callId, outcome, summary, s
   // Owner SMS on transfer or complaint
   const isComplaint = sentiment === 'negative' || (summary && summary.toLowerCase().includes('complaint'));
   if (outcome === 'transferred' || isComplaint) {
-    const client = await db.query('SELECT owner_phone, business_name FROM clients WHERE id = ?', [clientId], 'get');
+    const client = await db.query('SELECT owner_phone, phone_number, business_name FROM clients WHERE id = ?', [clientId], 'get');
     if (client?.owner_phone) {
       const reason = outcome === 'transferred' ? 'Transfer' : 'Complaint detected';
       await sendSMS(
         client.owner_phone,
-        `[ELYVN] ${reason} — ${client.business_name}\nCaller: ${callerPhone}\n${summary}`
+        `[ELYVN] ${reason} — ${client.business_name}\nCaller: ${callerPhone}\n${summary}`,
+        client.phone_number, db, clientId
       ).catch(err => logger.error('[retell] Owner SMS failed:', err.message));
     }
   }
@@ -321,7 +324,9 @@ async function handleTransfer(db, call, correlationId) {
       }
     }
 
-    // --- Step 2: Update call record ---
+    // --- Step 2: Resolve client + update call record ---
+    const callRecord = await db.query('SELECT client_id, twilio_call_sid FROM calls WHERE call_id = ?', [callId], 'get');
+
     await db.query(`
       UPDATE calls SET outcome = 'transferred', summary = ?, updated_at = ? WHERE call_id = ?
     `, [summary, new Date().toISOString(), callId], 'run');
@@ -329,13 +334,10 @@ async function handleTransfer(db, call, correlationId) {
     // Broadcast transfer event for real-time dashboard
     try {
       const { broadcast } = require('../../utils/websocket');
-      broadcast('call_transfer', { id: callId, phone: callerPhone, status: 'transferring', summary });
+      broadcast('call_transfer', { id: callId, phone: callerPhone, status: 'transferring', summary }, callRecord?.client_id);
     } catch (err) {
       logger.warn('[retell] call_transfer broadcast error:', err.message);
     }
-
-    // --- Step 3: Resolve transfer target ---
-    const callRecord = await db.query('SELECT client_id FROM calls WHERE call_id = ?', [callId], 'get');
     if (!callRecord?.client_id) {
       logger.warn(`[retell] transfer: no call record for ${callId}`, { correlationId });
       return;
@@ -396,14 +398,16 @@ async function notifyTransferSuccess(db, client, clientId, callerPhone, transfer
   if (transferTarget) {
     await sendSMS(
       transferTarget,
-      `Incoming transfer from ${callerPhone || 'unknown'} — ${summary}`
+      `Incoming transfer from ${callerPhone || 'unknown'} — ${summary}`,
+      client?.phone_number, db, clientId
     ).catch(err => logger.error('[retell] Transfer SMS failed:', err.message));
 
     // If transfer_phone differs from owner_phone, also notify owner
     if (client?.transfer_phone && client?.owner_phone && client.transfer_phone !== client.owner_phone) {
       await sendSMS(
         client.owner_phone,
-        `Transfer routed to ${client.transfer_phone} from ${callerPhone || 'unknown'} — ${summary}`
+        `Transfer routed to ${client.transfer_phone} from ${callerPhone || 'unknown'} — ${summary}`,
+        client.phone_number, db, clientId
       ).catch(err => logger.error('[retell] Owner transfer notify SMS failed:', err.message));
     }
   }
@@ -433,7 +437,8 @@ async function notifyTransferFallback(db, client, clientId, callerPhone, summary
   if (ownerPhone) {
     await sendSMS(
       ownerPhone,
-      `[URGENT] Transfer failed for ${callerPhone || 'unknown'} — ${summary}\n\nPlease call them back ASAP.`
+      `[URGENT] Transfer failed for ${callerPhone || 'unknown'} — ${summary}\n\nPlease call them back ASAP.`,
+      client?.phone_number, db, clientId
     ).catch(err => logger.error('[retell] Transfer fallback SMS failed:', err.message));
   }
 

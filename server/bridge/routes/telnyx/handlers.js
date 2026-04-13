@@ -74,7 +74,7 @@ async function handleOptOut(db, client, from, to, keyword) {
     recordOptOut(db, from, client.id, keyword);
 
     const msg = `You've been unsubscribed from ${client.business_name || 'our'} messages. Reply START to resubscribe.`;
-    await sendSMS(from, msg.slice(0, SMS_MAX_LENGTH), to);
+    await sendSMS(from, msg.slice(0, SMS_MAX_LENGTH), to, db, client.id);
 
     logger.info(`[telnyx] Recorded opt-out for ${from} (${keyword})`);
   } catch (err) {
@@ -88,7 +88,7 @@ async function handleOptIn(db, client, from, to) {
     recordOptIn(db, from, client.id);
 
     const msg = `Welcome back! You're now subscribed to ${client.business_name || 'our'} messages.`;
-    await sendSMS(from, msg.slice(0, SMS_MAX_LENGTH), to);
+    await sendSMS(from, msg.slice(0, SMS_MAX_LENGTH), to, db, client.id);
 
     logger.info(`[telnyx] Recorded opt-in for ${from}`);
   } catch (err) {
@@ -105,7 +105,7 @@ async function handleCancel(db, client, from, replyFrom) {
     );
 
     if (!lead?.calcom_booking_id) {
-      await sendSMS(from, 'No upcoming appointment found to cancel.', replyFrom);
+      await sendSMS(from, 'No upcoming appointment found to cancel.', replyFrom, db, client.id);
       return;
     }
 
@@ -117,14 +117,14 @@ async function handleCancel(db, client, from, replyFrom) {
         [new Date().toISOString(), from, client.id],
         'run'
       );
-      await sendSMS(from, 'Your appointment has been cancelled.', replyFrom);
+      await sendSMS(from, 'Your appointment has been cancelled.', replyFrom, db, client.id);
       logger.info(`[telnyx] Booking ${lead.calcom_booking_id} cancelled for ${from}`);
     } else {
-      await sendSMS(from, 'Sorry, we couldn\'t cancel your appointment right now. Please call us directly.', replyFrom);
+      await sendSMS(from, 'Sorry, we couldn\'t cancel your appointment right now. Please call us directly.', replyFrom, db, client.id);
     }
   } catch (err) {
     logger.error('[telnyx] handleCancel error:', err);
-    await sendSMS(from, 'Sorry, something went wrong. Please call us directly.', replyFrom).catch(e => logger.warn('[telnyx] Error SMS send failed', e.message));
+    await sendSMS(from, 'Sorry, something went wrong. Please call us directly.', replyFrom, db, client.id).catch(e => logger.warn('[telnyx] Error SMS send failed', e.message));
   }
 }
 
@@ -134,7 +134,7 @@ async function handleYes(db, client, from, replyFrom) {
     const msg = bookingLink
       ? `Book your appointment here: ${bookingLink}`
       : 'Please call us to schedule your appointment.';
-    await sendSMS(from, msg.slice(0, SMS_MAX_LENGTH), replyFrom);
+    await sendSMS(from, msg.slice(0, SMS_MAX_LENGTH), replyFrom, db, client.id);
   } catch (err) {
     logger.error('[telnyx] handleYes error:', err);
   }

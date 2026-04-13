@@ -156,9 +156,10 @@ async function handleSocialMessage(db, { senderId, text, channel, pageId }) {
   );
 
   // Rate limit brain calls per sender (max 3 per 5 min to prevent Claude cost spikes)
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   const recentBrain = await db.query(
-    "SELECT COUNT(*) as c FROM messages WHERE phone = ? AND client_id = ? AND direction = 'inbound' AND created_at >= datetime('now', '-5 minutes')",
-    [socialId, client.id], 'get'
+    "SELECT COUNT(*) as c FROM messages WHERE phone = ? AND client_id = ? AND direction = 'inbound' AND created_at >= ?",
+    [socialId, client.id, fiveMinAgo], 'get'
   );
   if (recentBrain && recentBrain.c > 3) {
     logger.info(`[social] Rate limited brain call for ${senderId.slice(0, 6)}*** (${recentBrain.c} msgs in 5 min)`);

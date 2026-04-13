@@ -47,8 +47,8 @@ async function googleReviewRequest(payload, jobId, db) {
     const recent = await db.query(
       `SELECT id FROM messages
        WHERE phone = ? AND client_id = ? AND direction = 'outbound'
-       AND body LIKE '%review%' AND created_at > datetime('now', '-30 days')`,
-      [phone, clientId], 'get'
+       AND body LIKE '%review%' AND created_at > ?`,
+      [phone, clientId, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()], 'get'
     );
     if (recent) {
       logger.info(`[reviewRequest] Skipping — review request already sent to ${phone.replace(/\d(?=\d{4})/g, '*')} in past 30 days`);

@@ -267,12 +267,12 @@ describe('POST /replies/:emailId/classify', () => {
     expect(res.status).toBe(401);
   });
 
-  test('returns 400 with invalid emailId (non-UUID)', async () => {
+  test('returns 422 with invalid emailId (non-UUID)', async () => {
     const app = buildApp(createMockDb());
     const res = await request(app)
       .post('/replies/not-a-valid-uuid/classify')
       .set('x-api-key', VALID_API_KEY);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   test('returns 404 when email not found', async () => {
@@ -489,7 +489,7 @@ describe('POST /replies/:emailId/classify', () => {
       .post(`/replies/${testEmailId}/classify`)
       .set('x-api-key', VALID_API_KEY);
 
-    expect(sendSMS).toHaveBeenCalledWith(db, '+14155550000', expect.any(String), null);
+    expect(sendSMS).toHaveBeenCalledWith('+14155550000', expect.any(String), null, db, null);
   });
 
   test('INTERESTED prospect without phone skips SMS', async () => {

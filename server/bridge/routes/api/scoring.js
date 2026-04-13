@@ -3,6 +3,7 @@ const router = express.Router();
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { isValidUUID } = require('../../utils/validate');
+const { success } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
@@ -18,7 +19,7 @@ router.get('/scoring/:clientId', (req, res, next) => {
 
     const { batchScoreLeads } = require('../../utils/leadScoring');
     const scores = batchScoreLeads(db, clientId);
-    res.json({ data: scores, meta: { total: scores.length } });
+    success(res, { scores, meta: { total: scores.length } });
   } catch (err) {
     logger.error('[api] scoring error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to score leads', 500));
@@ -39,15 +40,13 @@ router.get('/scoring/:clientId/:leadId', (req, res, next) => {
     const result = predictLeadScore(db, leadId, clientId);
 
     // Return full factor breakdown + model version so callers can display explainability
-    res.json({
-      data: {
-        score: result.score,
-        factors: result.factors,          // { responsiveness, engagement, intent, recency, channelDiversity }
-        insight: result.insight,
-        recommended_action: result.recommended_action,
-        details: result.details,
-        model_version: result.model_version,
-      },
+    success(res, {
+      score: result.score,
+      factors: result.factors,          // { responsiveness, engagement, intent, recency, channelDiversity }
+      insight: result.insight,
+      recommended_action: result.recommended_action,
+      details: result.details,
+      model_version: result.model_version,
     });
   } catch (err) {
     logger.error('[api] lead score error:', err);
@@ -67,7 +66,7 @@ router.get('/scoring/:clientId/analytics/conversion', (req, res, next) => {
 
     const { getConversionAnalytics } = require('../../utils/leadScoring');
     const analytics = getConversionAnalytics(db, clientId);
-    res.json({ data: analytics });
+    success(res, analytics);
   } catch (err) {
     logger.error('[api] conversion analytics error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to get conversion analytics', 500));
@@ -85,8 +84,8 @@ router.get('/scoring/:clientId/:leadId/insights', (req, res, next) => {
     }
 
     const { getLeadInsights } = require('../../utils/leadIntelligence');
-    const insights = getLeadInsights(db, leadId);
-    res.json({ data: insights });
+    const insights = getLeadInsights(db, leadId, null, clientId);
+    success(res, insights);
   } catch (err) {
     logger.error('[api] lead insights error:', err);
     return next(new AppError('INTERNAL_ERROR', 'Failed to get lead insights', 500));

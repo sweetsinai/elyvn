@@ -7,7 +7,7 @@ function validateBody(schema) {
     const result = schema.safeParse(req.body);
     if (!result.success) {
       const message = result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
-      return next(new AppError('VALIDATION_ERROR', message, 400));
+      return next(new AppError('VALIDATION_ERROR', message, 422));
     }
     req.body = result.data;
     next();
@@ -19,7 +19,7 @@ function validateQuery(schema) {
     const result = schema.safeParse(req.query);
     if (!result.success) {
       const message = result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
-      return next(new AppError('VALIDATION_ERROR', message, 400));
+      return next(new AppError('VALIDATION_ERROR', message, 422));
     }
     req.query = result.data;
     next();
@@ -31,7 +31,7 @@ function validateParams(schema) {
     const result = schema.safeParse(req.params);
     if (!result.success) {
       const message = result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
-      return next(new AppError('VALIDATION_ERROR', message, 400));
+      return next(new AppError('VALIDATION_ERROR', message, 422));
     }
     req.params = result.data;
     next();

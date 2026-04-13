@@ -16,12 +16,12 @@ const FEATURE_VERSION = 'v1';
  * Load all features for a single lead from the feature_store table.
  * @returns {object} key/value map of feature names to numeric values
  */
-async function loadLeadFeatures(db, leadId) {
+async function loadLeadFeatures(db, leadId, clientId) {
   const rows = await db.query(`
     SELECT feature_name, feature_value
     FROM feature_store
-    WHERE lead_id = ? AND feature_version = ?
-  `, [leadId, FEATURE_VERSION]);
+    WHERE lead_id = ? AND feature_version = ?${clientId ? ' AND client_id = ?' : ''}
+  `, clientId ? [leadId, FEATURE_VERSION, clientId] : [leadId, FEATURE_VERSION]);
 
   const features = {};
   for (const row of rows) {
@@ -133,13 +133,13 @@ function getInsightsFromFeatures(features) {
  * @param {object} [preloadedFeatures] - optional pre-loaded features to avoid DB call
  * @returns {{ leadId: string, insights: Array<{ type: string, message: string, confidence: string }>, generated_at: string }}
  */
-async function getLeadInsights(db, leadId, preloadedFeatures) {
+async function getLeadInsights(db, leadId, preloadedFeatures, clientId) {
   if (!db || !leadId) {
     return { leadId, insights: [], generated_at: new Date().toISOString() };
   }
 
   try {
-    const features = preloadedFeatures || await loadLeadFeatures(db, leadId);
+    const features = preloadedFeatures || await loadLeadFeatures(db, leadId, clientId);
     const insights = getInsightsFromFeatures(features);
 
     return {

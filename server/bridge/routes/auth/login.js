@@ -79,7 +79,7 @@ router.post('/', validateBody(LoginSchema), async (req, res, next) => {
       token,
       clientId: client.id,
       email: client.owner_email,
-      business_name: client.name,
+      business_name: client.business_name,
       plan: client.plan || 'trial',
       subscription_status: client.subscription_status || 'active',
     });

@@ -170,20 +170,20 @@ describe('auth routes', () => {
       expect(res.body.error).toMatch(/already exists/);
     });
 
-    test('missing fields returns 400', async () => {
+    test('missing fields returns 422', async () => {
       const res = await request(app)
         .post('/auth/signup')
         .send({ email: 'a@b.com' });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
     });
 
-    test('weak password (too short) returns 400', async () => {
+    test('weak password (too short) returns 422', async () => {
       const res = await request(app)
         .post('/auth/signup')
         .send({ email: 'a@b.com', password: 'Ab1', business_name: 'X' });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/password|8|short/i);
     });
 
@@ -204,12 +204,12 @@ describe('auth routes', () => {
       expect(res.status).toBe(400);
     });
 
-    test('invalid email format returns 400', async () => {
+    test('invalid email format returns 422', async () => {
       const res = await request(app)
         .post('/auth/signup')
         .send({ email: 'not-an-email', password: 'Password1', business_name: 'X' });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/email/i);
     });
   });
@@ -273,12 +273,12 @@ describe('auth routes', () => {
       expect(res.status).toBe(401);
     });
 
-    test('missing fields returns 400', async () => {
+    test('missing fields returns 422', async () => {
       const res = await request(app)
         .post('/auth/login')
         .send({ email: 'a@b.com' });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(422);
     });
   });
 
@@ -335,7 +335,7 @@ describe('auth routes', () => {
     test('valid token returns user info', async () => {
       app.locals.db = makeDb({
         meClient: {
-          id: 'c1', name: 'TestBiz', owner_name: 'Sohan',
+          id: 'c1', business_name: 'TestBiz', owner_name: 'Sohan',
           owner_email: 'a@b.com', owner_phone: '+1555', plan: 'growth',
           subscription_status: 'active', industry: 'tech', created_at: '2026-01-01',
         }

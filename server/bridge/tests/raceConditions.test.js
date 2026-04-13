@@ -598,11 +598,13 @@ describe('Speed-to-lead sequence dedup', () => {
 
   it('second trigger skips entirely when active sequence already exists', async () => {
     // Manually insert a scheduled followup within the 6-hour dedup window
+    // Use JS ISO date format to match the parameterized query in speed-to-lead.js
     const { randomUUID } = require('crypto');
+    const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     db.prepare(`
       INSERT INTO followups (id, lead_id, client_id, touch_number, type, content, content_source, scheduled_at, status)
-      VALUES (?, ?, ?, 1, 'reminder_or_nudge', 'pre-existing', 'pending', datetime('now', '+1 hour'), 'scheduled')
-    `).run(randomUUID(), leadId, clientId);
+      VALUES (?, ?, ?, 1, 'reminder_or_nudge', 'pre-existing', 'pending', ?, 'scheduled')
+    `).run(randomUUID(), leadId, clientId, oneHourFromNow);
 
     const { logger } = require('../utils/logger');
     logger.info.mockClear();

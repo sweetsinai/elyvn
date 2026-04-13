@@ -308,7 +308,7 @@ describe('jobQueue', () => {
       );
       const failCall = mockDb.query.mock.calls.find(c => c[0].includes("status = 'failed'") && c[1] && c[1][0] === 'Unknown job type');
       expect(failCall).toBeDefined();
-      expect(failCall[1]).toEqual(['Unknown job type', 'job-1']);
+      expect(failCall[1]).toEqual(['Unknown job type', expect.any(String), 'job-1']);
     });
 
     it('should attempt to timeout slow handlers', async () => {
@@ -375,7 +375,7 @@ describe('jobQueue', () => {
         c[0].includes("UPDATE job_queue SET status = 'pending', attempts = ?, scheduled_at = ?")
       );
       expect(rescheduleCall).toBeDefined();
-      expect(rescheduleCall[1]).toEqual([1, expect.any(String), 'Handler error', 'job-1']);
+      expect(rescheduleCall[1]).toEqual([1, expect.any(String), 'Handler error', expect.any(String), 'job-1']);
     });
 
     it('should reschedule job with exponential backoff on second failure', async () => {
@@ -401,7 +401,7 @@ describe('jobQueue', () => {
       const rescheduleCall = mockDb.query.mock.calls.find(c =>
         c[0].includes("UPDATE job_queue SET status = 'pending', attempts = ?, scheduled_at = ?")
       );
-      expect(rescheduleCall[1]).toEqual([2, expect.any(String), 'Handler error', 'job-1']);
+      expect(rescheduleCall[1]).toEqual([2, expect.any(String), 'Handler error', expect.any(String), 'job-1']);
     });
 
     it('should mark job as permanently failed after max attempts', async () => {
@@ -434,7 +434,7 @@ describe('jobQueue', () => {
         c[0].includes("status = 'failed'") && c[0].includes('failed_at')
       );
       expect(failCall).toBeDefined();
-      expect(failCall[1]).toEqual([expect.any(String), 'job-1']);
+      expect(failCall[1]).toEqual([expect.any(String), expect.any(String), expect.any(String), 'job-1']);
     });
 
     it('should clean up old completed jobs', async () => {

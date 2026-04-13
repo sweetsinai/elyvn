@@ -35,7 +35,7 @@ router.get('/me', async (req, res, next) => {
     res.json({
       clientId: client.id,
       email: client.owner_email,
-      business_name: client.name,
+      business_name: client.business_name,
       owner_name: client.owner_name,
       plan: client.plan || 'trial',
       subscription_status: client.subscription_status || 'active',

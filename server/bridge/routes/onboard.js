@@ -272,8 +272,8 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
       if (isConfigured() && sanitized.owner_email) {
         createClientSheet(sanitized.business_name, sanitized.owner_email).then(async (sheet) => {
           if (sheet) {
-            await db.query("UPDATE clients SET google_sheet_id = ?, updated_at = datetime('now') WHERE id = ?",
-              [sheet.spreadsheetId, clientId], 'run');
+            await db.query("UPDATE clients SET google_sheet_id = ?, updated_at = ? WHERE id = ?",
+              [sheet.spreadsheetId, new Date().toISOString(), clientId], 'run');
             logger.info(`[onboard] Google Sheet created for ${clientId}: ${sheet.spreadsheetId}`);
           }
         }).catch(e => logger.warn('[onboard] Google Sheet creation failed (non-fatal):', e.message));
