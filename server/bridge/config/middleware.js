@@ -82,9 +82,7 @@ function setupMiddleware(app) {
 
   app.use(cors({
     origin: (origin, callback) => {
-      if (!origin && process.env.NODE_ENV !== 'production') {
-        callback(null, true);
-      } else if (ALLOWED_ORIGINS.includes(origin)) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
         callback(null, true);
       } else {
         logger.warn('[cors] Blocked origin: ' + (origin || 'null'));
