@@ -75,7 +75,7 @@ async function handleCallStarted(db, call, correlationId) {
 
     // Plan usage limit check — hard-block calls that exceed limit, warn at 80%
     try {
-      const PLAN_CALL_LIMITS = { trial: 50, solo: 100, starter: 500, pro: 1500, premium: -1 };
+      const PLAN_CALL_LIMITS = { trial: 50, growth: 100, pro: 500, elite: -1 };
       const limit = PLAN_CALL_LIMITS[client.plan] ?? 50;
       if (limit !== -1) {
         const usageRow = await db.query('SELECT calls_this_month FROM clients WHERE id = ?', [clientId], 'get');

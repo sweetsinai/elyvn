@@ -149,7 +149,7 @@ async function sendSMS(to, body, from, db, clientId) {
     try {
       const client = await db.query('SELECT plan, sms_this_month, telegram_chat_id FROM clients WHERE id = ?', [clientId], 'get');
       if (client) {
-        const PLAN_SMS_LIMITS = { trial: 100, solo: 300, starter: 1000, pro: 3000, premium: -1 };
+        const PLAN_SMS_LIMITS = { trial: 100, growth: 300, pro: 1500, elite: -1 };
         const limit = PLAN_SMS_LIMITS[client.plan] ?? 100;
         const used = client.sms_this_month || 0;
         if (limit !== -1 && used >= limit) {

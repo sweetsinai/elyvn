@@ -11,7 +11,7 @@ const OnboardingStepSchema = z.object({
 }).strict();
 
 const PlanUpgradeSchema = z.object({
-  planId: z.enum(['solo', 'starter', 'pro', 'premium']),
+  planId: z.enum(['growth', 'pro', 'elite']),
 }).strict();
 
 module.exports = { UsageRecordSchema, OnboardingStepSchema, PlanUpgradeSchema };

@@ -184,7 +184,7 @@ describe('Billing integration — Dodo Payments webhook flows', () => {
       seedClient(db);
 
       const payload = makePayload('subscription.active', {
-        metadata: { clientId: 'client-integration-1', planId: 'starter' },
+        metadata: { clientId: 'client-integration-1', planId: 'growth' },
         customer_id: 'cust_test_001',
         subscription_id: 'sub_new_001',
       });
@@ -213,7 +213,7 @@ describe('Billing integration — Dodo Payments webhook flows', () => {
       const devApp = buildApp(devDb);
 
       const payload = makePayload('subscription.active', {
-        metadata: { clientId: 'client-integration-1', planId: 'starter' },
+        metadata: { clientId: 'client-integration-1', planId: 'growth' },
         customer_id: 'cust_test_001',
         subscription_id: 'sub_dev_001',
       });
@@ -307,10 +307,10 @@ describe('Billing integration — Dodo Payments webhook flows', () => {
 
   describe('subscription.renewed — extends access', () => {
     test('sets subscription_status to active on renewal', async () => {
-      seedClient(db, { subscription_status: 'past_due', plan: 'starter' });
+      seedClient(db, { subscription_status: 'past_due', plan: 'growth' });
 
       const payload = makePayload('subscription.renewed', {
-        metadata: { clientId: 'client-integration-1', planId: 'starter' },
+        metadata: { clientId: 'client-integration-1', planId: 'growth' },
         customer_id: 'cust_test_001',
         subscription_id: 'sub_renewed_001',
       });
@@ -447,7 +447,7 @@ describe('Billing integration — Dodo Payments webhook flows', () => {
 
   describe('subscription.expired — expires account', () => {
     test('sets plan and status to canceled on expiry', async () => {
-      seedClient(db, { plan: 'starter', subscription_status: 'active' });
+      seedClient(db, { plan: 'growth', subscription_status: 'active' });
 
       const payload = makePayload('subscription.expired', {
         customer_id: 'cust_test_001',
@@ -522,12 +522,12 @@ describe('Billing integration — Dodo Payments webhook flows', () => {
 
   describe('subscription.plan_changed — upgrades/downgrades plan', () => {
     test('updates plan when planId provided in metadata', async () => {
-      seedClient(db, { plan: 'starter' });
+      seedClient(db, { plan: 'growth' });
 
       const payload = makePayload('subscription.plan_changed', {
         subscription_id: 'sub_changed_001',
         customer_id: 'cust_test_001',
-        metadata: { clientId: 'client-integration-1', planId: 'premium' },
+        metadata: { clientId: 'client-integration-1', planId: 'elite' },
         status: 'active',
       });
       const headers = dodoHeaders();
@@ -543,7 +543,7 @@ describe('Billing integration — Dodo Payments webhook flows', () => {
       expect(res.status).toBe(200);
       const row = db.prepare('SELECT plan, dodo_subscription_id FROM clients WHERE id = ?')
         .get('client-integration-1');
-      expect(row.plan).toBe('premium');
+      expect(row.plan).toBe('elite');
       expect(row.dodo_subscription_id).toBe('sub_changed_001');
     });
   });
@@ -592,22 +592,22 @@ describe('Billing integration — Dodo Payments webhook flows', () => {
   // ── GET /billing/plans (sanity) ──────────────────────────────────────────
 
   describe('GET /billing/plans', () => {
-    test('returns starter, pro, premium', async () => {
+    test('returns growth, pro, elite', async () => {
       const res = await request(app).get('/billing/plans');
       expect(res.status).toBe(200);
       const ids = res.body.plans.map((p) => p.id);
-      expect(ids).toEqual(expect.arrayContaining(['starter', 'pro', 'premium']));
+      expect(ids).toEqual(expect.arrayContaining(['growth', 'pro', 'elite']));
     });
 
     test('plan prices match Dodo product configuration', async () => {
       const res = await request(app).get('/billing/plans');
       const plans = res.body.plans;
-      const starter = plans.find(p => p.id === 'starter');
+      const growth = plans.find(p => p.id === 'growth');
       const pro = plans.find(p => p.id === 'pro');
-      const premium = plans.find(p => p.id === 'premium');
-      expect(starter.price).toBe(199);
-      expect(pro.price).toBe(399);
-      expect(premium.price).toBe(799);
+      const elite = plans.find(p => p.id === 'elite');
+      expect(growth.price).toBe(199);
+      expect(pro.price).toBe(349);
+      expect(elite.price).toBe(599);
     });
   });
 });

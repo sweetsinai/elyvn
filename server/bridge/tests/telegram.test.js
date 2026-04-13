@@ -123,7 +123,7 @@ describe('Telegram Route Handler', () => {
 
   describe('/start command - linking', () => {
     test('handles /start with linking parameter for valid client', async () => {
-      const mockClient = { id: 'client-123', plan: 'starter', business_name: 'Test Business' };
+      const mockClient = { id: 'client-123', plan: 'growth', business_name: 'Test Business' };
       let callCount = 0;
       mockDb.prepare.mockReturnValue({
         get: jest.fn().mockImplementation(() => {

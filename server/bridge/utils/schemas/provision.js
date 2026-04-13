@@ -10,7 +10,7 @@ const ProvisionSchema = z.object({
   owner_email: z.string().email().max(254).optional(),
   industry: safeString({ max: 100 }).optional(),
   avg_ticket: z.number().min(0).max(100000).optional(),
-  plan: z.enum(['trial', 'solo', 'starter', 'growth', 'pro', 'enterprise', 'premium']),
+  plan: z.enum(['trial', 'growth', 'pro', 'elite']),
   timezone: safeString({ max: 100 }).optional(),
   area_code: z.string().max(10).optional(),
   knowledge_base: z.any().optional(),

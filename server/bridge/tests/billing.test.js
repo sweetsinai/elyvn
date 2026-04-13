@@ -26,7 +26,7 @@ describe('billing routes', () => {
         if (sql.includes('SELECT plan, subscription_status')) {
           return {
             get: jest.fn(() => 'billingStatus' in overrides ? overrides.billingStatus : {
-              plan: 'starter', subscription_status: 'active',
+              plan: 'growth', subscription_status: 'active',
               dodo_customer_id: 'cust_123', dodo_subscription_id: 'sub_1',
               plan_started_at: '2026-01-01',
             }),
@@ -86,33 +86,33 @@ describe('billing routes', () => {
     test('returns plans', async () => {
       const res = await request(app).get('/billing/plans');
       expect(res.status).toBe(200);
-      expect(res.body.plans.length).toBe(4);
+      expect(res.body.plans.length).toBe(3);
       const names = res.body.plans.map(p => p.id);
-      expect(names).toEqual(expect.arrayContaining(['solo', 'starter', 'pro', 'premium']));
+      expect(names).toEqual(expect.arrayContaining(['growth', 'pro', 'elite']));
     });
 
-    test('premium plan shows Unlimited calls', async () => {
+    test('elite plan shows Unlimited calls', async () => {
       const res = await request(app).get('/billing/plans');
-      const premium = res.body.plans.find(p => p.id === 'premium');
-      expect(premium.calls).toBe('Unlimited');
+      const elite = res.body.plans.find(p => p.id === 'elite');
+      expect(elite.calls).toBe('Unlimited');
     });
 
-    test('starter price is $199', async () => {
+    test('growth price is $199', async () => {
       const res = await request(app).get('/billing/plans');
-      const starter = res.body.plans.find(p => p.id === 'starter');
-      expect(starter.price).toBe(199);
+      const growth = res.body.plans.find(p => p.id === 'growth');
+      expect(growth.price).toBe(199);
     });
 
-    test('pro price is $399', async () => {
+    test('pro price is $349', async () => {
       const res = await request(app).get('/billing/plans');
       const pro = res.body.plans.find(p => p.id === 'pro');
-      expect(pro.price).toBe(399);
+      expect(pro.price).toBe(349);
     });
 
-    test('premium price is $799', async () => {
+    test('elite price is $599', async () => {
       const res = await request(app).get('/billing/plans');
-      const premium = res.body.plans.find(p => p.id === 'premium');
-      expect(premium.price).toBe(799);
+      const elite = res.body.plans.find(p => p.id === 'elite');
+      expect(elite.price).toBe(599);
     });
   });
 
@@ -232,7 +232,7 @@ describe('billing routes', () => {
       app.locals.db = dbWithClient;
 
       const res = await webhookReq('subscription.renewed', {
-        metadata: { clientId: 'client-1', planId: 'starter' },
+        metadata: { clientId: 'client-1', planId: 'growth' },
         customer_id: 'cust_123',
         subscription_id: 'sub_renewed_1',
       });
@@ -269,7 +269,7 @@ describe('billing routes', () => {
       const res = await webhookReq('subscription.plan_changed', {
         customer_id: 'cust_123',
         subscription_id: 'sub_changed_1',
-        metadata: { clientId: 'client-1', planId: 'premium' },
+        metadata: { clientId: 'client-1', planId: 'elite' },
         status: 'active',
       });
 
@@ -316,7 +316,7 @@ describe('billing routes', () => {
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.plan).toBe('starter');
+      expect(res.body.plan).toBe('growth');
       expect(res.body.status).toBe('active');
       expect(res.body.has_payment).toBe(true);
     });

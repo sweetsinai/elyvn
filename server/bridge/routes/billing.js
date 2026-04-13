@@ -17,38 +17,27 @@ const { z } = require('zod');
 // ─── Plan configuration ─────────────────────────────────────────────────────
 
 const PLANS = {
-  solo: {
-    name: 'Solo',
-    price: 99,
-    productId: process.env.DODO_PRODUCT_SOLO || 'pdt_0NcSVPcrrPE9CjPnCdjJC',
+  growth: {
+    name: 'Growth',
+    price: 199,
+    productId: process.env.DODO_PRODUCT_GROWTH || 'pdt_0NcSVPcrrPE9CjPnCdjJC',
     calls: 100,
     sms: 300,
-    emails: 100,
-    trial_days: 7,
-  },
-  starter: {
-    name: 'Starter',
-    price: 199,
-    productId: process.env.DODO_PRODUCT_STARTER || 'pdt_0NcSMDfAgPfJcHnUH1H4l',
-    calls: 500,
-    sms: 1000,
-    emails: 200,
+    trial_days: 14,
   },
   pro: {
     name: 'Pro',
-    price: 399,
+    price: 349,
     productId: process.env.DODO_PRODUCT_PRO || 'pdt_0NcSLxjRSsPJST0uTn8kN',
-    calls: 1500,
-    sms: 3000,
-    emails: 500,
+    calls: 500,
+    sms: 1500,
   },
-  premium: {
-    name: 'Premium',
-    price: 799,
-    productId: process.env.DODO_PRODUCT_PREMIUM || 'pdt_0NcSMTlJqIJcQsneYDYsi',
+  elite: {
+    name: 'Elite',
+    price: 599,
+    productId: process.env.DODO_PRODUCT_ELITE || 'pdt_0NcSMTlJqIJcQsneYDYsi',
     calls: -1, // unlimited
     sms: -1,
-    emails: -1,
   },
 };
 
@@ -85,7 +74,7 @@ async function dodoRequest(method, path, body) {
 // ─── Schemas ────────────────────────────────────────────────────────────────
 
 const CreateCheckoutSchema = z.object({
-  planId: z.enum(['solo', 'starter', 'pro', 'premium']),
+  planId: z.enum(['growth', 'pro', 'elite']),
 });
 
 // ─── Auth middleware ────────────────────────────────────────────────────────
@@ -125,7 +114,7 @@ router.post('/create-checkout', requireAuth, validateBody(CreateCheckoutSchema),
   const plan = PLANS[planId];
 
   if (!plan) {
-    return res.status(400).json({ error: 'Invalid plan. Choose: starter, pro, or premium' });
+    return res.status(400).json({ error: 'Invalid plan. Choose: growth, pro, or elite' });
   }
 
   try {
@@ -166,7 +155,7 @@ router.post('/create-checkout', requireAuth, validateBody(CreateCheckoutSchema),
 // POST /billing/generate-link — Admin: generate a checkout link for any client
 router.post('/generate-link', requireAuth, validateBody(z.object({
   clientId: z.string().uuid(),
-  planId: z.enum(['solo', 'starter', 'pro', 'premium']),
+  planId: z.enum(['growth', 'pro', 'elite']),
 })), async (req, res) => {
   try {
     const db = req.app.locals.db;
@@ -271,7 +260,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               plan_started_at = ?,
               updated_at = ?
             WHERE id = ?
-          `, [customerId, subscriptionId, planId || 'starter', now, now, clientId], 'run');
+          `, [customerId, subscriptionId, planId || 'growth', now, now, clientId], 'run');
 
           logger.info(`[billing] Client ${clientId} activated — plan: ${planId}, event: ${eventType}`);
           try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: clientId, newValues: { plan: planId, subscription_status: 'active' } }); } catch (_) {}

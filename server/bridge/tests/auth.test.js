@@ -232,7 +232,7 @@ describe('auth routes', () => {
         name: 'Biz',
         owner_email: 'user@test.com',
         password_hash: passwordHash,
-        plan: 'starter',
+        plan: 'growth',
         subscription_status: 'active',
       });
 

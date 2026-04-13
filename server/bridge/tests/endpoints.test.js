@@ -23,9 +23,9 @@ const mockDb = {
     if (sql.includes('SELECT 1')) return { '1': 1 };
     if (sql.includes('COUNT(*)')) return { c: 0 };
     if (sql.includes('FROM clients') && mode === 'get') {
-      return { id: 'test-client', business_name: 'Test', owner_email: 'test@test.com', plan: 'starter', subscription_status: 'active', is_active: 1 };
+      return { id: 'test-client', business_name: 'Test', owner_email: 'test@test.com', plan: 'growth', subscription_status: 'active', is_active: 1 };
     }
-    if (sql.includes('FROM clients')) return [{ id: 'test-client', business_name: 'Test', owner_email: 'test@test.com', plan: 'starter' }];
+    if (sql.includes('FROM clients')) return [{ id: 'test-client', business_name: 'Test', owner_email: 'test@test.com', plan: 'growth' }];
     if (sql.includes('FROM calls')) return [];
     if (sql.includes('FROM leads')) return [];
     if (sql.includes('FROM messages')) return [];
@@ -151,7 +151,7 @@ describe('API Endpoints', () => {
       const res = await request(billingApp).get('/billing/plans');
       expect(res.status).toBe(200);
       expect(res.body.plans).toBeDefined();
-      expect(res.body.plans.length).toBe(4);
+      expect(res.body.plans.length).toBe(3);
     });
   });
 

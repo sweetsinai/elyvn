@@ -208,7 +208,7 @@ describe('Provision Route', () => {
           industry: 'technology',
           timezone: 'America/Los_Angeles',
           avg_ticket: 500,
-          plan: 'enterprise',
+          plan: 'elite',
           telnyx_phone: '+15551234567',
           retell_agent_id: 'agent-123',
           created_at: new Date().toISOString(),
@@ -243,7 +243,7 @@ describe('Provision Route', () => {
           industry: 'technology',
           timezone: 'America/Los_Angeles',
           avg_ticket: 500,
-          plan: 'enterprise',
+          plan: 'elite',
           area_code: '415',
           knowledge_base: {
             business_name: 'Full Service Business',
