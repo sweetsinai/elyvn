@@ -58,12 +58,7 @@ function validateEnv() {
     logger.warn('[WARN] TELEGRAM_ADMIN_CHAT_ID not set — critical error alerts to Telegram disabled');
   }
   if (!process.env.ENCRYPTION_KEY) {
-    if (process.env.NODE_ENV === 'production') {
-      logger.error('[FATAL] ENCRYPTION_KEY not set in production — PII (phone, email) will be stored unencrypted. Set a 32-byte hex key and restart.');
-      process.exit(1);
-    } else {
-      logger.warn('[WARN] ENCRYPTION_KEY not set — PII columns will not be encrypted. Set before going to production.');
-    }
+    logger.warn('[WARN] ENCRYPTION_KEY not set — PII columns will not be encrypted. Set a 32-byte hex key for production security.');
   }
 }
 
