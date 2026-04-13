@@ -27,7 +27,7 @@ jobs:
       - name: Run tests
         run: |
           cd server/bridge
-          npx jest --forceExit --passWithNoTests --no-coverage
+          npx jest --forceExit --runInBand --passWithNoTests --no-coverage
         env:
           NODE_ENV: test
           ANTHROPIC_API_KEY: test-key
