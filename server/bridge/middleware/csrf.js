@@ -54,6 +54,12 @@ function csrfProtection(req, res, next) {
   // 3. Origin matches allowed origins
   const origin = req.headers['origin'];
   if (origin) {
+    // Same-origin: dashboard served from same host as API always passes
+    const host = req.headers['host'];
+    if (host && origin === `https://${host}`) {
+      return next();
+    }
+
     const allowed = [
       'https://elyvn.ai',
       'https://app.elyvn.ai',
