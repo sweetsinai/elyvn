@@ -1,4 +1,4 @@
-const { SCHEDULER_DAILY_INTERVAL_MS, SCHEDULER_WEEKLY_INTERVAL_MS, SCHEDULER_FOLLOWUP_INTERVAL_MS, SCHEDULER_APPOINTMENT_REMINDER_INTERVAL_MS, SCHEDULER_REPLY_CHECK_INTERVAL_MS } = require('../config/timing');
+const { SCHEDULER_DAILY_INTERVAL_MS, SCHEDULER_WEEKLY_INTERVAL_MS, SCHEDULER_APPOINTMENT_REMINDER_INTERVAL_MS } = require('../config/timing');
 const { logger } = require('./logger');
 const { getDelayUntilHour, getDelayUntilDayOfWeek, formatDelay } = require('./scheduling');
 
@@ -194,11 +194,8 @@ module.exports = {
   stopScheduler,
   sendDailySummaries,
   sendWeeklyReports,
-  processFollowups,
   dailyLeadReview,
   createAppointmentReminders,
   processAppointmentReminders,
-  dailyOutreach,
-  checkReplies,
   dailyLeadScoring,
 };
