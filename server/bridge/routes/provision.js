@@ -46,7 +46,7 @@ function httpsRequest(options, data = null) {
 }
 
 /**
- * Create a Retell AI agent
+ * Create a Retell LLM, then create an agent using that LLM ID
  */
 async function createRetellAgent(businessName, knowledgeBaseSummary, voiceId, language) {
   const apiKey = process.env.RETELL_API_KEY;
@@ -55,20 +55,47 @@ async function createRetellAgent(businessName, knowledgeBaseSummary, voiceId, la
   }
 
   const kbText = knowledgeBaseSummary || 'Help customers with their inquiries professionally and courteously.';
-  const generalPrompt = `You are an AI receptionist for ${businessName}. ${kbText}`;
+  const generalPrompt = `You are an AI receptionist for ${businessName}. ${kbText}\n\nAlways be professional, friendly, and concise. Collect caller name and reason for calling. Offer to book an appointment if relevant.`;
 
-  const payload = {
+  // Step 1: Create a Retell LLM for this client
+  const llmPayload = {
+    model: 'gpt-4o-mini',
+    general_prompt: generalPrompt,
+  };
+
+  const llmOptions = {
+    hostname: 'api.retellai.com',
+    port: 443,
+    path: '/create-retell-llm',
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+  };
+
+  const llmResponse = await httpsRequest(llmOptions, llmPayload);
+  if (llmResponse.status !== 200 && llmResponse.status !== 201) {
+    throw new AppError('INTERNAL_ERROR', `Retell LLM creation failed (${llmResponse.status}): ${JSON.stringify(llmResponse.body || llmResponse.parseError)}`, 500);
+  }
+
+  const llmId = llmResponse.body.llm_id;
+  if (!llmId) {
+    throw new AppError('INTERNAL_ERROR', 'Retell LLM creation returned no llm_id', 500);
+  }
+
+  // Step 2: Create the agent with the LLM ID
+  const agentPayload = {
     agent_name: businessName,
     voice_id: voiceId || '11labs-Adrian',
     language: language || 'en-US',
     response_engine: {
       type: 'retell-llm',
-      llm_id: null,
+      llm_id: llmId,
     },
-    general_prompt: generalPrompt,
   };
 
-  const options = {
+  const agentOptions = {
     hostname: 'api.retellai.com',
     port: 443,
     path: '/create-agent',
@@ -79,12 +106,12 @@ async function createRetellAgent(businessName, knowledgeBaseSummary, voiceId, la
     },
   };
 
-  const response = await httpsRequest(options, payload);
-  if (response.status !== 200 && response.status !== 201) {
-    throw new AppError('INTERNAL_ERROR', `Retell creation failed (${response.status}): ${JSON.stringify(response.body || response.parseError)}`, 500);
+  const agentResponse = await httpsRequest(agentOptions, agentPayload);
+  if (agentResponse.status !== 200 && agentResponse.status !== 201) {
+    throw new AppError('INTERNAL_ERROR', `Retell agent creation failed (${agentResponse.status}): ${JSON.stringify(agentResponse.body || agentResponse.parseError)}`, 500);
   }
 
-  return response.body.agent_id || response.body.id;
+  return agentResponse.body.agent_id || agentResponse.body.id;
 }
 
 /**
