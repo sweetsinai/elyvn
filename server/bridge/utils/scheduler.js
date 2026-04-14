@@ -4,11 +4,8 @@ const { getDelayUntilHour, getDelayUntilDayOfWeek, formatDelay } = require('./sc
 
 const { sendDailySummaries } = require('./schedulerJobs/dailySummary');
 const { sendWeeklyReports } = require('./schedulerJobs/weeklyReport');
-const { processFollowups } = require('./schedulerJobs/processFollowups');
 const { createAppointmentReminders, processAppointmentReminders } = require('./schedulerJobs/appointmentReminders');
-const { checkReplies } = require('./schedulerJobs/replyChecker');
 const { dailyLeadReview } = require('./schedulerJobs/brainReview');
-const { dailyOutreach } = require('./schedulerJobs/coldEmail');
 const { dailyLeadScoring } = require('./schedulerJobs/leadScoring');
 
 const timerHandles = [];
@@ -35,7 +32,6 @@ async function checkMissedJobs(db) {
       { name: 'daily_summary', hour: 19 },
       { name: 'weekly_report', hour: 8 },
       { name: 'daily_lead_review', hour: 9 },
-      { name: 'daily_outreach', hour: 10 },
       { name: 'daily_lead_scoring', hour: 6 },
       { name: 'data_retention', hour: 3 },
     ];
@@ -112,7 +108,6 @@ function initScheduler(db) {
         logger.info(`[scheduler] Running missed job: ${jobName}`);
         if (jobName === 'daily_lead_scoring') dailyLeadScoring(db).catch(() => {});
         else if (jobName === 'daily_lead_review') dailyLeadReview(db).catch(() => {});
-        else if (jobName === 'daily_outreach') dailyOutreach(db).catch(() => {});
         else if (jobName === 'daily_summary') sendDailySummaries(db).catch(() => {});
         else if (jobName === 'weekly_report') sendWeeklyReports(db).catch(() => {});
       }, stagger).unref();
@@ -144,12 +139,6 @@ function initScheduler(db) {
 
   logger.info(`[Scheduler] Weekly report scheduled ${formatDelay(weeklyDelay)} (Monday 8 AM)`);
 
-  // Follow-up processor — every 5 minutes
-  timerHandles.push(setInterval(() => {
-    processFollowups(db).catch(err => logger.error('[Scheduler] followup processor error:', err));
-  }, SCHEDULER_FOLLOWUP_INTERVAL_MS).unref());
-  logger.info('[Scheduler] Follow-up processor running every 5 minutes');
-
   // Appointment reminder processor — every 2 minutes
   timerHandles.push(setInterval(() => {
     processAppointmentReminders(db).catch(err => logger.error('[Scheduler] appointment reminder error:', err));
@@ -166,23 +155,6 @@ function initScheduler(db) {
     timerHandles.push(setInterval(trackedLeadReview, SCHEDULER_DAILY_INTERVAL_MS).unref());
   }, reviewDelay).unref());
   logger.info(`[Scheduler] Daily lead review scheduled ${formatDelay(reviewDelay)} (9 AM)`);
-
-  // Engine 2: Daily outreach at 10 AM
-  const outreachDelay = getDelayUntilHour(10);
-
-  const trackedOutreach = withFailureTracking(db, 'daily_outreach', () => dailyOutreach(db));
-  timerHandles.push(setTimeout(() => {
-    if (!schedulerInitialized) return;
-    trackedOutreach();
-    timerHandles.push(setInterval(trackedOutreach, SCHEDULER_DAILY_INTERVAL_MS).unref());
-  }, outreachDelay).unref());
-  logger.info(`[Scheduler] Daily outreach scheduled ${formatDelay(outreachDelay)} (10 AM)`);
-
-  // Engine 2: Check replies every 30 minutes
-  timerHandles.push(setInterval(() => {
-    checkReplies(db).catch(err => logger.error('[Scheduler] reply check error:', err));
-  }, SCHEDULER_REPLY_CHECK_INTERVAL_MS).unref());
-  logger.info('[Scheduler] Reply checker running every 30 minutes');
 
   // Predictive lead scoring — rescore all leads daily at 6 AM
   const scoreDelay = getDelayUntilHour(6);

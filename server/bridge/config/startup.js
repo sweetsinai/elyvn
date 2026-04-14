@@ -221,36 +221,12 @@ function initializeServer(app, server, routeHandles) {
     const { startProcessor: startWebhookProcessor } = require('../utils/webhookQueue');
     startWebhookProcessor();
 
-    // Auto-classify replies
-    const { autoClassifyReplies } = require('../utils/autoClassify');
-    const autoClassifyInterval = setInterval(async () => {
-      try {
-        const unclassified = await db.query(`
-          SELECT COUNT(*) as c FROM emails_sent
-          WHERE reply_text IS NOT NULL AND reply_classification IS NULL
-        `, [], 'get');
-        if (unclassified.c > 0) {
-          logger.info(`[auto-classify] Found ${unclassified.c} unclassified replies, triggering...`);
-          try {
-            const result = await autoClassifyReplies(db);
-            logger.info(`[auto-classify] Completed: ${result.classified} classified`);
-          } catch (err) {
-            logger.error('[auto-classify] Processing error:', err.message);
-            if (captureException) captureException(err, { context: 'auto-classify.processing' });
-          }
-        }
-      } catch (err) {
-        logger.error('[auto-classify] Periodic check error:', err.message);
-        if (captureException) captureException(err, { context: 'auto-classify.periodic' });
-      }
-    }, AUTO_CLASSIFY_INTERVAL_MS).unref();
 
     // Register timers for graceful shutdown
     const { onShutdown } = require('../utils/gracefulShutdown');
     onShutdown(async () => {
       if (routeHandles.rateLimiterInterval) clearInterval(routeHandles.rateLimiterInterval);
       clearInterval(jobProcessorInterval);
-      clearInterval(autoClassifyInterval);
     try {
       const { stopProcessor: stopWebhookProcessor } = require('../utils/webhookQueue');
       stopWebhookProcessor();
