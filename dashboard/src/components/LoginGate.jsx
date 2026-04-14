@@ -58,7 +58,7 @@ export default function LoginGate({ children }) {
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         body: JSON.stringify({ email: email.trim(), password }),
       });
       const data = await res.json();
@@ -82,7 +82,7 @@ export default function LoginGate({ children }) {
     try {
       const res = await fetch(`${API_BASE}/auth/signup`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         body: JSON.stringify({
           email: email.trim(),
           password,
