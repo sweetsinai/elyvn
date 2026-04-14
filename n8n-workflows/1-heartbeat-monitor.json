@@ -1,0 +1,84 @@
+{
+  "name": "ELYVN Heartbeat Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 2 }]
+        }
+      },
+      "id": "1",
+      "name": "Every 2 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.elyvn.net/health/ready",
+        "options": { "timeout": 10000 }
+      },
+      "id": "2",
+      "name": "Check Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ready",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "3",
+      "name": "Is Healthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8199060422:AAEQGNGN6Nrxpy4NXFVaWjOn5xeUW_oz8F0/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"chat_id\":\"5919406237\",\"text\":\"🔴 ELYVN DOWN\\n\\nHealth check failed\\nStatus: {{ $json.status || 'unreachable' }}\\nTime: {{ $now.toISO() }}\\n\\nCheck Railway dashboard.\"}",
+        "options": {}
+      },
+      "id": "4",
+      "name": "Alert: DOWN",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {},
+      "id": "5",
+      "name": "OK",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 180]
+    }
+  ],
+  "connections": {
+    "Every 2 Minutes": { "main": [[{ "node": "Check Health", "type": "main", "index": 0 }]] },
+    "Check Health": { "main": [[{ "node": "Is Healthy?", "type": "main", "index": 0 }]] },
+    "Is Healthy?": {
+      "main": [
+        [{ "node": "OK", "type": "main", "index": 0 }],
+        [{ "node": "Alert: DOWN", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

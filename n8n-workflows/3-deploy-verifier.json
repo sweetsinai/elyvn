@@ -1,0 +1,96 @@
+{
+  "name": "ELYVN Deploy Verifier",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 1 }]
+        }
+      },
+      "id": "1",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.elyvn.net/health/version",
+        "options": { "timeout": 10000 }
+      },
+      "id": "2",
+      "name": "Get Version",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://api.elyvn.net/health/ready",
+        "options": { "timeout": 10000 }
+      },
+      "id": "3",
+      "name": "Check Ready",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 400],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ready",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "4",
+      "name": "Ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8199060422:AAEQGNGN6Nrxpy4NXFVaWjOn5xeUW_oz8F0/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"chat_id\":\"5919406237\",\"text\":\"🔴 ELYVN NOT READY\\n\\nHourly check failed\\nDB: {{ $json.checks?.db ?? 'unknown' }}\\nJobs: {{ $json.checks?.job_queue ?? 'unknown' }}\\nTime: {{ $now.toISO() }}\"}",
+        "options": {}
+      },
+      "id": "5",
+      "name": "Alert: Not Ready",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {},
+      "id": "6",
+      "name": "All Good",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Every Hour": { "main": [[{ "node": "Get Version", "type": "main", "index": 0 }, { "node": "Check Ready", "type": "main", "index": 0 }]] },
+    "Check Ready": { "main": [[{ "node": "Ready?", "type": "main", "index": 0 }]] },
+    "Ready?": {
+      "main": [
+        [{ "node": "All Good", "type": "main", "index": 0 }],
+        [{ "node": "Alert: Not Ready", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

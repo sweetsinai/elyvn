@@ -1,0 +1,146 @@
+{
+  "name": "ELYVN Metrics Watchdog",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 10 }]
+        }
+      },
+      "id": "1",
+      "name": "Every 10 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.elyvn.net/health/detailed",
+        "options": { "timeout": 15000 }
+      },
+      "id": "2",
+      "name": "Get Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "c1a",
+              "leftValue": "={{ $json.data?.metrics?.sms_success_rate ?? $json.metrics?.sms_success_rate ?? 100 }}",
+              "rightValue": 90,
+              "operator": { "type": "number", "operation": "lt" }
+            },
+            {
+              "id": "c1b",
+              "leftValue": "={{ $json.data?.metrics?.total_sms_sent ?? $json.metrics?.total_sms_sent ?? 0 }}",
+              "rightValue": 1,
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "3",
+      "name": "SMS Rate < 90%?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "c2a",
+              "leftValue": "={{ $json.data?.metrics?.avg_response_time_ms ?? $json.metrics?.avg_response_time_ms ?? 0 }}",
+              "rightValue": 1000,
+              "operator": { "type": "number", "operation": "gt" }
+            },
+            {
+              "id": "c2b",
+              "leftValue": "={{ $json.data?.metrics?.total_calls ?? $json.metrics?.total_calls ?? 0 }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "4",
+      "name": "Slow Response?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 450]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8199060422:AAEQGNGN6Nrxpy4NXFVaWjOn5xeUW_oz8F0/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"chat_id\":\"5919406237\",\"text\":\"⚠️ ELYVN SMS Alert\\n\\nSMS success rate dropped below 90%\\nCurrent: {{ $json.data?.metrics?.sms_success_rate ?? $json.metrics?.sms_success_rate ?? 'unknown' }}%\\nSent: {{ $json.data?.metrics?.total_sms_sent ?? $json.metrics?.total_sms_sent ?? 0 }}\\nFailed: {{ $json.data?.metrics?.total_sms_failed ?? $json.metrics?.total_sms_failed ?? 0 }}\\nTime: {{ $now.toISO() }}\"}",
+        "options": {}
+      },
+      "id": "5",
+      "name": "Alert: SMS Drop",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8199060422:AAEQGNGN6Nrxpy4NXFVaWjOn5xeUW_oz8F0/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"chat_id\":\"5919406237\",\"text\":\"🐢 ELYVN Slow\\n\\nAvg response time > 1 second\\nCurrent: {{ $json.data?.metrics?.avg_response_time_ms ?? $json.metrics?.avg_response_time_ms ?? 'unknown' }}ms\\nTime: {{ $now.toISO() }}\"}",
+        "options": {}
+      },
+      "id": "6",
+      "name": "Alert: Slow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 450]
+    },
+    {
+      "parameters": {},
+      "id": "7",
+      "name": "SMS OK",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [920, 100]
+    },
+    {
+      "parameters": {},
+      "id": "8",
+      "name": "Speed OK",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [920, 550]
+    }
+  ],
+  "connections": {
+    "Every 10 Minutes": { "main": [[{ "node": "Get Metrics", "type": "main", "index": 0 }]] },
+    "Get Metrics": { "main": [[{ "node": "SMS Rate < 90%?", "type": "main", "index": 0 }, { "node": "Slow Response?", "type": "main", "index": 0 }]] },
+    "SMS Rate < 90%?": {
+      "main": [
+        [{ "node": "SMS OK", "type": "main", "index": 0 }],
+        [{ "node": "Alert: SMS Drop", "type": "main", "index": 0 }]
+      ]
+    },
+    "Slow Response?": {
+      "main": [
+        [{ "node": "Speed OK", "type": "main", "index": 0 }],
+        [{ "node": "Alert: Slow", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}
