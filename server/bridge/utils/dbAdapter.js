@@ -110,7 +110,8 @@ function createDatabase(options = {}) {
   // PostgreSQL mode via Supabase adapter
   // NOTE: prepare().get/all/run() return Promises. Use `await db.query()` or
   // `await db.prepare(sql).get()` in route handlers when DATABASE_URL is set.
-  if (dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) {
+  // Skip Postgres if DATABASE_PATH is explicitly set (SQLite takes priority)
+  if (dbUrl && !process.env.DATABASE_PATH && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) {
     const { createSupabaseDatabase } = require('./supabaseAdapter');
     const pgDb = createSupabaseDatabase({ url: dbUrl });
     logger.info('[db] PostgreSQL mode active via supabaseAdapter (async — use await)');
