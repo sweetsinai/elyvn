@@ -86,7 +86,7 @@ function createSupabaseDatabase(options = {}) {
     connectionString,
     min: 2,
     max: 10,
-    ssl: { rejectUnauthorized: true },
+    ssl: { rejectUnauthorized: false },
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
   });
