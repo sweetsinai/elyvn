@@ -374,7 +374,7 @@ export default function Pipeline() {
               </div>
               <div>
                 <div style={{ fontSize: 11, color: '#444', marginBottom: 2 }}>Score</div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{selectedLead.score ?? '--'}/10</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{selectedLead.score != null ? (selectedLead.score <= 10 ? selectedLead.score * 10 : selectedLead.score) : '--'}/100</div>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: '#444', marginBottom: 2 }}>Stage</div>

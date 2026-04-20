@@ -22,8 +22,8 @@ async function dailyLeadScoring(db) {
 
         // Update lead scores in the DB based on predictive model
         for (const s of scores) {
-          // Map 0-100 predictive score to 0-10 lead score
-          const newScore = Math.round(s.predictive_score / 10);
+          // Keep 0-100 predictive score as the lead score
+          const newScore = Math.round(s.predictive_score);
           await db.query('UPDATE leads SET score = ?, updated_at = datetime(\'now\') WHERE id = ?',
             [newScore, s.leadId], 'run');
 

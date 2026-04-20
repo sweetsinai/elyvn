@@ -100,7 +100,8 @@ export default function Provision() {
     { id: 'buying_number', name: 'Provisioning Phone Number' },
     { id: 'creating_client', name: 'Creating client record' },
     { id: 'syncing_kb', name: 'Creating knowledge base' },
-    { id: 'setting_up_telegram', name: 'Setting up Telegram bot' }
+    { id: 'setting_up_telegram', name: 'Setting up Telegram bot' },
+    { id: 'creating_sheet', name: 'Setting up Google Sheets' }
   ];
 
   const validateForm = () => {

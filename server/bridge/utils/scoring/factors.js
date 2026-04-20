@@ -128,8 +128,9 @@ function calcIntent(lead, calls, messages) {
   if (signalCount > 0) {
     intentFactor = Math.min(100, intentFactor / signalCount);
   } else {
-    const fallbackScore = Math.min(100, Math.max(0, ((Number(lead.score) || 0) / 10) * 100));
-    intentFactor = fallbackScore || 20;
+    const leadScore = Number(lead.score) || 0;
+    const fallbackScore = leadScore <= 10 ? leadScore * 10 : leadScore;
+    intentFactor = Math.min(100, Math.max(0, fallbackScore)) || 20;
   }
 
   return { intentFactor, qualifiedCalls };
@@ -198,15 +199,18 @@ function calcChannelDiversity(calls, messages) {
  */
 function calcAiScore(lead, calls) {
   let aiFactor = 0;
-  const scores = calls.filter(c => c.score > 0).map(c => c.score);
+  // Intelligently handle both 1-10 and 1-100 scores
+  const scores = calls.filter(c => c.score > 0).map(c => {
+    return c.score <= 10 ? c.score * 10 : c.score;
+  });
   
   if (scores.length > 0) {
     const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
-    // Scale 1-10 to 0-100. 1 -> 10, 10 -> 100.
-    aiFactor = Math.min(100, Math.max(0, avgScore * 10));
+    aiFactor = Math.min(100, Math.max(0, avgScore));
   } else if (lead.score > 0) {
-    // Fallback to lead-level score if no calls have scores
-    aiFactor = Math.min(100, Math.max(0, lead.score * 10));
+    // Fallback to lead-level score. If it's <= 10, it's likely a legacy score.
+    aiFactor = lead.score <= 10 ? lead.score * 10 : lead.score;
+    aiFactor = Math.min(100, Math.max(0, aiFactor));
   }
 
   return { aiFactor };

@@ -179,12 +179,12 @@ Reply: ${email.reply_text}`
             const leadId = randomUUID();
             await db.query(`
               INSERT INTO leads (id, client_id, name, phone, email, source, score, stage, prospect_id, last_contact, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, 'outreach', 7, 'qualified', ?, ?, ?, ?)
+              VALUES (?, ?, ?, ?, ?, 'outreach', 70, 'qualified', ?, ?, ?, ?)
             `, [leadId, client.id, prospect.business_name || '', prospect.phone || null, email.to_email, prospect.id, now, now, now], 'run');
             logger.info(`[outreach] Lead ${leadId} created from INTERESTED prospect ${prospect.id}`);
           } else {
             // Update existing lead score
-            await db.query("UPDATE leads SET score = MAX(score, 7), stage = 'qualified', updated_at = ? WHERE id = ?", [now, existingLead.id], 'run');
+            await db.query("UPDATE leads SET score = MAX(score, 70), stage = 'qualified', updated_at = ? WHERE id = ?", [now, existingLead.id], 'run');
           }
         }
       } catch (err) {

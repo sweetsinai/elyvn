@@ -90,29 +90,64 @@ module.exports = {
       price: 0,
       calls: 50,
       sms: 100,
+      emails: 50,
     },
+    solo: {
+      name: 'Solo',
+      price: 199,
+      productId: process.env.DODO_PRODUCT_SOLO || 'pdt_0NcSVPcrrPE9CjPnCdjJC',
+      calls: 100,
+      sms: 300,
+      emails: 100,
+    },
+    starter: {
+      name: 'Starter',
+      price: 349,
+      productId: process.env.DODO_PRODUCT_STARTER || 'pdt_0NcSLxjRSsPJST0uTn8kN',
+      calls: 500,
+      sms: 1000,
+      emails: 200,
+    },
+    pro: {
+      name: 'Pro',
+      price: 349,
+      productId: process.env.DODO_PRODUCT_PRO || 'pdt_0NcSLxjRSsPJST0uTn8kN',
+      calls: 1500,
+      sms: 3000,
+      emails: 500,
+    },
+    premium: {
+      name: 'Premium',
+      price: 599,
+      productId: process.env.DODO_PRODUCT_PREMIUM || 'pdt_premium_placeholder',
+      calls: -1, // unlimited
+      sms: -1,
+      emails: -1,
+    },
+    // Legacy/Alias support
     growth: {
       name: 'Growth',
       price: 199,
       productId: process.env.DODO_PRODUCT_GROWTH || 'pdt_0NcSVPcrrPE9CjPnCdjJC',
       calls: 100,
       sms: 300,
-      trial_days: 14,
-    },
-    pro: {
-      name: 'Pro',
-      price: 349,
-      productId: process.env.DODO_PRODUCT_PRO || 'pdt_0NcSLxjRSsPJST0uTn8kN',
-      calls: 500,
-      sms: 1500,
+      emails: 100,
     },
     elite: {
       name: 'Elite',
       price: 599,
       productId: process.env.DODO_PRODUCT_ELITE || 'pdt_0NcSMTlJqIJcQsneYDYsi',
-      calls: -1, // unlimited
+      calls: -1,
       sms: -1,
+      emails: -1,
     },
+    scale: {
+      name: 'Premium',
+      price: 999,
+      calls: -1,
+      sms: -1,
+      emails: -1,
+    }
   },
 
   /**

@@ -103,7 +103,7 @@ function initWebSocket(server, db) {
     // Heartbeat
     heartbeatInterval = setInterval(() => {
       for (const [client] of authenticatedClients) {
-        if (client.readyState === WebSocket.OPEN) {
+        if (client.readyState === WebSocket.OPEN && typeof client.ping === 'function') {
           client.ping();
         } else {
           authenticatedClients.delete(client);

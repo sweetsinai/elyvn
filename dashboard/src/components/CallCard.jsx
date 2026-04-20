@@ -5,12 +5,13 @@ import { getTranscript } from '../lib/api';
 import { formatPhone, formatDuration, timeAgo } from '../lib/utils';
 
 function scoreColor(score) {
-  if (score >= 8) return '#4ade80';
-  if (score >= 5) return '#fbbf24';
+  if (score >= 80) return '#4ade80';
+  if (score >= 50) return '#fbbf24';
   return '#f87171';
 }
 
 export default function CallCard({ call, clientId }) {
+  const displayScore = call.score != null ? (call.score <= 10 ? call.score * 10 : call.score) : null;
   const [expanded, setExpanded] = useState(false);
   const [transcript, setTranscript] = useState(null);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
@@ -55,15 +56,15 @@ export default function CallCard({ call, clientId }) {
           {formatDuration(call.duration)}
         </span>
         <StatusBadge status={call.outcome} type="outcome" />
-        {call.score != null && (
+        {displayScore != null && (
           <span style={{
             fontSize: 12,
             fontWeight: 600,
-            color: scoreColor(call.score),
+            color: scoreColor(displayScore),
             minWidth: 24,
             textAlign: 'center',
           }}>
-            {call.score}/10
+            {displayScore}/100
           </span>
         )}
         {call.sentiment && (

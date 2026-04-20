@@ -214,7 +214,7 @@ async function handleCommand(db, message) {
           const who = c.caller_name || c.caller_phone || 'Unknown';
           msg += `  ${outcomeEmoji(c.outcome)} ${who}`;
           if (c.duration) msg += ` (${fmtDuration(c.duration)})`;
-          if (c.score) msg += ` ${c.score}/10`;
+          if (c.score) msg += ` ${c.score}/100`;
           msg += ` — ${timeAgo(c.created_at)}\n`;
         }
         msg += '\n';
@@ -271,7 +271,7 @@ async function handleCommand(db, message) {
         }
         const who = l.name || l.phone || 'Unknown';
         msg += `  ${who}`;
-        if (l.score) msg += ` — ${l.score}/10`;
+        if (l.score) msg += ` — ${l.score}/100`;
         msg += ` — ${timeAgo(l.updated_at)}\n`;
       }
 
@@ -296,7 +296,7 @@ async function handleCommand(db, message) {
           const who = c.caller_name || c.caller_phone || 'Unknown';
           msg += `${outcomeEmoji(c.outcome)} <b>${who}</b>`;
           if (c.duration) msg += ` (${fmtDuration(c.duration)})`;
-          if (c.score) msg += ` — ${c.score}/10`;
+          if (c.score) msg += ` — ${c.score}/100`;
           msg += ` — ${timeAgo(c.created_at)}\n`;
           if (c.summary) msg += `  ${c.summary.substring(0, 120)}\n`;
           msg += '\n';
@@ -618,7 +618,7 @@ async function handleCommand(db, message) {
       msg += `  Total: ${thisWeek.calls || 0}`;
       if (lastWeek.calls) msg += ` (prev: ${lastWeek.calls})`;
       msg += `\n  Booked: ${thisWeek.booked || 0} | Missed: ${thisWeek.missed || 0}\n`;
-      if (thisWeek.avg_score) msg += `  Avg score: ${Math.round(thisWeek.avg_score * 10) / 10}/10\n`;
+      if (thisWeek.avg_score) msg += `  Avg score: ${Math.round(thisWeek.avg_score)}/100\n`;
       if (thisWeek.avg_duration) msg += `  Avg duration: ${fmtDuration(Math.round(thisWeek.avg_duration))}\n`;
       msg += '\n';
 
@@ -718,7 +718,7 @@ async function handleCommand(db, message) {
         try {
           const kbData = await kbCache.loadKnowledgeBase(client.id);
           if (kbData) {
-            kbContent = `KNOWLEDGE BASE:\n${JSON.stringify(kbData, null, 2)}`;
+            kbContent = `KNOWLEDGE BASE:\n${kbData}`;
           }
         } catch (kbErr) {
           logger.warn(`[telegram] Failed to load KB for ${client.id}:`, kbErr.message);
@@ -726,12 +726,12 @@ async function handleCommand(db, message) {
 
         const context = `BUSINESS: ${esc(client.business_name)}
 TODAY: ${callsToday.c || 0} calls (${callsToday.booked || 0} booked)
-THIS WEEK: ${callsWeek.c || 0} calls (${callsWeek.booked || 0} booked), avg score ${(callsWeek.avg_score || 0).toFixed(1)}/10
+THIS WEEK: ${callsWeek.c || 0} calls (${callsWeek.booked || 0} booked), avg score ${(callsWeek.avg_score || 0).toFixed(1)}/100
 MESSAGES THIS WEEK: ${messagesWeek.c || 0}
 BOOKINGS THIS WEEK: ${bookingsWeek.c || 0}
 ACTIVE LEADS: ${(leadsActive || []).map(l => `${l.stage}: ${l.c}`).join(', ') || 'none'}
-RECENT CALLS:\n${(recentCalls || []).map(c => `  ${c.created_at?.split('T')[0]} — ${c.caller_name || c.caller_phone || '?'} — ${c.outcome} (score: ${c.score || '?'}) ${c.summary ? '— ' + c.summary.substring(0, 80) : ''}`).join('\n') || '  none'}
-HOT LEADS:\n${(hotLeads || []).map(l => `  ${l.name || l.phone} — ${l.stage} (score: ${l.score})`).join('\n') || '  none'}
+RECENT CALLS:\n${(recentCalls || []).map(c => `  ${c.created_at?.split('T')[0]} — ${c.caller_name || c.caller_phone || '?'} — ${c.outcome} (score: ${c.score || '?'}/100) ${c.summary ? '— ' + c.summary.substring(0, 80) : ''}`).join('\n') || '  none'}
+HOT LEADS:\n${(hotLeads || []).map(l => `  ${l.name || l.phone} — ${l.stage} (score: ${l.score}/100)`).join('\n') || '  none'}
 ${kbContent}`;
 
         const Anthropic = require('@anthropic-ai/sdk');
