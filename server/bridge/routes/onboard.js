@@ -104,7 +104,10 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
       industry,
       services,
       business_hours,
+      business_address,
+      website,
       avg_ticket,
+      ticket_price,
       booking_link,
       faq
     } = req.body;
@@ -132,7 +135,10 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
       industry: sanitizeString(industry),
       services: services.map(s => sanitizeString(s)),
       business_hours: business_hours ? sanitizeString(business_hours) : null,
+      business_address: business_address ? sanitizeString(business_address) : null,
+      website: website ? sanitizeString(website) : null,
       avg_ticket: avg_ticket || 0,
+      ticket_price: ticket_price || null,
       booking_link: booking_link ? sanitizeString(booking_link) : null,
       faq: faq ? faq.map(item => ({
         question: sanitizeString(item.question),
@@ -160,6 +166,9 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
       services: sanitized.services,
       industry: sanitized.industry,
       business_hours: sanitized.business_hours || 'Not specified',
+      business_address: sanitized.business_address,
+      website: sanitized.website,
+      ticket_price: sanitized.ticket_price,
       booking_info: bookingInfo,
       faq: sanitized.faq,
       escalation_phrases: [
@@ -186,9 +195,10 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
     await db.query(`
       INSERT INTO clients (
         id, business_name, owner_name, owner_phone, owner_email,
-        industry, avg_ticket, kb_path, timezone, is_active,
+        industry, avg_ticket, ticket_price, business_address, website, 
+        booking_link, kb_path, timezone, is_active,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       clientId,
       sanitized.business_name,
@@ -197,6 +207,10 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
       sanitized.owner_email,
       sanitized.industry,
       sanitized.avg_ticket,
+      sanitized.ticket_price,
+      sanitized.business_address,
+      sanitized.website,
+      sanitized.booking_link,
       kbPath,
       'America/New_York',
       1,

@@ -146,7 +146,11 @@ router.put('/settings/:clientId', validateBody(SettingsUpdateSchema), async (req
     await db.query(`UPDATE clients SET ${updates.join(', ')} WHERE id = ?`, params, 'run');
 
     // Trigger sync to Retell AI if prompt-related fields changed
-    const PROMPT_FIELDS = ['business_name', 'industry', 'transfer_phone', 'calcom_booking_link'];
+    const PROMPT_FIELDS = [
+      'business_name', 'industry', 'owner_name', 'business_address', 
+      'website', 'booking_link', 'calcom_booking_link', 'ticket_price',
+      'transfer_phone'
+    ];
     if (Object.keys(body).some(key => PROMPT_FIELDS.includes(key))) {
       syncClientToRetell(clientId, db).catch(err => {
         logger.error(`[settings] Failed to sync to Retell for ${clientId}:`, err.message);

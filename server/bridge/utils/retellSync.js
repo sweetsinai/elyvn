@@ -51,7 +51,14 @@ function generateRetellPrompt(kb) {
     faq = [],
     business_hours,
     booking_info,
-    greeting
+    greeting,
+    // Enhanced fields
+    business_address,
+    website,
+    booking_link,
+    calcom_booking_link,
+    ticket_price,
+    owner_name
   } = kb;
 
   let prompt = `You are a professional AI receptionist for ${business_name}${industry ? ` in the ${industry} industry` : ''}.\n\n`;
@@ -60,23 +67,45 @@ function generateRetellPrompt(kb) {
     prompt += `## Greeting\n${greeting}\n\n`;
   }
 
+  if (owner_name) {
+    prompt += `## Business Owner\n${owner_name}\n\n`;
+  }
+
+  if (business_address) {
+    prompt += `## Address\n${business_address}\n\n`;
+  }
+
+  if (website) {
+    prompt += `## Website\n${website}\n\n`;
+  }
+
   if (services && services.length > 0) {
     prompt += `## Services Offered\n${services.map(s => `- ${s}`).join('\n')}\n\n`;
+  }
+
+  if (ticket_price) {
+    prompt += `## Pricing\nTypical service price starts at around $${ticket_price}.\n\n`;
   }
 
   if (business_hours) {
     prompt += `## Business Hours\n${business_hours}\n\n`;
   }
 
-  if (booking_info) {
-    prompt += `## Booking Information\n${booking_info}\n\n`;
+  const activeBookingLink = booking_link || calcom_booking_link;
+  if (activeBookingLink || booking_info) {
+    prompt += `## Booking Information\n${activeBookingLink ? `Book online: ${activeBookingLink}\n` : ''}${booking_info || ''}\n\n`;
   }
 
   if (faq && faq.length > 0) {
     prompt += `## Frequently Asked Questions\n${faq.map(f => `Q: ${f.question}\nA: ${f.answer}`).join('\n\n')}\n\n`;
   }
 
-  prompt += "## Style Guidelines\nAlways be professional, friendly, and concise. Collect caller's name and reason for calling. Offer to book an appointment if relevant.";
+  prompt += "## Style Guidelines\n";
+  prompt += "- Always be professional, friendly, and concise.\n";
+  prompt += "- Collect caller's name and reason for calling.\n";
+  prompt += "- Offer to book an appointment if relevant to the services offered.\n";
+  prompt += "- If the caller asks for someone specific or needs technical help, offer to take a message or transfer them if appropriate.\n";
+  prompt += "- Do not make up information that is not in this knowledge base.";
 
   return prompt;
 }
@@ -89,7 +118,13 @@ async function syncClientToRetell(clientId, db) {
     logger.info(`[retellSync] Starting sync for client ${clientId}`);
 
     // 1. Get client data from DB
-    const client = await db.query('SELECT business_name, industry, retell_agent_id, retell_llm_id FROM clients WHERE id = ?', [clientId], 'get');
+    const client = await db.query(`
+      SELECT business_name, industry, owner_name, business_address, website, 
+             booking_link, calcom_booking_link, ticket_price, 
+             retell_agent_id, retell_llm_id 
+      FROM clients WHERE id = ?
+    `, [clientId], 'get');
+    
     if (!client) {
       logger.warn(`[retellSync] Client not found: ${clientId}`);
       return;
@@ -135,11 +170,17 @@ async function syncClientToRetell(clientId, db) {
     // 4. Merge DB data (DB is source of truth for these fields)
     kb.business_name = client.business_name || kb.business_name;
     kb.industry = client.industry || kb.industry;
+    kb.owner_name = client.owner_name || kb.owner_name;
+    kb.business_address = client.business_address || kb.business_address;
+    kb.website = client.website || kb.website;
+    kb.booking_link = client.booking_link || kb.booking_link;
+    kb.calcom_booking_link = client.calcom_booking_link || kb.calcom_booking_link;
+    kb.ticket_price = client.ticket_price || kb.ticket_price;
 
     // 5. Generate prompt
     const generalPrompt = generateRetellPrompt(kb);
 
-    // 5. Update Retell LLM
+    // 6. Update Retell LLM
     logger.info(`[retellSync] Updating Retell LLM ${llmId} for client ${clientId}`);
     await retellRequest(`/update-retell-llm/${llmId}`, 'PATCH', {
       general_prompt: generalPrompt
