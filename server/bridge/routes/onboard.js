@@ -8,6 +8,7 @@ const { logger } = require('../utils/logger');
 const { logDataMutation } = require('../utils/auditLog');
 const { validateBody } = require('../middleware/validateRequest');
 const { OnboardSchema } = require('../utils/schemas/onboard');
+const { syncClientToRetell } = require('../utils/retellSync');
 const timing = require('../config/timing');
 
 // Rate limiting for onboarding
@@ -265,6 +266,11 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
     };
 
     res.status(201).json(response);
+
+    // Sync to Retell AI if an agent is somehow already linked (unlikely during onboarding but good for consistency)
+    syncClientToRetell(clientId, db).catch(err => {
+      logger.error(`[onboard] Failed to sync to Retell for ${clientId}:`, err.message);
+    });
 
     // Post-signup: create Google Sheet for client (non-blocking)
     try {

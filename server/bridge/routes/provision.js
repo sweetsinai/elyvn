@@ -10,6 +10,7 @@ const { logDataMutation } = require('../utils/auditLog');
 const { AppError } = require('../utils/AppError');
 const { validateBody } = require('../middleware/validateRequest');
 const { ProvisionSchema } = require('../utils/schemas/provision');
+const { generateRetellPrompt } = require('../utils/retellSync');
 
 // NOTE: The 'plan' column is handled by migration 022_auth_and_billing.
 // Removed rogue DB connection that opened a second database handle at module load.
@@ -48,14 +49,13 @@ function httpsRequest(options, data = null) {
 /**
  * Create a Retell LLM, then create an agent using that LLM ID
  */
-async function createRetellAgent(businessName, knowledgeBaseSummary, voiceId, language) {
+async function createRetellAgent(businessName, kb, voiceId, language) {
   const apiKey = process.env.RETELL_API_KEY;
   if (!apiKey) {
     throw new AppError('INTERNAL_ERROR', 'RETELL_API_KEY is required', 500);
   }
 
-  const kbText = knowledgeBaseSummary || 'Help customers with their inquiries professionally and courteously.';
-  const generalPrompt = `You are an AI receptionist for ${businessName}. ${kbText}\n\nAlways be professional, friendly, and concise. Collect caller name and reason for calling. Offer to book an appointment if relevant.`;
+  const generalPrompt = generateRetellPrompt(kb || { business_name: businessName });
 
   // Step 1: Create a Retell LLM for this client
   const llmPayload = {
@@ -111,7 +111,10 @@ async function createRetellAgent(businessName, knowledgeBaseSummary, voiceId, la
     throw new AppError('INTERNAL_ERROR', `Retell agent creation failed (${agentResponse.status}): ${JSON.stringify(agentResponse.body || agentResponse.parseError)}`, 500);
   }
 
-  return agentResponse.body.agent_id || agentResponse.body.id;
+  return {
+    agentId: agentResponse.body.agent_id || agentResponse.body.id,
+    llmId: llmId
+  };
 }
 
 /**
@@ -165,15 +168,14 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
 
     // Step 1: Create Retell agent (optional, don't fail overall provisioning if this fails)
     let retellAgentId = null;
+    let retellLlmId = null;
     try {
-      const kbSummary = knowledge_base
-        ? `You serve ${knowledge_base.business_name || business_name}. Services: ${(knowledge_base.services || []).join(', ') || 'various services'}. Business hours: ${knowledge_base.hours || 'standard hours'}. Location: ${knowledge_base.location || 'contact for details'}.`
-        : null;
-
       logger.info(`[provision] Creating Retell agent for ${business_name}...`);
-      retellAgentId = await createRetellAgent(business_name, kbSummary, req.body.retell_voice, req.body.retell_language);
+      const retellData = await createRetellAgent(business_name, knowledge_base, req.body.retell_voice, req.body.retell_language);
+      retellAgentId = retellData.agentId;
+      retellLlmId = retellData.llmId;
       provisioning_status.retell_agent_id = retellAgentId;
-      logger.info(`[provision] Successfully created Retell agent: ${retellAgentId}`);
+      logger.info(`[provision] Successfully created Retell agent: ${retellAgentId} (LLM: ${retellLlmId})`);
     } catch (err) {
       provisioning_status.retell_error = err.message;
       logger.error(`[provision] Retell provisioning failed: ${err.message}`);
@@ -212,9 +214,9 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
       await db.query(`
         INSERT INTO clients (
           id, business_name, owner_name, owner_phone, owner_email,
-          retell_agent_id, twilio_phone, phone_number, industry, timezone,
+          retell_agent_id, retell_llm_id, twilio_phone, phone_number, industry, timezone,
           avg_ticket, plan, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         clientId,
         business_name,
@@ -222,6 +224,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
         owner_phone,
         owner_email || null,
         retellAgentId || null,
+        retellLlmId || null,
         phoneNumber,
         phoneNumber,
         industry || null,
