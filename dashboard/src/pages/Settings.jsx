@@ -165,8 +165,8 @@ export default function Settings() {
       color: '#60a5fa',
     },
     {
-      name: 'Telnyx',
-      key: 'telnyx',
+      name: 'Twilio',
+      key: 'twilio',
       icon: Phone,
       color: '#f87171',
     },
@@ -516,7 +516,7 @@ Phone numbers are provisioned via the Provision page. Edit transfer_phone in a c
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[
             { label: 'Retell Webhook', url: `${baseUrl}/webhooks/retell` },
-            { label: 'Telnyx Webhook', url: `${baseUrl}/webhooks/telnyx` },
+            { label: 'Twilio Webhook (Legacy)', url: `${baseUrl}/webhooks/telnyx` },
           ].map(wh => (
             <div key={wh.label} className="card" style={{
               padding: '12px 16px',

@@ -10,7 +10,7 @@ module.exports = {
   API_TIMEOUT_MS: 30000,          // Generic API call timeout (30 seconds)
   FETCH_TIMEOUT: process.env.FETCH_TIMEOUT ? parseInt(process.env.FETCH_TIMEOUT) : 30000,  // Generic fetch timeout (30 seconds)
   RETELL_CALL_TIMEOUT_MS: 30000,  // Retell outbound call creation timeout (30 seconds)
-  PROVISIONING_TIMEOUT_MS: 30000, // Client provisioning steps timeout (30 seconds)
+  PROVISIONING_TIMEOUT_MS: 60000, // Client provisioning steps timeout (60 seconds)
   TELEGRAM_TIMEOUT_MS: 30000,     // Telegram API timeout (30 seconds)
 
   // ===== Job Queue & Processing =====

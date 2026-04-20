@@ -47,6 +47,9 @@ elyvn/
 
 ## Critical Gotchas (read these or waste hours)
 
+### 0. WebSocket Authentication
+WebSocket server (`utils/websocket.js`) requires authentication via the first message. It supports both `api_key` (global or per-tenant) and `token` (JWT Bearer token). Connections without auth are closed after 5s.
+
 ### 1. initializeDatabase is async but NOT awaited
 
 `index.js:37` calls `initializeDatabase(app)` without `await`. This is intentional — the server starts listening immediately while migrations run in background. `mountRoutes()` must use **lazy db getters** (`const getDb = () => app.locals.db`), never capture `app.locals.db` at setup time.
@@ -117,7 +120,7 @@ NODE_ENV=test ANTHROPIC_API_KEY=test-key JWT_SECRET=test-jwt-secret-that-is-at-l
 | `phone_number` | **Unified number** — calls + SMS, single Twilio number with SIP trunk to Retell | ACTIVE |
 | `retell_phone` | Legacy inbound calls field | DEPRECATED (kept for backward compat) |
 | `twilio_phone` | Legacy outbound SMS field | DEPRECATED (kept for backward compat) |
-| `telnyx_phone` | Legacy alternative SMS (migration 020) | DEPRECATED |
+| `telnyx_phone` | Legacy alternative SMS (migration 020) | DEPRECATED (renamed to Twilio (Legacy) in UI) |
 | `transfer_phone` | Call forwarding destination | UNUSED (Phase 2) |
 | `owner_phone` | Business owner's personal phone | ACTIVE |
 

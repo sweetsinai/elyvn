@@ -31,7 +31,7 @@ const navItems = [
 
 const connections = [
   { name: 'Retell', key: 'retell' },
-  { name: 'Telnyx', key: 'telnyx' },
+  { name: 'Twilio', key: 'twilio' },
   { name: 'Cal.com', key: 'calcom' },
   { name: 'MCP', key: 'mcp' },
 ];
@@ -51,7 +51,7 @@ export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => 
             mcp: services.mcp || false,
             db: services.db || false,
             retell: data.env_configured?.RETELL_API_KEY || false,
-            telnyx: data.env_configured?.TELNYX_API_KEY || false,
+            twilio: data.env_configured?.TWILIO_ACCOUNT_SID || false,
             calcom: data.env_configured?.CALCOM_API_KEY || false,
           });
         })
