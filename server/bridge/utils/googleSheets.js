@@ -43,7 +43,8 @@ function getSheetsClient() {
       ],
     });
 
-    _sheets = google.sheets({ version: 'v4', auth: _auth });
+    // Added 10s timeout to prevent hanging on Google API calls
+    _sheets = google.sheets({ version: 'v4', auth: _auth, timeout: 10000 });
     logger.info('[sheets] Google Sheets API initialized');
     return _sheets;
   } catch (err) {
