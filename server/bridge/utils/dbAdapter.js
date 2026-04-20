@@ -24,8 +24,8 @@
  *     - Routes should be gradually migrated to use `db.query()`.
  */
 
-const path = require('path');
 const { logger } = require('./logger');
+const { getDatabasePath } = require('./dbConfig');
 
 // ─── In-memory query result cache ────────────────────────────────────────────
 // Simple Map-based cache with TTL. No external dependency.
@@ -120,7 +120,7 @@ function createDatabase(options = {}) {
 
   // SQLite mode (current production)
   const Database = require('better-sqlite3');
-  const dbPath = options.path || process.env.DATABASE_PATH || path.join(__dirname, '../../mcp/elyvn.db');
+  const dbPath = options.path || getDatabasePath();
   const verbose = options.verbose || (process.env.NODE_ENV === 'development' ? (...args) => logger.debug('[db:verbose]', ...args) : undefined);
 
   const db = new Database(dbPath, { verbose });

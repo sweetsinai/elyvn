@@ -6,6 +6,7 @@
 const { logger } = require('../utils/logger');
 const { captureException } = require('../utils/monitoring');
 const { createDatabase } = require('../utils/dbAdapter');
+const { getDatabasePath } = require('../utils/dbConfig');
 const { migrations } = require('../utils/migrations');
 const { backupDatabase } = require('../utils/backup');
 const { JOB_PROCESSOR_INTERVAL, DATA_RETENTION_DAILY_INTERVAL_MS, AUTO_CLASSIFY_INTERVAL_MS } = require('./timing');
@@ -109,8 +110,7 @@ async function preMigrationBackup(dbPath) {
  */
 async function initializeDatabase(app) {
   // Resolve DB path the same way dbAdapter does so the backup targets the right file
-  const path = require('path');
-  const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '../../../mcp/elyvn.db');
+  const dbPath = getDatabasePath();
   await preMigrationBackup(dbPath);
 
   let db;
