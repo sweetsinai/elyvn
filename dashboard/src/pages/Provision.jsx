@@ -95,6 +95,7 @@ export default function Provision() {
   const [currentStep, setCurrentStep] = useState(0);
   const [failedSteps, setFailedSteps] = useState([]);
   const [stageErrors, setStageErrors] = useState({});
+  const [stageLogs, setStageLogs] = useState({});
 
   const steps = [
     { id: 'creating_agent', name: 'Setting up AI agent' },
@@ -187,11 +188,14 @@ export default function Provision() {
             clearTimeout(timeout);
             resolve();
           } else if (msg.type === 'provisioning_update' && msg.data.businessName === formData.business_name) {
-            const { stage, status: stageStatus, error: stageError } = msg.data;
+            const { stage, status: stageStatus, error: stageError, log } = msg.data;
             const stepIndex = steps.findIndex(s => s.id === stage);
             
             if (stepIndex !== -1) {
               setCurrentStep(stepIndex);
+              if (log) {
+                setStageLogs(prev => ({ ...prev, [stage]: log }));
+              }
               if (stageStatus === 'failed') {
                 setFailedSteps(prev => [...new Set([...prev, stage])]);
                 if (stageError) {
@@ -254,6 +258,7 @@ export default function Provision() {
     setCurrentStep(0);
     setFailedSteps([]);
     setStageErrors({});
+    setStageLogs({});
   };
 
   return (
@@ -875,6 +880,11 @@ export default function Provision() {
                     flex: 1
                   }}>
                     {step.name}
+                    {stageLogs[step.id] && !failedSteps.includes(step.id) && (
+                      <div style={{ fontSize: '11px', marginTop: '2px', color: '#D4AF37', opacity: idx === currentStep ? 1 : 0.7 }}>
+                        {stageLogs[step.id]}
+                      </div>
+                    )}
                     {failedSteps.includes(step.id) && (
                       <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
                         {stageErrors[step.id] || 'Failed'}
