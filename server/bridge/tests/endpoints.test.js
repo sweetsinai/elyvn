@@ -151,7 +151,7 @@ describe('API Endpoints', () => {
       const res = await request(billingApp).get('/billing/plans');
       expect(res.status).toBe(200);
       expect(res.body.plans).toBeDefined();
-      expect(res.body.plans.length).toBe(3);
+      expect(res.body.plans.length).toBe(4);
     });
   });
 

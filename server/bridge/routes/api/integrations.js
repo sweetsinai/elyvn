@@ -148,6 +148,10 @@ router.get('/integrations/:clientId/status', async (req, res, next) => {
         configured: !!process.env.SMTP_HOST || !!process.env.IMAP_USER,
         details: {},
       },
+      mcp: {
+        configured: !!process.env.ANTHROPIC_API_KEY,
+        details: { feature_flag: process.env.ELYVN_MANAGED_AGENTS === 'true' }
+      },
       webhooks: {
         lead: !!client.lead_webhook_url,
         booking: !!client.booking_webhook_url,

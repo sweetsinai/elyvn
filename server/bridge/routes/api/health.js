@@ -34,7 +34,7 @@ router.get('/health/live', (req, res) => {
  */
 router.get('/health/ready', async (req, res) => {
   const db = req.app.locals.db;
-  const checks = { db: false, job_queue: false };
+  const checks = { db: false, job_queue: false, mcp: !!process.env.ANTHROPIC_API_KEY };
   const errors = [];
 
   // DB connectivity

@@ -14,6 +14,7 @@ import {
   Mail,
   Webhook,
   Download,
+  Brain,
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import { getClients, createClient, updateClient, getHealth, getSettings } from '../lib/api';
@@ -181,6 +182,12 @@ export default function Settings() {
       key: 'smtp',
       icon: Mail,
       color: '#fbbf24',
+    },
+    {
+      name: 'MCP',
+      key: 'mcp',
+      icon: Brain,
+      color: '#D4AF37',
     },
   ];
 
@@ -466,6 +473,7 @@ Phone numbers are provisioned via the Provision page. Edit transfer_phone in a c
               twilio: 'TWILIO_ACCOUNT_SID',
               calcom: 'CALCOM_API_KEY',
               smtp: 'ANTHROPIC_API_KEY', // SMTP uses IMAP_USER but fallback to a known key
+              mcp: 'ANTHROPIC_API_KEY',
             };
             const envKey = envMap[intg.key];
             const envConfigured = health?.env_configured || {};
