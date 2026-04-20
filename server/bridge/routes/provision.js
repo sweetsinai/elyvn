@@ -233,7 +233,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
         provisionedNumber = await provisionUnifiedNumber({
           businessName: business_name,
           retellSipUri: `sip:${retellAgentId}@in.retellai.com`,
-          smsWebhookUrl: `${baseUrl}/webhooks/telnyx`,
+          smsWebhookUrl: `${baseUrl}/webhooks/twilio`,
           countryCode: 'US',
           areaCode: area_code || undefined,
         });
@@ -252,6 +252,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     }
 
     const phoneNumber = provisionedNumber?.phoneNumber || process.env.TWILIO_PHONE_NUMBER || null;
+    provisioning_status.phone_number = phoneNumber;
 
     // Step 3: Save client to database
     try {
