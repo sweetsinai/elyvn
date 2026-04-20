@@ -83,6 +83,38 @@ module.exports = {
     sentryEnabled: !!process.env.SENTRY_DSN,
   },
 
+  // Plan Limits & Configuration
+  plans: {
+    trial: {
+      name: 'Trial',
+      price: 0,
+      calls: 50,
+      sms: 100,
+    },
+    growth: {
+      name: 'Growth',
+      price: 199,
+      productId: process.env.DODO_PRODUCT_GROWTH || 'pdt_0NcSVPcrrPE9CjPnCdjJC',
+      calls: 100,
+      sms: 300,
+      trial_days: 14,
+    },
+    pro: {
+      name: 'Pro',
+      price: 349,
+      productId: process.env.DODO_PRODUCT_PRO || 'pdt_0NcSLxjRSsPJST0uTn8kN',
+      calls: 500,
+      sms: 1500,
+    },
+    elite: {
+      name: 'Elite',
+      price: 599,
+      productId: process.env.DODO_PRODUCT_ELITE || 'pdt_0NcSMTlJqIJcQsneYDYsi',
+      calls: -1, // unlimited
+      sms: -1,
+    },
+  },
+
   /**
    * Get the full base URL for the application
    * Used for email tracking and redirects

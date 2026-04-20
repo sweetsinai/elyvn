@@ -4,6 +4,7 @@ const telegram = require('../../utils/telegram');
 const { isValidURL } = require('../../utils/validate');
 const { logger } = require('../../utils/logger');
 const { isAsync } = require('../../utils/dbAdapter');
+const kbCache = require('../../utils/kbCache');
 
 // HTML-escape user/stored data before sending via Telegram HTML parse mode
 function esc(str) {
@@ -712,6 +713,17 @@ async function handleCommand(db, message) {
           [client.id]
         );
 
+        // Load specific knowledge base from MCP folder
+        let kbContent = '';
+        try {
+          const kbData = await kbCache.loadKnowledgeBase(client.id);
+          if (kbData) {
+            kbContent = `KNOWLEDGE BASE:\n${JSON.stringify(kbData, null, 2)}`;
+          }
+        } catch (kbErr) {
+          logger.warn(`[telegram] Failed to load KB for ${client.id}:`, kbErr.message);
+        }
+
         const context = `BUSINESS: ${esc(client.business_name)}
 TODAY: ${callsToday.c || 0} calls (${callsToday.booked || 0} booked)
 THIS WEEK: ${callsWeek.c || 0} calls (${callsWeek.booked || 0} booked), avg score ${(callsWeek.avg_score || 0).toFixed(1)}/10
@@ -719,7 +731,8 @@ MESSAGES THIS WEEK: ${messagesWeek.c || 0}
 BOOKINGS THIS WEEK: ${bookingsWeek.c || 0}
 ACTIVE LEADS: ${(leadsActive || []).map(l => `${l.stage}: ${l.c}`).join(', ') || 'none'}
 RECENT CALLS:\n${(recentCalls || []).map(c => `  ${c.created_at?.split('T')[0]} — ${c.caller_name || c.caller_phone || '?'} — ${c.outcome} (score: ${c.score || '?'}) ${c.summary ? '— ' + c.summary.substring(0, 80) : ''}`).join('\n') || '  none'}
-HOT LEADS:\n${(hotLeads || []).map(l => `  ${l.name || l.phone} — ${l.stage} (score: ${l.score})`).join('\n') || '  none'}`;
+HOT LEADS:\n${(hotLeads || []).map(l => `  ${l.name || l.phone} — ${l.stage} (score: ${l.score})`).join('\n') || '  none'}
+${kbContent}`;
 
         const Anthropic = require('@anthropic-ai/sdk');
         const anthropic = new Anthropic();

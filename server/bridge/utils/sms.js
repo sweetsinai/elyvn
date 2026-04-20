@@ -155,8 +155,8 @@ async function sendSMS(to, body, from, db, clientId) {
     try {
       const client = await db.query('SELECT plan, sms_this_month, telegram_chat_id FROM clients WHERE id = ?', [clientId], 'get');
       if (client) {
-        const PLAN_SMS_LIMITS = { trial: 100, growth: 300, pro: 1500, elite: -1 };
-        const limit = PLAN_SMS_LIMITS[client.plan] ?? 100;
+        const config = require('./config');
+        const limit = config.plans[client.plan]?.sms ?? config.plans.trial.sms;
         const used = client.sms_this_month || 0;
         if (limit !== -1 && used >= limit) {
           logger.warn(`[sms] Plan limit reached: client ${clientId} on ${client.plan} plan (${used}/${limit} SMS)`);

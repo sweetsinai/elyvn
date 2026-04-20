@@ -6,7 +6,7 @@
  */
 
 const { logger } = require('../logger');
-const { calcResponsiveness, calcEngagement, calcIntent, calcRecency, calcChannelDiversity } = require('./factors');
+const { calcResponsiveness, calcEngagement, calcIntent, calcRecency, calcChannelDiversity, calcAiScore } = require('./factors');
 const {
   WEIGHTS,
   SCORE_BANDS,
@@ -78,6 +78,7 @@ async function predictLeadScore(db, leadId, clientId) {
     const { intentFactor, qualifiedCalls } = calcIntent(lead, calls, messages);
     const { recencyFactor, lastInteractionTime } = calcRecency(messages, calls);
     const { channelFactor } = calcChannelDiversity(calls, messages);
+    const { aiFactor } = calcAiScore(lead, calls);
 
     // FINAL SCORE CALCULATION
     const finalScore = Math.max(0, Math.min(100, Math.round(
@@ -85,7 +86,8 @@ async function predictLeadScore(db, leadId, clientId) {
       (engagementFactor  * WEIGHTS.engagement) +
       (intentFactor      * WEIGHTS.intent) +
       (recencyFactor     * WEIGHTS.recency) +
-      (channelFactor     * WEIGHTS.channelDiversity)
+      (channelFactor     * WEIGHTS.channelDiversity) +
+      (aiFactor          * WEIGHTS.aiScore)
     )));
 
     // GENERATE INSIGHT
@@ -160,6 +162,7 @@ async function predictLeadScore(db, leadId, clientId) {
         intent: Math.round(intentFactor),
         recency: Math.round(recencyFactor),
         channelDiversity: Math.round(channelFactor),
+        aiScore: Math.round(aiFactor),
       },
       insight,
       recommended_action: recommendedAction,

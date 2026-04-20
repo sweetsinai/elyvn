@@ -86,9 +86,9 @@ describe('billing routes', () => {
     test('returns plans', async () => {
       const res = await request(app).get('/billing/plans');
       expect(res.status).toBe(200);
-      expect(res.body.plans.length).toBe(3);
+      expect(res.body.plans.length).toBe(4);
       const names = res.body.plans.map(p => p.id);
-      expect(names).toEqual(expect.arrayContaining(['growth', 'pro', 'elite']));
+      expect(names).toEqual(expect.arrayContaining(['trial', 'growth', 'pro', 'elite']));
     });
 
     test('elite plan shows Unlimited calls', async () => {

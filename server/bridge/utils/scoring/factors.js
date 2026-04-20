@@ -192,10 +192,31 @@ function calcChannelDiversity(calls, messages) {
   return { channelFactor };
 }
 
+/**
+ * Calculate AI scoring factor (0-100)
+ * Bridges the 1-10 AI scores from calls into the 0-100 model.
+ */
+function calcAiScore(lead, calls) {
+  let aiFactor = 0;
+  const scores = calls.filter(c => c.score > 0).map(c => c.score);
+  
+  if (scores.length > 0) {
+    const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+    // Scale 1-10 to 0-100. 1 -> 10, 10 -> 100.
+    aiFactor = Math.min(100, Math.max(0, avgScore * 10));
+  } else if (lead.score > 0) {
+    // Fallback to lead-level score if no calls have scores
+    aiFactor = Math.min(100, Math.max(0, lead.score * 10));
+  }
+
+  return { aiFactor };
+}
+
 module.exports = {
   calcResponsiveness,
   calcEngagement,
   calcIntent,
   calcRecency,
   calcChannelDiversity,
+  calcAiScore,
 };

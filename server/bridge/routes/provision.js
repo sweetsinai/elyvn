@@ -236,10 +236,13 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
           smsWebhookUrl: `${baseUrl}/webhooks/twilio`,
           countryCode: 'US',
           areaCode: area_code || undefined,
+        }, (log) => {
+          logger.info(`[provision] ${log}`);
+          sendUpdate('buying_number', 'in_progress', { log });
         });
         provisioning_status.phone_number = provisionedNumber.phoneNumber;
         logger.info(`[provision] Dedicated number provisioned: ${provisionedNumber.phoneNumber}`);
-        sendUpdate('buying_number', 'completed');
+        sendUpdate('buying_number', 'completed', { log: 'Phone number provisioned successfully.' });
       } catch (err) {
         provisioning_status.phone_error = err.message;
         logger.warn(`[provision] Phone provisioning failed (non-fatal): ${err.message}`);
