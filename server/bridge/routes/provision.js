@@ -4,6 +4,7 @@ const { randomUUID } = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const { broadcast } = require('../utils/websocket');
 const { getOnboardingLink } = require('../utils/telegram');
 const { logger } = require('../utils/logger');
 const { logDataMutation } = require('../utils/auditLog');
@@ -176,10 +177,21 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
 
     logger.info(`[provision] Starting provisioning for ${business_name} (${clientId})`);
 
+    // Helper to broadcast progress
+    const sendUpdate = (stage, status, extra = {}) => {
+      broadcast('provisioning_update', {
+        businessName: business_name,
+        stage,
+        status,
+        ...extra
+      });
+    };
+
     // Step 1: Create Retell agent (optional, don't fail overall provisioning if this fails)
     let retellAgentId = null;
     let retellLlmId = null;
     try {
+      sendUpdate('creating_agent', 'in_progress');
       logger.info(`[provision] Creating Retell agent for ${business_name}...`);
       
       // Merge top-level fields into knowledge_base for comprehensive prompting
@@ -200,9 +212,11 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
       retellLlmId = retellData.llmId;
       provisioning_status.retell_agent_id = retellAgentId;
       logger.info(`[provision] Successfully created Retell agent: ${retellAgentId} (LLM: ${retellLlmId})`);
+      sendUpdate('creating_agent', 'completed');
     } catch (err) {
       provisioning_status.retell_error = err.message;
       logger.error(`[provision] Retell provisioning failed: ${err.message}`);
+      sendUpdate('creating_agent', 'failed', { error: err.message });
       // Don't return — allow client creation without Retell
     }
 
@@ -210,6 +224,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     let provisionedNumber = null;
     if (retellAgentId && process.env.TWILIO_ACCOUNT_SID) {
       try {
+        sendUpdate('buying_number', 'in_progress');
         const { provisionUnifiedNumber } = require('../utils/twilioProvisioning');
         const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
           ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
@@ -224,17 +239,23 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
         });
         provisioning_status.phone_number = provisionedNumber.phoneNumber;
         logger.info(`[provision] Dedicated number provisioned: ${provisionedNumber.phoneNumber}`);
+        sendUpdate('buying_number', 'completed');
       } catch (err) {
         provisioning_status.phone_error = err.message;
         logger.warn(`[provision] Phone provisioning failed (non-fatal): ${err.message}`);
+        sendUpdate('buying_number', 'failed', { error: err.message });
         // Fall back to shared number
       }
+    } else {
+       // Skip buying number if no retell agent or no sid
+       sendUpdate('buying_number', 'completed', { skipped: true });
     }
 
     const phoneNumber = provisionedNumber?.phoneNumber || process.env.TWILIO_PHONE_NUMBER || null;
 
     // Step 3: Save client to database
     try {
+      sendUpdate('creating_client', 'in_progress');
       await db.query(`
         INSERT INTO clients (
           id, business_name, owner_name, owner_phone, owner_email,
@@ -266,10 +287,12 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
 
       provisioning_status.db_save = true;
       logger.info(`[provision] Successfully saved client to database: ${clientId}`);
+      sendUpdate('creating_client', 'completed');
       try { logDataMutation(db, { action: 'client_created', table: 'clients', recordId: clientId, newValues: { business_name, owner_phone, plan, industry }, ip: req.ip }); } catch (_) {}
     } catch (err) {
       provisioning_status.db_error = err.message;
       logger.error(`[provision] Database save failed: ${err.message}`);
+      sendUpdate('creating_client', 'failed', { error: err.message });
       return res.status(500).json({
         error: 'Failed to save client to database',
         message: process.env.NODE_ENV !== 'production' ? err.message : undefined,
@@ -277,9 +300,10 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
       });
     }
 
-    // Step 3: Save knowledge base JSON
+    // Step 4: Save knowledge base JSON
     if (knowledge_base) {
       try {
+        sendUpdate('syncing_kb', 'in_progress');
         const kbDir = path.join(__dirname, '../../mcp/knowledge_bases');
         await fs.promises.mkdir(kbDir, { recursive: true });
         await fs.promises.writeFile(
@@ -288,22 +312,28 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
         );
         provisioning_status.kb_save = true;
         logger.info(`[provision] Successfully saved knowledge base: ${clientId}.json`);
+        sendUpdate('syncing_kb', 'completed');
       } catch (err) {
         provisioning_status.kb_error = err.message;
         logger.error(`[provision] Knowledge base save failed: ${err.message}`);
+        sendUpdate('syncing_kb', 'failed', { error: err.message });
         // Don't fail the entire provisioning for KB save failures
       }
+    } else {
+      sendUpdate('syncing_kb', 'completed', { skipped: true });
     }
 
     // Retrieve the full client record
     const client = await db.query('SELECT id, business_name, owner_name, owner_email, owner_phone, industry, timezone, plan, retell_agent_id, retell_phone, twilio_phone, phone_number, is_active, created_at FROM clients WHERE id = ?', [clientId], 'get');
 
     // Generate Telegram onboarding link
+    sendUpdate('setting_up_telegram', 'in_progress');
     const telegram_link = getOnboardingLink(clientId);
     provisioning_status.telegram_link = telegram_link;
 
     logger.info(`[provision] Provisioning complete for ${business_name} (${clientId})`);
     logger.info(`[provision] Telegram link: ${telegram_link}`);
+    sendUpdate('setting_up_telegram', 'completed');
 
     // Post-signup: create Google Sheet (non-blocking)
     try {

@@ -93,13 +93,14 @@ export default function Provision() {
   const [provisionData, setProvisionData] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [currentStep, setCurrentStep] = useState(0);
+  const [failedSteps, setFailedSteps] = useState([]);
 
   const steps = [
-    { name: 'Creating client', duration: 2000 },
-    { name: 'Provisioning Telnyx', duration: 3000 },
-    { name: 'Setting up AI agent', duration: 3500 },
-    { name: 'Creating knowledge base', duration: 2500 },
-    { name: 'Setting up Telegram bot', duration: 2000 }
+    { id: 'creating_agent', name: 'Setting up AI agent' },
+    { id: 'buying_number', name: 'Provisioning Telnyx' },
+    { id: 'creating_client', name: 'Creating client record' },
+    { id: 'syncing_kb', name: 'Creating knowledge base' },
+    { id: 'setting_up_telegram', name: 'Setting up Telegram bot' }
   ];
 
   const validateForm = () => {
@@ -144,13 +145,6 @@ export default function Provision() {
     }
   };
 
-  const simulateLoading = async () => {
-    for (let i = 0; i < steps.length; i++) {
-      setCurrentStep(i);
-      await new Promise(resolve => setTimeout(resolve, steps[i].duration));
-    }
-  };
-
   const handleProvision = async (e) => {
     e.preventDefault();
 
@@ -158,9 +152,44 @@ export default function Provision() {
 
     setStatus('loading');
     setCurrentStep(0);
+    setFailedSteps([]);
+
+    let socket = null;
 
     try {
-      await simulateLoading();
+      // Setup WebSocket for real-time progress tracking
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      socket = new WebSocket(wsUrl);
+
+      socket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        
+        if (msg.type === 'auth_required') {
+          const apiKey = sessionStorage.getItem('elyvn_api_key');
+          socket.send(JSON.stringify({ type: 'auth', api_key: apiKey }));
+        }
+        
+        if (msg.type === 'provisioning_update' && msg.data.businessName === formData.business_name) {
+          const { stage, status: stageStatus } = msg.data;
+          const stepIndex = steps.findIndex(s => s.id === stage);
+          
+          if (stepIndex !== -1) {
+            setCurrentStep(stepIndex);
+            if (stageStatus === 'failed') {
+              setFailedSteps(prev => [...new Set([...prev, stage])]);
+            } else if (stageStatus === 'completed') {
+              // Move to next step visual if completed
+              if (stepIndex < steps.length - 1) {
+                setCurrentStep(stepIndex + 1);
+              } else {
+                // Last step completed
+                setCurrentStep(steps.length);
+              }
+            }
+          }
+        }
+      };
 
       const response = await provisionClient(formData);
 
@@ -173,6 +202,11 @@ export default function Provision() {
     } catch (error) {
       setErrorMessage(error.message || 'An error occurred during provisioning');
       setStatus('error');
+    } finally {
+      if (socket) {
+        // Small delay to allow any pending WS messages to process
+        setTimeout(() => socket.close(), 1000);
+      }
     }
   };
 
@@ -790,15 +824,17 @@ export default function Provision() {
                     width: '24px',
                     height: '24px',
                     borderRadius: '50%',
-                    background: idx < currentStep ? '#D4AF37' : idx === currentStep ? 'rgba(201, 168, 76, 0.2)' : 'rgba(255,255,255,0.1)',
+                    background: failedSteps.includes(step.id) ? '#ff6b6b' : idx < currentStep ? '#D4AF37' : idx === currentStep ? 'rgba(201, 168, 76, 0.2)' : 'rgba(255,255,255,0.1)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: '12px',
                     fontWeight: '600',
-                    color: idx < currentStep ? '#0a0a0a' : '#666'
+                    color: failedSteps.includes(step.id) || idx < currentStep ? '#0a0a0a' : '#666'
                   }}>
-                    {idx < currentStep ? (
+                    {failedSteps.includes(step.id) ? (
+                      <AlertCircle size={14} />
+                    ) : idx < currentStep ? (
                       <Check size={14} />
                     ) : (
                       idx + 1
@@ -806,10 +842,11 @@ export default function Provision() {
                   </div>
                   <span style={{
                     fontSize: '13px',
-                    color: idx <= currentStep ? '#fff' : '#666',
+                    color: failedSteps.includes(step.id) ? '#ff6b6b' : idx <= currentStep ? '#fff' : '#666',
                     fontWeight: idx === currentStep ? '600' : '400'
                   }}>
                     {step.name}
+                    {failedSteps.includes(step.id) && <span style={{ fontSize: '11px', marginLeft: '8px' }}>(Failed)</span>}
                   </span>
                 </div>
               ))}
@@ -875,7 +912,13 @@ export default function Provision() {
               </h3>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                {Object.entries(provisionData.provisioned).map(([service, status]) => (
+                {Object.entries({
+                  'AI Agent': provisionData.provisioning_status.retell_agent_id,
+                  'Dedicated Number': provisionData.provisioning_status.phone_number,
+                  'Database Record': provisionData.provisioning_status.db_save,
+                  'Knowledge Base': provisionData.provisioning_status.kb_save,
+                  'Telegram Bot': provisionData.provisioning_status.telegram_link
+                }).map(([service, status]) => (
                   <div
                     key={service}
                     style={{
@@ -904,10 +947,9 @@ export default function Provision() {
                     )}
                     <span style={{
                       fontSize: '13px',
-                      color: '#fff',
-                      textTransform: 'capitalize'
+                      color: '#fff'
                     }}>
-                      {service.replace(/_/g, ' ')}
+                      {service}
                     </span>
                   </div>
                 ))}
