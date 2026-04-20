@@ -1,9 +1,10 @@
 const { CircuitBreaker } = require('./resilience');
 const { AppError } = require('./AppError');
 
+const { TELEGRAM_TIMEOUT_MS } = require('../config/timing');
+
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
-const TELEGRAM_TIMEOUT_MS = 10000; // 10s timeout for all Telegram API calls
 
 // Circuit breaker for Telegram Bot API — opens after 5 failures in 60s, cools down 30s.
 // Fallback: silently swallow — Telegram notifications are non-critical, never block the main flow.
@@ -89,14 +90,14 @@ function formatCallNotification(call, client) {
     : call.outcome === 'missed' ? '&#10060;'
     : call.outcome === 'voicemail' ? '&#128233;'
     : '&#128222;';
-  const scoreEmoji = (call.score || 0) >= 7 ? '&#128293;' : '&#129398;';
+  const scoreEmoji = (call.score || 0) >= 70 ? '&#128293;' : '&#129398;';
   const duration = call.duration ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s` : 'N/A';
   const phone = call.caller_phone || call.phone || '';
 
   const text = `${outcomeEmoji} <b>Call ${esc(call.outcome)}</b>\n\n`
     + `<b>Caller:</b> ${esc(call.caller_name || phone)}\n`
     + `<b>Duration:</b> ${duration}\n`
-    + `<b>Score:</b> ${call.score || 0}/10 ${scoreEmoji}\n\n`
+    + `<b>Score:</b> ${call.score || 0}/100 ${scoreEmoji}\n\n`
     + `<b>Summary:</b> ${esc(call.summary || 'No summary')}`;
   const buttons = [];
   buttons.push([

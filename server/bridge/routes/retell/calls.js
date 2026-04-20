@@ -23,6 +23,7 @@ const {
   handleTransfer,
 } = require('./followups');
 
+const { RETELL_CALL_TIMEOUT_MS } = require('../../config/timing');
 const AGENT_CONFIG_TTL = 300 * 1000; // 300 seconds — agent configs rarely change
 
 /**
@@ -96,7 +97,7 @@ async function handleCallStarted(db, call, correlationId) {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${RETELL_API_KEY}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ end_call_reason: 'plan_limit_exceeded' }),
-                signal: AbortSignal.timeout(5000),
+                signal: AbortSignal.timeout(RETELL_CALL_TIMEOUT_MS || 30000),
               }).catch(e => logger.warn('[retell] End call on limit failed:', e.message));
             }
           } catch (_) {}

@@ -14,6 +14,7 @@ const { AppError } = require('../utils/AppError');
 const { validateBody } = require('../middleware/validateRequest');
 const { z } = require('zod');
 const config = require('../utils/config');
+const { API_TIMEOUT_MS } = require('../config/timing');
 
 // ─── Plan configuration ─────────────────────────────────────────────────────
 
@@ -36,7 +37,7 @@ async function dodoRequest(method, path, body) {
       'Authorization': `Bearer ${DODO_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(API_TIMEOUT_MS || 30000),
   };
   if (body) opts.body = JSON.stringify(body);
 
@@ -75,14 +76,17 @@ function requireAuth(req, res, next) {
 
 // GET /billing/plans — list available plans
 router.get('/plans', (req, res) => {
-  const plans = Object.entries(PLANS).map(([key, plan]) => ({
-    id: key,
-    name: plan.name,
-    price: plan.price,
-    calls: plan.calls === -1 ? 'Unlimited' : plan.calls,
-    sms: plan.sms === -1 ? 'Unlimited' : plan.sms,
-    emails: plan.emails === -1 ? 'Unlimited' : plan.emails,
-  }));
+  const mainPlanIds = ['trial', 'growth', 'pro', 'elite'];
+  const plans = Object.entries(PLANS)
+    .filter(([key]) => mainPlanIds.includes(key))
+    .map(([key, plan]) => ({
+      id: key,
+      name: plan.name,
+      price: plan.price,
+      calls: plan.calls === -1 ? 'Unlimited' : plan.calls,
+      sms: plan.sms === -1 ? 'Unlimited' : plan.sms,
+      emails: plan.emails === -1 ? 'Unlimited' : plan.emails,
+    }));
   res.json({ plans });
 });
 

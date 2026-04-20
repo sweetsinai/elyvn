@@ -7,9 +7,11 @@ module.exports = {
   // ===== API & Network Timeouts =====
   // External service request timeouts (Retell, Anthropic, etc.)
   ANTHROPIC_TIMEOUT: process.env.ANTHROPIC_TIMEOUT ? parseInt(process.env.ANTHROPIC_TIMEOUT) : 45000, // Anthropic API call timeout (45 seconds)
-  API_TIMEOUT_MS: 5000,           // Generic API call timeout (5 seconds)
-  FETCH_TIMEOUT: process.env.FETCH_TIMEOUT ? parseInt(process.env.FETCH_TIMEOUT) : 5000,  // Generic fetch timeout for scraping (5 seconds)
-  RETELL_CALL_TIMEOUT_MS: 15000,  // Retell outbound call creation timeout (15 seconds)
+  API_TIMEOUT_MS: 30000,          // Generic API call timeout (30 seconds)
+  FETCH_TIMEOUT: process.env.FETCH_TIMEOUT ? parseInt(process.env.FETCH_TIMEOUT) : 30000,  // Generic fetch timeout (30 seconds)
+  RETELL_CALL_TIMEOUT_MS: 30000,  // Retell outbound call creation timeout (30 seconds)
+  PROVISIONING_TIMEOUT_MS: 30000, // Client provisioning steps timeout (30 seconds)
+  TELEGRAM_TIMEOUT_MS: 30000,     // Telegram API timeout (30 seconds)
 
   // ===== Job Queue & Processing =====
   JOB_HANDLER_TIMEOUT: 30000,      // Max execution time for individual job handlers (30 seconds)

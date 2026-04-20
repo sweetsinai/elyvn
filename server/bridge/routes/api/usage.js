@@ -15,17 +15,12 @@ const { UsageRecordSchema, OnboardingStepSchema, PlanUpgradeSchema } = require('
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
 
+const config = require('../../utils/config');
+
+const { API_TIMEOUT_MS } = require('../../config/timing');
+
 // Plan limits
-const PLAN_LIMITS = {
-  trial:   { calls: 50,   sms: 100,  emails: 50  },
-  solo:    { calls: 100,  sms: 300,  emails: 100 },
-  starter: { calls: 500,  sms: 1000, emails: 200 },
-  pro:     { calls: 1500, sms: 3000, emails: 500 },
-  premium: { calls: -1,   sms: -1,   emails: -1  }, // unlimited
-  // Legacy plan names (backward compat for existing clients)
-  growth:  { calls: 1500, sms: 3000, emails: 500 },
-  scale:   { calls: -1,   sms: -1,   emails: -1  },
-};
+const PLAN_LIMITS = config.plans;
 
 // GET /usage/:clientId — Current month usage + limits + overage
 router.get('/usage/:clientId', async (req, res, next) => {
@@ -222,7 +217,7 @@ router.post('/plan/:clientId/upgrade', validateBody(PlanUpgradeSchema), async (r
             'Authorization': `Bearer ${process.env.DODO_API_KEY}`,
             'Content-Type': 'application/json',
           },
-          signal: AbortSignal.timeout(15000),
+          signal: AbortSignal.timeout(API_TIMEOUT_MS || 30000),
           body: JSON.stringify({
             product_cart: [{ product_id: productIds[planId], quantity: 1 }],
             customer: { email: client.owner_email, name: client.business_name || 'ELYVN Customer' },

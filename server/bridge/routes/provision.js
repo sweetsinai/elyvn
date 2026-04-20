@@ -16,6 +16,8 @@ const { generateRetellPrompt } = require('../utils/retellSync');
 // NOTE: The 'plan' column is handled by migration 022_auth_and_billing.
 // Removed rogue DB connection that opened a second database handle at module load.
 
+const { PROVISIONING_TIMEOUT_MS } = require('../config/timing');
+
 /**
  * Make an HTTPS request and return {status, body, headers}
  */
@@ -35,10 +37,10 @@ function httpsRequest(options, data = null) {
       });
     });
   
-    // Add 10s timeout to avoid hanging on network issues
-    req.setTimeout(10000, () => {
+    // Add timeout to avoid hanging on network issues
+    req.setTimeout(PROVISIONING_TIMEOUT_MS || 30000, () => {
       req.destroy();
-      reject(new Error('Retell API request timed out (10s)'));
+      reject(new Error(`Retell API request timed out (${(PROVISIONING_TIMEOUT_MS || 30000) / 1000}s)`));
     });
 
     req.on('error', reject);
@@ -343,14 +345,25 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     try {
       const { createClientSheet, isConfigured } = require('../utils/googleSheets');
       if (isConfigured() && owner_email) {
+        sendUpdate('creating_sheet', 'in_progress');
         createClientSheet(business_name, owner_email).then(async (sheet) => {
           if (sheet) {
             await db.query("UPDATE clients SET google_sheet_id = ?, updated_at = ? WHERE id = ?",
               [sheet.spreadsheetId, new Date().toISOString(), clientId], 'run');
+            sendUpdate('creating_sheet', 'completed');
+          } else {
+            sendUpdate('creating_sheet', 'failed', { error: 'Sheet creation returned null' });
           }
-        }).catch(() => {});
+        }).catch((err) => {
+          logger.warn(`[provision] Google Sheet creation failed: ${err.message}`);
+          sendUpdate('creating_sheet', 'failed', { error: err.message });
+        });
+      } else {
+        sendUpdate('creating_sheet', 'completed', { skipped: true });
       }
-    } catch (_) {}
+    } catch (_) {
+      sendUpdate('creating_sheet', 'completed', { skipped: true });
+    }
 
     return res.status(201).json({
       client,

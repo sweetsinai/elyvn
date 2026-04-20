@@ -121,7 +121,7 @@ async function executeOne(db, action, lead, client) {
 
     case 'update_lead_score': {
       if (!lead?.id) return { updated: false };
-      const score = Math.max(0, Math.min(10, Number(action.score) || 0));
+      const score = Math.max(0, Math.min(100, Number(action.score) || 0));
       await db.query(
         `UPDATE leads SET score = ?, updated_at = ? WHERE id = ?`,
         [score, new Date().toISOString(), lead.id], 'run'
@@ -185,7 +185,7 @@ async function executeOne(db, action, lead, client) {
 
             // Update lead stage
             if (lead?.id) {
-              await db.query("UPDATE leads SET stage = 'booked', score = MAX(score, 9), updated_at = ? WHERE id = ?", [now, lead.id], 'run');
+              await db.query("UPDATE leads SET stage = 'booked', score = MAX(score, 90), updated_at = ? WHERE id = ?", [now, lead.id], 'run');
             }
 
             // Cancel pending follow-ups

@@ -14,6 +14,8 @@ const { AppError } = require('../../utils/AppError');
 const { logger } = require('../../utils/logger');
 const config = require('../../utils/config');
 
+const { API_TIMEOUT_MS } = require('../../config/timing');
+
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
 const RETELL_BASE = 'https://api.retellai.com/v2';
 
@@ -34,7 +36,7 @@ const anthropic = new Anthropic();
 // Circuit breaker for Retell REST API
 const retellBreaker = new CircuitBreaker(
   async (url, opts) => {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(10000), ...opts });
+    const resp = await fetch(url, { signal: AbortSignal.timeout(API_TIMEOUT_MS || 30000), ...opts });
     if (!resp.ok) throw new AppError('UPSTREAM_ERROR', `Retell API ${resp.status}`, 502);
     return resp;
   },
@@ -64,7 +66,7 @@ async function fetchCallTranscript(callId) {
   try {
     const retellResp = await retellBreaker.call(`${RETELL_BASE}/get-call/${callId}`, {
       headers: addTraceHeaders({ 'Authorization': `Bearer ${RETELL_API_KEY}` }),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS || 30000),
     });
     if (retellResp && retellResp.fallback) {
       logger.warn(`[retell] Retell circuit breaker fallback for ${callId}`);
@@ -117,21 +119,21 @@ async function scoreCall(transcriptText, callAnalysis) {
     const scoreResp = await anthropicBreaker.call({
       model: config.ai.model,
       max_tokens: 10,
-      system: 'You are a call quality scorer. Output ONLY a single integer between 1 and 10. No other text.',
-      messages: [{ role: 'user', content: `Score this lead 1-10 based on their interest, urgency, and qualification from this call ${hasTranscript ? 'transcript' : 'summary'}. Reply with ONLY a single number:\n\n${sanitizeTranscript(scoringText)}` }]
-    });
-    if (scoreResp.fallback) {
+      system: 'You are a call quality scorer. Output ONLY a single integer between 1 and 100. No other text.',
+      messages: [{ role: 'user', content: `Score this lead 1-100 based on their interest, urgency, and qualification from this call ${hasTranscript ? 'transcript' : 'summary'}. Reply with ONLY a single number:\n\n${sanitizeTranscript(scoringText)}` }]
+      });
+      if (scoreResp.fallback) {
       logger.warn('[retell] Anthropic circuit breaker fallback for lead scoring');
-      return 5;
-    }
-    const response = scoreResp.content[0]?.text?.trim() ?? '';
-    const match = response.match(/\b([1-9]|10)\b/);
-    const score = match ? parseInt(match[1], 10) : 5;
-    logger.debug('[retell] prompt_version=%s score=%d', SCORE_PROMPT_VERSION, score);
+      return 50;
+      }
+      const response = scoreResp.content[0]?.text?.trim() ?? '';
+      const match = response.match(/\b([1-9][0-9]?|100)\b/);
+      const score = match ? parseInt(match[1], 10) : 50;
+
     return score;
   } catch (err) {
     logger.error('[retell] Lead scoring failed:', err.message);
-    return 5;
+    return 50;
   }
 }
 
@@ -141,7 +143,7 @@ async function generateCallSummaryAndScore(transcriptText, callAnalysis, duratio
   const scoringText = hasTranscript ? transcriptText : analysisSummary;
 
   if (duration <= 15 && !hasTranscript && !analysisSummary) {
-    return { summary: 'Call too short for summary', score: 5 };
+    return { summary: 'Call too short for summary', score: 50 };
   }
 
   if (scoringText.length >= 10) {
@@ -150,7 +152,7 @@ async function generateCallSummaryAndScore(transcriptText, callAnalysis, duratio
     return { summary, score };
   }
 
-  return { summary: analysisSummary || 'Summary unavailable', score: 5 };
+  return { summary: analysisSummary || 'Summary unavailable', score: 50 };
 }
 
 function determineOutcome(callData, call, callAnalysis, customAnalysis, duration, bookingId) {

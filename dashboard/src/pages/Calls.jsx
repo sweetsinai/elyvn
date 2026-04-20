@@ -155,15 +155,17 @@ export default function Calls() {
   };
 
   const getScoreBarColor = (score) => {
-    if (score >= 8) return '#4ade80';
-    if (score >= 5) return '#EAB308';
+    const s = score <= 10 ? score * 10 : score;
+    if (s >= 80) return '#4ade80';
+    if (s >= 50) return '#EAB308';
     return '#EF4444';
   };
 
   const getSentiment = (call) => {
     if (call.sentiment) return call.sentiment;
-    if (call.score >= 8) return 'Positive';
-    if (call.score >= 5) return 'Neutral';
+    const s = (call.score != null) ? (call.score <= 10 ? call.score * 10 : call.score) : 0;
+    if (s >= 80) return 'Positive';
+    if (s >= 50) return 'Neutral';
     return 'Negative';
   };
 
@@ -220,11 +222,11 @@ export default function Calls() {
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
               <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>Avg Score</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: '#F5F5F0' }}>{stats.avgScore}/10</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: '#F5F5F0' }}>{stats.avgScore <= 10 ? (stats.avgScore * 10).toFixed(0) : stats.avgScore}/100</div>
             </div>
             <TrendingUp size={24} style={{ color: '#D4AF37', opacity: 0.7 }} />
           </div>
-        </div>
+
       </div>
 
       {/* Active Calls Banner */}
@@ -560,7 +562,7 @@ export default function Calls() {
                           }} />
                         </div>
                         <span style={{ fontSize: 12, fontWeight: 600, color: scoreColor }}>
-                          {(call.score || 0).toFixed(1)}
+                          {call.score <= 10 ? (call.score * 10).toFixed(0) : call.score.toFixed(0)}
                         </span>
                       </div>
                     </td>
@@ -715,7 +717,7 @@ export default function Calls() {
                   <div>
                     <div style={{ fontSize: 12, color: '#444', marginBottom: 4 }}>Score</div>
                     <div style={{ fontSize: 14, color: '#F5F5F0', fontWeight: 600 }}>
-                      {(selectedCall.score || 0).toFixed(1)} / 10
+                      {selectedCall.score <= 10 ? (selectedCall.score * 10).toFixed(0) : selectedCall.score.toFixed(0)} / 100
                     </div>
                   </div>
                   <div>

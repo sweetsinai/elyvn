@@ -17,6 +17,8 @@ const { logger } = require('./logger');
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 
+const { PROVISIONING_TIMEOUT_MS } = require('../config/timing');
+
 function getAuth() {
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
     throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required');
@@ -38,10 +40,10 @@ function httpsRequest(options, data = null) {
       });
     });
     
-    // Add 10s timeout to avoid hanging on network issues
-    req.setTimeout(10000, () => {
+    // Add timeout to avoid hanging on network issues
+    req.setTimeout(PROVISIONING_TIMEOUT_MS || 30000, () => {
       req.destroy();
-      reject(new Error('Twilio API request timed out (10s)'));
+      reject(new Error(`Twilio API request timed out (${(PROVISIONING_TIMEOUT_MS || 30000) / 1000}s)`));
     });
 
     req.on('error', reject);

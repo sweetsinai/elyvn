@@ -2,12 +2,13 @@ import { Phone, MessageSquare } from 'lucide-react';
 import { formatPhone, timeAgo } from '../lib/utils';
 
 function scoreColor(score) {
-  if (score >= 8) return '#4ade80';
-  if (score >= 5) return '#fbbf24';
+  if (score >= 80) return '#4ade80';
+  if (score >= 50) return '#fbbf24';
   return '#f87171';
 }
 
 export default function LeadCard({ lead, onDragStart, onClick }) {
+  const displayScore = lead.score > 10 ? lead.score : lead.score * 10;
   return (
     <div
       draggable
@@ -19,7 +20,7 @@ export default function LeadCard({ lead, onDragStart, onClick }) {
       className="card"
       role="button"
       tabIndex={0}
-      aria-label={`Lead: ${lead.name || lead.phone}, score ${lead.score || 0}/10. Drag to move to another stage or click to view details.`}
+      aria-label={`Lead: ${lead.name || lead.phone}, score ${displayScore}/100. Drag to move to another stage or click to view details.`}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -47,7 +48,7 @@ export default function LeadCard({ lead, onDragStart, onClick }) {
           width: 8,
           height: 8,
           borderRadius: '50%',
-          background: scoreColor(lead.score || 0),
+          background: scoreColor(displayScore),
           flexShrink: 0,
         }} />
 
