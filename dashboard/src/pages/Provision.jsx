@@ -97,7 +97,7 @@ export default function Provision() {
 
   const steps = [
     { id: 'creating_agent', name: 'Setting up AI agent' },
-    { id: 'buying_number', name: 'Provisioning Telnyx' },
+    { id: 'buying_number', name: 'Provisioning Phone Number' },
     { id: 'creating_client', name: 'Creating client record' },
     { id: 'syncing_kb', name: 'Creating knowledge base' },
     { id: 'setting_up_telegram', name: 'Setting up Telegram bot' }
@@ -162,34 +162,49 @@ export default function Provision() {
       const wsUrl = `${protocol}//${window.location.host}/ws`;
       socket = new WebSocket(wsUrl);
 
-      socket.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        
-        if (msg.type === 'auth_required') {
-          const apiKey = sessionStorage.getItem('elyvn_api_key');
-          socket.send(JSON.stringify({ type: 'auth', api_key: apiKey }));
-        }
-        
-        if (msg.type === 'provisioning_update' && msg.data.businessName === formData.business_name) {
-          const { stage, status: stageStatus } = msg.data;
-          const stepIndex = steps.findIndex(s => s.id === stage);
+      // Wait for WebSocket authentication before proceeding with provisioning
+      // to ensure we don't miss the first progress updates
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          socket.close();
+          reject(new Error('WebSocket connection timed out'));
+        }, 10000);
+
+        socket.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
           
-          if (stepIndex !== -1) {
-            setCurrentStep(stepIndex);
-            if (stageStatus === 'failed') {
-              setFailedSteps(prev => [...new Set([...prev, stage])]);
-            } else if (stageStatus === 'completed') {
-              // Move to next step visual if completed
-              if (stepIndex < steps.length - 1) {
-                setCurrentStep(stepIndex + 1);
-              } else {
-                // Last step completed
-                setCurrentStep(steps.length);
+          if (msg.type === 'auth_required') {
+            const apiKey = sessionStorage.getItem('elyvn_api_key');
+            socket.send(JSON.stringify({ type: 'auth', api_key: apiKey }));
+          } else if (msg.type === 'authenticated') {
+            clearTimeout(timeout);
+            resolve();
+          } else if (msg.type === 'provisioning_update' && msg.data.businessName === formData.business_name) {
+            const { stage, status: stageStatus } = msg.data;
+            const stepIndex = steps.findIndex(s => s.id === stage);
+            
+            if (stepIndex !== -1) {
+              setCurrentStep(stepIndex);
+              if (stageStatus === 'failed') {
+                setFailedSteps(prev => [...new Set([...prev, stage])]);
+              } else if (stageStatus === 'completed') {
+                // Move to next step visual if completed
+                if (stepIndex < steps.length - 1) {
+                  setCurrentStep(stepIndex + 1);
+                } else {
+                  // Last step completed
+                  setCurrentStep(steps.length);
+                }
               }
             }
           }
-        }
-      };
+        };
+
+        socket.onerror = (err) => {
+          clearTimeout(timeout);
+          reject(new Error('WebSocket connection failed'));
+        };
+      });
 
       const response = await provisionClient(formData);
 
