@@ -232,12 +232,14 @@ async function associateNumberWithTrunk(trunkSid, phoneNumberSid) {
  * @param {string} opts.smsWebhookUrl - Inbound SMS webhook URL
  * @param {string} [opts.countryCode='US'] - Country for number search
  * @param {string} [opts.areaCode] - Preferred area code
+ * @param {function} [onProgress] - Callback for progress updates
  * @returns {Promise<{phoneNumber, phoneNumberSid, trunkSid}>}
  */
-async function provisionUnifiedNumber(opts) {
+async function provisionUnifiedNumber(opts, onProgress = () => {}) {
   const { businessName, retellSipUri, smsWebhookUrl, countryCode = 'US', areaCode } = opts;
 
   // 1. Search for available numbers
+  onProgress('Searching for available phone numbers...');
   const available = await searchAvailableNumbers(countryCode, {
     areaCode,
     smsEnabled: true,
@@ -249,19 +251,29 @@ async function provisionUnifiedNumber(opts) {
     throw new Error(`No available numbers found for ${countryCode}${areaCode ? ` area code ${areaCode}` : ''}`);
   }
 
+  const phone = available[0].phoneNumber;
+  onProgress(`Found available number: ${phone}`);
+
   // 2. Purchase the number with SMS webhook configured
-  const purchased = await purchaseNumber(available[0].phoneNumber, smsWebhookUrl);
+  onProgress(`Purchasing number ${phone}...`);
+  const purchased = await purchaseNumber(phone, smsWebhookUrl);
+  onProgress(`Successfully purchased number (SID: ${purchased.sid})`);
 
   // 3. Create SIP trunk
+  onProgress(`Creating SIP trunk for ${businessName}...`);
   const trunk = await createSIPTrunk(`ELYVN - ${businessName}`);
+  onProgress(`Successfully created SIP trunk (SID: ${trunk.sid})`);
 
   // 4. Point trunk at Retell's SIP endpoint
+  onProgress(`Configuring SIP origination URI to ${retellSipUri}...`);
   await addOriginationURI(trunk.sid, retellSipUri);
 
   // 5. Associate number with trunk (routes voice calls through SIP → Retell)
+  onProgress('Associating phone number with SIP trunk...');
   await associateNumberWithTrunk(trunk.sid, purchased.sid);
 
   logger.info(`[twilio-provision] Unified number provisioned: ${purchased.phoneNumber} → SIP trunk ${trunk.sid} → ${retellSipUri}`);
+  onProgress('Provisioning complete.');
 
   return {
     phoneNumber: purchased.phoneNumber,

@@ -234,14 +234,13 @@ const CLIENT_COMMANDS = [
 // Same menu for all plans — no outreach/scrape/brain features
 const PLAN_COMMANDS = {
   trial: CLIENT_COMMANDS,
-  solo: CLIENT_COMMANDS,
-  starter: CLIENT_COMMANDS,
+  growth: CLIENT_COMMANDS,
   pro: CLIENT_COMMANDS,
-  premium: CLIENT_COMMANDS,
+  elite: CLIENT_COMMANDS,
 };
 
 async function setClientCommands(chatId, plan) {
-  const commands = PLAN_COMMANDS[plan] || PLAN_COMMANDS.starter;
+  const commands = PLAN_COMMANDS[plan] || PLAN_COMMANDS.trial;
   try {
     const res = await telegramBreaker.call(`${BASE_URL}/setMyCommands`, {
       method: 'POST',

@@ -13,33 +13,11 @@ const { logDataMutation } = require('../utils/auditLog');
 const { AppError } = require('../utils/AppError');
 const { validateBody } = require('../middleware/validateRequest');
 const { z } = require('zod');
+const config = require('../utils/config');
 
 // ─── Plan configuration ─────────────────────────────────────────────────────
 
-const PLANS = {
-  growth: {
-    name: 'Growth',
-    price: 199,
-    productId: process.env.DODO_PRODUCT_GROWTH || 'pdt_0NcSVPcrrPE9CjPnCdjJC',
-    calls: 100,
-    sms: 300,
-    trial_days: 14,
-  },
-  pro: {
-    name: 'Pro',
-    price: 349,
-    productId: process.env.DODO_PRODUCT_PRO || 'pdt_0NcSLxjRSsPJST0uTn8kN',
-    calls: 500,
-    sms: 1500,
-  },
-  elite: {
-    name: 'Elite',
-    price: 599,
-    productId: process.env.DODO_PRODUCT_ELITE || 'pdt_0NcSMTlJqIJcQsneYDYsi',
-    calls: -1, // unlimited
-    sms: -1,
-  },
-};
+const PLANS = config.plans;
 
 // ─── Dodo API client ────────────────────────────────────────────────────────
 

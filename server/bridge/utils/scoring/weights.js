@@ -11,11 +11,12 @@
  * Score = Σ (factor_value * weight)
  */
 const WEIGHTS = {
-  responsiveness: 0.25,
-  engagement:     0.25,
-  intent:         0.20,
+  responsiveness: 0.20,
+  engagement:     0.20,
+  intent:         0.15,
   recency:        0.15,
-  channelDiversity: 0.15,
+  channelDiversity: 0.10,
+  aiScore:        0.20,
 };
 
 const weightSum = Object.values(WEIGHTS).reduce((a, b) => a + b, 0);
