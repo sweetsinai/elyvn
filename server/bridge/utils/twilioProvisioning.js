@@ -37,6 +37,13 @@ function httpsRequest(options, data = null) {
         }
       });
     });
+    
+    // Add 10s timeout to avoid hanging on network issues
+    req.setTimeout(10000, () => {
+      req.destroy();
+      reject(new Error('Twilio API request timed out (10s)'));
+    });
+
     req.on('error', reject);
     if (data) req.write(typeof data === 'string' ? data : JSON.stringify(data));
     req.end();

@@ -33,6 +33,12 @@ function httpsRequest(options, data = null) {
         }
       });
     });
+  
+    // Add 10s timeout to avoid hanging on network issues
+    req.setTimeout(10000, () => {
+      req.destroy();
+      reject(new Error('Retell API request timed out (10s)'));
+    });
 
     req.on('error', reject);
     if (data) {

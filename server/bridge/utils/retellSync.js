@@ -28,7 +28,8 @@ async function retellRequest(path, method, body = null) {
     options.body = JSON.stringify(body);
   }
 
-  const resp = await fetch(url, options);
+  // Use AbortSignal.timeout (Node 20+) to ensure request doesn't hang
+  const resp = await fetch(url, { ...options, signal: AbortSignal.timeout(15000) });
   const data = await resp.json().catch(() => ({}));
 
   if (!resp.ok) {

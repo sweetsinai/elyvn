@@ -221,12 +221,22 @@ function initializeServer(app, server, routeHandles) {
     const { startProcessor: startWebhookProcessor } = require('../utils/webhookQueue');
     startWebhookProcessor();
 
+    // Start knowledge base file watcher for Retell sync
+    const { initKBWatcher } = require('../utils/kbWatcher');
+    initKBWatcher(db);
+
 
     // Register timers for graceful shutdown
     const { onShutdown } = require('../utils/gracefulShutdown');
     onShutdown(async () => {
       if (routeHandles.rateLimiterInterval) clearInterval(routeHandles.rateLimiterInterval);
       clearInterval(jobProcessorInterval);
+    try {
+      const { stopKBWatcher } = require('../utils/kbWatcher');
+      stopKBWatcher();
+    } catch (err) {
+      logger.error('[shutdown] Error stopping kbWatcher:', err.message);
+    }
     try {
       const { stopProcessor: stopWebhookProcessor } = require('../utils/webhookQueue');
       stopWebhookProcessor();
