@@ -123,6 +123,19 @@ async function initializeDatabase(app) {
 
   app.locals.db = db;
 
+  // Ensure knowledge base directory exists
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const kbDir = path.join(__dirname, '../../mcp/knowledge_bases');
+    if (!fs.existsSync(kbDir)) {
+      fs.mkdirSync(kbDir, { recursive: true });
+      logger.info(`[startup] Created knowledge base directory: ${kbDir}`);
+    }
+  } catch (err) {
+    logger.warn('[startup] Failed to create knowledge base directory:', err.message);
+  }
+
   // Schema validation removed — the validator had incorrect column names
   // that caused production crashes. Runtime SQL errors are caught per-request.
 

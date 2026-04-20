@@ -22,7 +22,7 @@ module.exports = {
   JOB_RETRY_BACKOFF_BASE_MS: 60000, // Base exponential backoff: 2^n * 60 seconds
 
   // ===== SMS =====
-  SMS_MAX_LENGTH: 1600,             // Max SMS length (10 concatenated segments, Telnyx/Twilio compat)
+  SMS_MAX_LENGTH: 1600,             // Max SMS length (10 concatenated segments, Twilio compat)
 
   // ===== Email =====
   EMAIL_DAILY_LIMIT: process.env.EMAIL_DAILY_LIMIT ? parseInt(process.env.EMAIL_DAILY_LIMIT) : 300, // Max outbound emails per day

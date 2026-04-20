@@ -115,7 +115,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
           area_code: '415',
         });
 
@@ -130,7 +130,7 @@ describe('Provision Route', () => {
         .post('/provision')
         .send({
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(422);
@@ -142,7 +142,7 @@ describe('Provision Route', () => {
         .post('/provision')
         .send({
           business_name: 'Test Business',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(422);
@@ -190,7 +190,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(201);
@@ -208,7 +208,7 @@ describe('Provision Route', () => {
           industry: 'technology',
           timezone: 'America/Los_Angeles',
           avg_ticket: 500,
-          plan: 'elite',
+          plan: 'premium',
           telnyx_phone: '+15551234567',
           retell_agent_id: 'agent-123',
           created_at: new Date().toISOString(),
@@ -243,7 +243,7 @@ describe('Provision Route', () => {
           industry: 'technology',
           timezone: 'America/Los_Angeles',
           avg_ticket: 500,
-          plan: 'elite',
+          plan: 'premium',
           area_code: '415',
           knowledge_base: {
             business_name: 'Full Service Business',
@@ -273,7 +273,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(201);
@@ -317,7 +317,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(201);
@@ -358,7 +358,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
           area_code: '415',
         });
 
@@ -402,7 +402,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(201);
@@ -431,7 +431,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
           knowledge_base: {
             business_name: 'Test Business',
             services: ['Service A', 'Service B'],
@@ -462,7 +462,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
           knowledge_base: {
             business_name: 'Test Business',
             services: ['Service A'],
@@ -488,7 +488,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(500);
@@ -503,7 +503,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(500);
@@ -528,7 +528,7 @@ describe('Provision Route', () => {
         .send({
           business_name: "O'Brien & Associates",
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(201);
@@ -550,7 +550,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+1 (415) 555-1234',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(201);
@@ -573,7 +573,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
           avg_ticket: 1000.50,
         });
 
@@ -600,7 +600,7 @@ describe('Provision Route', () => {
         .send({
           business_name: "Test'; DROP TABLE clients; --",
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(201);
@@ -615,7 +615,7 @@ describe('Provision Route', () => {
           business_name: 'Test Business',
           owner_phone: '+14155551234',
           owner_email: "<script>alert('xss')</script>",
-          plan: 'growth',
+          plan: 'starter',
         });
 
       // Zod schema rejects invalid email format before it reaches the handler
@@ -640,7 +640,7 @@ describe('Provision Route', () => {
         .send({
           business_name: 'Test Business',
           owner_phone: '+14155551234',
-          plan: 'growth',
+          plan: 'starter',
         });
 
       expect(response.status).toBe(201);

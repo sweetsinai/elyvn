@@ -193,7 +193,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     let retellAgentId = null;
     let retellLlmId = null;
     try {
-      sendUpdate('creating_agent', 'in_progress');
+      sendUpdate('creating_agent', 'in_progress', { log: 'Creating AI agent and LLM...' });
       logger.info(`[provision] Creating Retell agent for ${business_name}...`);
       
       // Merge top-level fields into knowledge_base for comprehensive prompting
@@ -214,7 +214,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
       retellLlmId = retellData.llmId;
       provisioning_status.retell_agent_id = retellAgentId;
       logger.info(`[provision] Successfully created Retell agent: ${retellAgentId} (LLM: ${retellLlmId})`);
-      sendUpdate('creating_agent', 'completed');
+      sendUpdate('creating_agent', 'completed', { log: 'AI agent created successfully.' });
     } catch (err) {
       provisioning_status.retell_error = err.message;
       logger.error(`[provision] Retell provisioning failed: ${err.message}`);
@@ -261,7 +261,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
 
     // Step 3: Save client to database
     try {
-      sendUpdate('creating_client', 'in_progress');
+      sendUpdate('creating_client', 'in_progress', { log: 'Saving client record...' });
       await db.query(`
         INSERT INTO clients (
           id, business_name, owner_name, owner_phone, owner_email,
@@ -293,7 +293,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
 
       provisioning_status.db_save = true;
       logger.info(`[provision] Successfully saved client to database: ${clientId}`);
-      sendUpdate('creating_client', 'completed');
+      sendUpdate('creating_client', 'completed', { log: 'Client record saved.' });
       try { logDataMutation(db, { action: 'client_created', table: 'clients', recordId: clientId, newValues: { business_name, owner_phone, plan, industry }, ip: req.ip }); } catch (_) {}
     } catch (err) {
       provisioning_status.db_error = err.message;
@@ -309,7 +309,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     // Step 4: Save knowledge base JSON
     if (knowledge_base) {
       try {
-        sendUpdate('syncing_kb', 'in_progress');
+        sendUpdate('syncing_kb', 'in_progress', { log: 'Generating knowledge base...' });
         const kbDir = path.join(__dirname, '../../mcp/knowledge_bases');
         await fs.promises.mkdir(kbDir, { recursive: true });
         await fs.promises.writeFile(
@@ -318,7 +318,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
         );
         provisioning_status.kb_save = true;
         logger.info(`[provision] Successfully saved knowledge base: ${clientId}.json`);
-        sendUpdate('syncing_kb', 'completed');
+        sendUpdate('syncing_kb', 'completed', { log: 'Knowledge base synchronized.' });
       } catch (err) {
         provisioning_status.kb_error = err.message;
         logger.error(`[provision] Knowledge base save failed: ${err.message}`);
@@ -333,13 +333,13 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     const client = await db.query('SELECT id, business_name, owner_name, owner_email, owner_phone, industry, timezone, plan, retell_agent_id, retell_phone, twilio_phone, phone_number, is_active, created_at FROM clients WHERE id = ?', [clientId], 'get');
 
     // Generate Telegram onboarding link
-    sendUpdate('setting_up_telegram', 'in_progress');
+    sendUpdate('setting_up_telegram', 'in_progress', { log: 'Creating Telegram bot access...' });
     const telegram_link = getOnboardingLink(clientId);
     provisioning_status.telegram_link = telegram_link;
 
     logger.info(`[provision] Provisioning complete for ${business_name} (${clientId})`);
     logger.info(`[provision] Telegram link: ${telegram_link}`);
-    sendUpdate('setting_up_telegram', 'completed');
+    sendUpdate('setting_up_telegram', 'completed', { log: 'Telegram bot access ready.' });
 
     // Post-signup: create Google Sheet (non-blocking)
     try {

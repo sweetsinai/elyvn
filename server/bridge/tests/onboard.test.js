@@ -312,7 +312,7 @@ describe('Onboard Route', () => {
 
       if (res.status === 201) {
         expect(res.body.webhook_urls).toBeDefined();
-        expect(typeof res.body.webhook_urls.telnyx).toBe('string');
+        expect(typeof res.body.webhook_urls.twilio).toBe('string');
         expect(typeof res.body.webhook_urls.telegram).toBe('string');
         expect(typeof res.body.webhook_urls.forms).toBe('string');
         expect(typeof res.body.webhook_urls.retell).toBe('string');
