@@ -337,7 +337,11 @@ router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req,
     }
 
     // Trigger sync to Retell AI (async, don't block response)
-    const KB_RELATED_FIELDS = ['business_name', 'industry', 'retell_agent_id', 'retell_llm_id'];
+    const KB_RELATED_FIELDS = [
+      'business_name', 'industry', 'owner_name', 'business_address', 
+      'website', 'booking_link', 'calcom_booking_link', 'ticket_price',
+      'retell_agent_id', 'retell_llm_id'
+    ];
     const hasKBFieldUpdate = setClauses.some(c => KB_RELATED_FIELDS.includes(c.split(' = ')[0]));
     if (updates.knowledge_base || hasKBFieldUpdate) {
       syncClientToRetell(clientId, db).catch(err => {

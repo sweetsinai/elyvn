@@ -135,6 +135,10 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
       owner_email,
       industry,
       avg_ticket,
+      ticket_price,
+      business_address,
+      website,
+      booking_link,
       plan,
       timezone,
       area_code,
@@ -171,7 +175,21 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     let retellLlmId = null;
     try {
       logger.info(`[provision] Creating Retell agent for ${business_name}...`);
-      const retellData = await createRetellAgent(business_name, knowledge_base, req.body.retell_voice, req.body.retell_language);
+      
+      // Merge top-level fields into knowledge_base for comprehensive prompting
+      const kbForPrompt = {
+        ...(knowledge_base || {}),
+        business_name,
+        industry,
+        owner_name,
+        business_address,
+        website,
+        booking_link,
+        ticket_price,
+        avg_ticket,
+      };
+      
+      const retellData = await createRetellAgent(business_name, kbForPrompt, req.body.retell_voice, req.body.retell_language);
       retellAgentId = retellData.agentId;
       retellLlmId = retellData.llmId;
       provisioning_status.retell_agent_id = retellAgentId;
@@ -215,8 +233,9 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
         INSERT INTO clients (
           id, business_name, owner_name, owner_phone, owner_email,
           retell_agent_id, retell_llm_id, twilio_phone, phone_number, industry, timezone,
-          avg_ticket, plan, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          avg_ticket, ticket_price, business_address, website, booking_link,
+          plan, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         clientId,
         business_name,
@@ -230,6 +249,10 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
         industry || null,
         timezone || 'UTC',
         avg_ticket || 0,
+        ticket_price || null,
+        business_address || null,
+        website || null,
+        booking_link || null,
         plan || 'pro',
         now,
         now
