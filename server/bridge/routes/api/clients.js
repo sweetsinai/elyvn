@@ -16,12 +16,13 @@ const { ClientParamsSchema, ClientCreateSchema } = require('../../utils/schemas/
 const { PaginationSchema } = require('../../utils/schemas/common');
 const { paginated, success, created } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
+const { syncClientToRetell } = require('../../utils/retellSync');
 router.param('clientId', clientIsolationParam);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Safe columns to return — never expose password_hash, verification_token, verification_expires
-const CLIENT_SAFE_COLS = 'id, business_name, owner_name, owner_email, owner_phone, industry, plan, subscription_status, dodo_customer_id, dodo_subscription_id, retell_agent_id, retell_phone, twilio_phone, telnyx_phone, transfer_phone, phone_number, calcom_event_type_id, calcom_booking_link, google_review_link, google_sheet_id, telegram_chat_id, avg_ticket, is_active, notification_mode, whatsapp_phone, lead_webhook_url, booking_webhook_url, call_webhook_url, sms_webhook_url, stage_change_webhook_url, created_at, updated_at';
+const CLIENT_SAFE_COLS = 'id, business_name, owner_name, owner_email, owner_phone, industry, plan, subscription_status, dodo_customer_id, dodo_subscription_id, retell_agent_id, retell_llm_id, retell_phone, twilio_phone, telnyx_phone, transfer_phone, phone_number, calcom_event_type_id, calcom_booking_link, google_review_link, google_sheet_id, telegram_chat_id, avg_ticket, is_active, notification_mode, whatsapp_phone, lead_webhook_url, booking_webhook_url, call_webhook_url, sms_webhook_url, stage_change_webhook_url, created_at, updated_at';
 
 // Whitelist of allowed client fields for updates (prevents SQL injection)
 const ALLOWED_CLIENT_FIELDS = new Set([
@@ -29,7 +30,7 @@ const ALLOWED_CLIENT_FIELDS = new Set([
   'google_review_link', 'ticket_price', 'timezone', 'ai_enabled',
   'booking_link', 'industry', 'auto_followup_enabled',
   'owner_name', 'owner_phone', 'owner_email',
-  'retell_agent_id', 'retell_phone', 'retell_voice', 'retell_language',
+  'retell_agent_id', 'retell_llm_id', 'retell_phone', 'retell_voice', 'retell_language',
   'twilio_phone', 'transfer_phone', 'phone_number',
   'calcom_event_type_id', 'calcom_booking_link', 'telegram_chat_id',
   'avg_ticket',
@@ -333,6 +334,15 @@ router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req,
       } catch (err) {
         logger.error('[api] Failed to save KB:', err.message);
       }
+    }
+
+    // Trigger sync to Retell AI (async, don't block response)
+    const KB_RELATED_FIELDS = ['business_name', 'industry', 'retell_agent_id', 'retell_llm_id'];
+    const hasKBFieldUpdate = setClauses.some(c => KB_RELATED_FIELDS.includes(c.split(' = ')[0]));
+    if (updates.knowledge_base || hasKBFieldUpdate) {
+      syncClientToRetell(clientId, db).catch(err => {
+        logger.error(`[api] Failed to sync to Retell for ${clientId}:`, err.message);
+      });
     }
 
     success(res, client);

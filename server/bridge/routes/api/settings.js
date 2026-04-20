@@ -12,6 +12,7 @@ const { success } = require('../../utils/response');
 const { validateBody } = require('../../middleware/validateRequest');
 const { SettingsUpdateSchema } = require('../../utils/schemas/settings');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
+const { syncClientToRetell } = require('../../utils/retellSync');
 router.param('clientId', clientIsolationParam);
 
 // GET /settings/:clientId — All client settings grouped by category
@@ -143,6 +144,14 @@ router.put('/settings/:clientId', validateBody(SettingsUpdateSchema), async (req
     params.push(clientId);
 
     await db.query(`UPDATE clients SET ${updates.join(', ')} WHERE id = ?`, params, 'run');
+
+    // Trigger sync to Retell AI if prompt-related fields changed
+    const PROMPT_FIELDS = ['business_name', 'industry', 'transfer_phone', 'calcom_booking_link'];
+    if (Object.keys(body).some(key => PROMPT_FIELDS.includes(key))) {
+      syncClientToRetell(clientId, db).catch(err => {
+        logger.error(`[settings] Failed to sync to Retell for ${clientId}:`, err.message);
+      });
+    }
 
     const acceptedValues = {};
     for (const k of Object.keys(body)) { if (ALLOWED.has(k)) acceptedValues[k] = body[k]; }

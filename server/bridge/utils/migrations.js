@@ -1782,4 +1782,21 @@ migrations.push({
   },
 });
 
+// ── 053: Add retell_llm_id ──
+migrations.push({
+  id: '053_add_retell_llm_id',
+  description: 'Add retell_llm_id to clients table to track associated LLM directly',
+  up(db) {
+    const tableInfo = db.pragma('table_info(clients)');
+    const hasCol = tableInfo.some(c => c.name === 'retell_llm_id');
+    if (!hasCol) {
+      db.exec('ALTER TABLE clients ADD COLUMN retell_llm_id TEXT');
+      getLogger().info('[migrations] 053: Added retell_llm_id column to clients table');
+    }
+  },
+  down() {
+    // SQLite cannot drop columns
+  },
+});
+
 module.exports = { runMigrations, rollbackMigration, migrations };
