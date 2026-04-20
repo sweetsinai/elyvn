@@ -127,7 +127,7 @@ async function createRetellAgent(businessName, kb, voiceId, language) {
 }
 
 /**
- * POST / — Provision a new client with Telnyx number, Retell agent, and knowledge base
+ * POST / — Provision a new client with Twilio number, Retell agent, and knowledge base
  */
 router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
   if (!req.isAdmin) return next(new AppError('FORBIDDEN', 'Admin access required', 403));

@@ -247,14 +247,14 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
       kb_path: kbPath,
       next_steps: [
         '1. Connect Retell AI voice agent: Visit https://retell.ai and create an agent with the provided knowledge base',
-        '2. Configure Telnyx: Add SMS phone number and set webhook to ' + baseUrl + '/webhooks/telnyx',
+        '2. Configure Twilio: Add SMS phone number and set webhook to ' + baseUrl + '/webhooks/twilio',
         '3. Set up Telegram bot: Configure your bot webhook at ' + baseUrl + '/webhooks/telegram',
         '4. Add Cal.com booking link: Update client record with calcom_booking_link for auto-booking',
         '5. Embed on website: Add the provided embed code to your website',
         '6. Test the system: Make a call or send an SMS to verify integration'
       ],
       webhook_urls: {
-        telnyx: baseUrl + '/webhooks/telnyx',
+        twilio: baseUrl + '/webhooks/twilio',
         telegram: baseUrl + '/webhooks/telegram',
         forms: baseUrl + '/webhooks/form',
         retell: baseUrl + '/webhooks/retell'

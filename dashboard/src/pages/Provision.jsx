@@ -94,6 +94,7 @@ export default function Provision() {
   const [errorMessage, setErrorMessage] = useState('');
   const [currentStep, setCurrentStep] = useState(0);
   const [failedSteps, setFailedSteps] = useState([]);
+  const [stageErrors, setStageErrors] = useState({});
 
   const steps = [
     { id: 'creating_agent', name: 'Setting up AI agent' },
@@ -175,19 +176,27 @@ export default function Provision() {
           const msg = JSON.parse(event.data);
           
           if (msg.type === 'auth_required') {
+            const token = sessionStorage.getItem('elyvn_token');
             const apiKey = sessionStorage.getItem('elyvn_api_key');
-            socket.send(JSON.stringify({ type: 'auth', api_key: apiKey }));
+            if (token) {
+              socket.send(JSON.stringify({ type: 'auth', token }));
+            } else {
+              socket.send(JSON.stringify({ type: 'auth', api_key: apiKey }));
+            }
           } else if (msg.type === 'authenticated') {
             clearTimeout(timeout);
             resolve();
           } else if (msg.type === 'provisioning_update' && msg.data.businessName === formData.business_name) {
-            const { stage, status: stageStatus } = msg.data;
+            const { stage, status: stageStatus, error: stageError } = msg.data;
             const stepIndex = steps.findIndex(s => s.id === stage);
             
             if (stepIndex !== -1) {
               setCurrentStep(stepIndex);
               if (stageStatus === 'failed') {
                 setFailedSteps(prev => [...new Set([...prev, stage])]);
+                if (stageError) {
+                  setStageErrors(prev => ({ ...prev, [stage]: stageError }));
+                }
               } else if (stageStatus === 'completed') {
                 // Move to next step visual if completed
                 if (stepIndex < steps.length - 1) {
@@ -243,6 +252,8 @@ export default function Provision() {
     setProvisionData(null);
     setErrorMessage('');
     setCurrentStep(0);
+    setFailedSteps([]);
+    setStageErrors({});
   };
 
   return (
@@ -268,7 +279,7 @@ export default function Provision() {
             color: '#666',
             marginBottom: '0'
           }}>
-            One-click setup: Telnyx number + AI agent + Telegram bot
+            One-click setup: Twilio number + AI agent + Telegram bot
           </p>
         </div>
 
@@ -859,10 +870,16 @@ export default function Provision() {
                   <span style={{
                     fontSize: '13px',
                     color: failedSteps.includes(step.id) ? '#ff6b6b' : idx <= currentStep ? '#fff' : '#666',
-                    fontWeight: idx === currentStep ? '600' : '400'
+                    fontWeight: idx === currentStep ? '600' : '400',
+                    textAlign: 'left',
+                    flex: 1
                   }}>
                     {step.name}
-                    {failedSteps.includes(step.id) && <span style={{ fontSize: '11px', marginLeft: '8px' }}>(Failed)</span>}
+                    {failedSteps.includes(step.id) && (
+                      <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
+                        {stageErrors[step.id] || 'Failed'}
+                      </div>
+                    )}
                   </span>
                 </div>
               ))}
@@ -991,7 +1008,7 @@ export default function Provision() {
                   display: 'block',
                   marginBottom: '8px'
                 }}>
-                  Telnyx Phone Number
+                  Twilio Phone Number
                 </label>
                 <p style={{
                   fontSize: '16px',
