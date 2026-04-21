@@ -18,7 +18,7 @@ jest.mock('../utils/analyticsStream', () => ({
   emitAnalyticsEvent: jest.fn()
 }));
 
-// isValidUUID is used directly from ../utils/validate — use real implementation
+// isValidUUID is used directly from ../utils/validators — use real implementation
 // (it's a pure function with no side effects)
 
 const trackingRouter = require('../routes/tracking');

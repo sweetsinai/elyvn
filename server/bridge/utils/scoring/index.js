@@ -2,7 +2,7 @@
  * Lead Scoring Module — Re-exports
  *
  * Backward-compatible barrel file. All existing imports from
- * '../utils/leadScoring' continue to work via '../utils/scoring'.
+ * '../utils/scoring' continue to work via '../utils/scoring'.
  */
 
 const { predictLeadScore } = require('./model');

@@ -10,7 +10,7 @@ async function dailyLeadScoring(db) {
   let errors = 0;
 
   try {
-    const { batchScoreLeads } = require('../leadScoring');
+    const { batchScoreLeads } = require('../scoring');
     const clients = await db.query('SELECT id, telegram_chat_id FROM clients WHERE is_active = 1');
 
     logger.info(`[leadScoring] START — processing ${clients.length} clients`);

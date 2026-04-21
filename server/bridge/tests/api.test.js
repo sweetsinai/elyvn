@@ -40,7 +40,7 @@ jest.mock('../utils/resilience', () => ({
   }),
 }));
 
-jest.mock('../utils/inputValidation', () => ({
+jest.mock('../utils/validators', () => ({
   validateEmail: jest.fn(() => ({ valid: true })),
   validatePhone: jest.fn(() => ({ valid: true })),
   validateLength: jest.fn(() => ({ valid: true })),

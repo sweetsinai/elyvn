@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
-const { isValidUUID } = require('../../utils/validate');
+const { isValidUUID } = require('../../utils/validators');
 const { success } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);
@@ -17,7 +17,7 @@ router.get('/scoring/:clientId', (req, res, next) => {
       return next(new AppError('INVALID_INPUT', 'Invalid client ID', 400));
     }
 
-    const { batchScoreLeads } = require('../../utils/leadScoring');
+    const { batchScoreLeads } = require('../../utils/scoring');
     const scores = batchScoreLeads(db, clientId);
     success(res, { scores, meta: { total: scores.length } });
   } catch (err) {
@@ -36,7 +36,7 @@ router.get('/scoring/:clientId/:leadId', (req, res, next) => {
       return next(new AppError('INVALID_INPUT', 'Invalid client ID or lead ID', 400));
     }
 
-    const { predictLeadScore } = require('../../utils/leadScoring');
+    const { predictLeadScore } = require('../../utils/scoring');
     const result = predictLeadScore(db, leadId, clientId);
 
     // Return full factor breakdown + model version so callers can display explainability
@@ -64,7 +64,7 @@ router.get('/scoring/:clientId/analytics/conversion', (req, res, next) => {
       return next(new AppError('INVALID_INPUT', 'Invalid client ID', 400));
     }
 
-    const { getConversionAnalytics } = require('../../utils/leadScoring');
+    const { getConversionAnalytics } = require('../../utils/scoring');
     const analytics = getConversionAnalytics(db, clientId);
     success(res, analytics);
   } catch (err) {

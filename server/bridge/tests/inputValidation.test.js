@@ -10,7 +10,7 @@ const {
   stripHtmlTags,
   validateStringField,
   validateParameters,
-} = require('../utils/inputValidation');
+} = require('../utils/validators');
 
 describe('Input Validation Utils', () => {
   describe('validateEmail', () => {

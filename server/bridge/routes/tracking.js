@@ -1,6 +1,6 @@
 const express = require('express');
 const { randomUUID } = require('crypto');
-const { isValidUUID } = require('../utils/validate');
+const { isValidUUID } = require('../utils/validators');
 const { logger } = require('../utils/logger');
 
 const router = express.Router();

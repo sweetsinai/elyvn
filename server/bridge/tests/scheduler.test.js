@@ -25,7 +25,7 @@ jest.mock('../utils/emailGenerator');
 jest.mock('../utils/emailSender');
 jest.mock('../utils/emailVerifier');
 jest.mock('../utils/sms');
-jest.mock('../utils/leadScoring');
+jest.mock('../utils/scoring');
 jest.mock('../utils/dataRetention');
 
 const telegram = require('../utils/telegram');
@@ -278,7 +278,7 @@ describe('scheduler', () => {
 
   describe('dailyLeadScoring', () => {
     test('calls batchScoreLeads for each client', async () => {
-      const { batchScoreLeads } = require('../utils/leadScoring');
+      const { batchScoreLeads } = require('../utils/scoring');
       batchScoreLeads.mockReturnValue([
         { leadId: 'lead1', predictive_score: 85, name: 'John', phone: '+12125551234', insight: 'Hot lead' }
       ]);
@@ -289,7 +289,7 @@ describe('scheduler', () => {
     });
 
     test('updates lead scores from predictive model', async () => {
-      const { batchScoreLeads } = require('../utils/leadScoring');
+      const { batchScoreLeads } = require('../utils/scoring');
       batchScoreLeads.mockReturnValue([
         { leadId: 'lead1', predictive_score: 85 }
       ]);
@@ -301,7 +301,7 @@ describe('scheduler', () => {
     });
 
     test('notifies owner of hot leads', async () => {
-      const { batchScoreLeads } = require('../utils/leadScoring');
+      const { batchScoreLeads } = require('../utils/scoring');
       batchScoreLeads.mockReturnValue([
         { leadId: 'lead1', predictive_score: 85, name: 'John', phone: '+12125551234', insight: 'Hot' }
       ]);
@@ -687,7 +687,7 @@ describe('scheduler', () => {
 
   describe('dailyLeadScoring - Additional Coverage', () => {
     test('should handle clients without telegram_chat_id', async () => {
-      const { batchScoreLeads } = require('../utils/leadScoring');
+      const { batchScoreLeads } = require('../utils/scoring');
       batchScoreLeads.mockReturnValue([
         { leadId: 'lead1', predictive_score: 85 }
       ]);
@@ -702,7 +702,7 @@ describe('scheduler', () => {
     });
 
     test('should map 0-100 predictive score to 0-10 lead score', async () => {
-      const { batchScoreLeads } = require('../utils/leadScoring');
+      const { batchScoreLeads } = require('../utils/scoring');
       batchScoreLeads.mockReturnValue([
         { leadId: 'lead1', predictive_score: 50 }
       ]);
@@ -714,7 +714,7 @@ describe('scheduler', () => {
     });
 
     test('should round score correctly', async () => {
-      const { batchScoreLeads } = require('../utils/leadScoring');
+      const { batchScoreLeads } = require('../utils/scoring');
       batchScoreLeads.mockReturnValue([
         { leadId: 'lead2', predictive_score: 75 }
       ]);
@@ -726,7 +726,7 @@ describe('scheduler', () => {
     });
 
     test('should identify hot leads (75+)', async () => {
-      const { batchScoreLeads } = require('../utils/leadScoring');
+      const { batchScoreLeads } = require('../utils/scoring');
       batchScoreLeads.mockReturnValue([
         { leadId: 'lead1', predictive_score: 85, name: 'John', phone: '+12125551234', insight: 'Hot' },
         { leadId: 'lead2', predictive_score: 60, name: 'Jane', phone: '+12125551235', insight: 'Warm' }

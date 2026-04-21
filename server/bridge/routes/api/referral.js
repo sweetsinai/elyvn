@@ -5,7 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const { randomUUID, randomBytes } = require('crypto');
-const { isValidUUID } = require('../../utils/validate');
+const { isValidUUID } = require('../../utils/validators');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { clientIsolationParam } = require('../../utils/clientIsolation');

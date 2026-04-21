@@ -1,5 +1,5 @@
 const Database = require('better-sqlite3');
-const { predictLeadScore, getConversionAnalytics, batchScoreLeads, getLeadScoringReport } = require('../utils/leadScoring');
+const { predictLeadScore, getConversionAnalytics, batchScoreLeads, getLeadScoringReport } = require('../utils/scoring');
 const { runMigrations } = require('../utils/migrations');
 
 // Add db.query helper to a raw better-sqlite3 instance

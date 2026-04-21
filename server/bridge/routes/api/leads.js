@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { isValidUUID, escapeLikePattern } = require('../../utils/validate');
+const { isValidUUID, escapeLikePattern } = require('../../utils/validators');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { appendEvent, Events } = require('../../utils/eventStore');
