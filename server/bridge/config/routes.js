@@ -244,7 +244,10 @@ function mountRoutes(app) {
         heap_used_mb: Math.round(mem.heapUsed / 1048576),
         heap_total_mb: Math.round(mem.heapTotal / 1048576),
       },
-      services: { db: dbOk },
+      services: { 
+        db: dbOk,
+        mcp: !!process.env.ANTHROPIC_API_KEY
+      },
       database: dbHealth,
       db_counts: dbCounts,
       env_configured: envVars,

@@ -16,6 +16,7 @@ import {
   Mail,
   PhoneForwarded,
   FileSpreadsheet,
+  Brain,
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import { getWebhookLog, testWebhook, getIntegrationStatus, getHealth } from '../lib/api';
@@ -89,6 +90,7 @@ export default function Integrations() {
     { name: 'Telegram', key: 'telegram', icon: MessageSquare, color: '#0088CC', desc: 'Owner notifications' },
     { name: 'SMTP', key: 'smtp', icon: Mail, color: '#fbbf24', desc: 'Email outreach' },
     { name: 'Call Transfer', key: 'transfer', icon: PhoneForwarded, color: '#A855F7', desc: 'Forward to owner' },
+    { name: 'Managed Agents (MCP)', key: 'mcp', icon: Brain, color: '#D4AF37', desc: 'Multi-agent system' },
   ];
 
   return (
