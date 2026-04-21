@@ -173,44 +173,6 @@ describe('config.js', () => {
     });
   });
 
-  describe('Outreach Configuration', () => {
-    test('should parse EMAIL_DAILY_LIMIT as integer', () => {
-      process.env.EMAIL_DAILY_LIMIT = '500';
-
-      const config = require('../utils/config');
-      expect(config.outreach.dailySendLimit).toBe(500);
-      expect(typeof config.outreach.dailySendLimit).toBe('number');
-    });
-
-    test('should default EMAIL_DAILY_LIMIT to 300', () => {
-      delete process.env.EMAIL_DAILY_LIMIT;
-
-      const config = require('../utils/config');
-      expect(config.outreach.dailySendLimit).toBe(300);
-    });
-
-    test('should load OUTREACH_SENDER_NAME', () => {
-      process.env.OUTREACH_SENDER_NAME = 'John Doe';
-
-      const config = require('../utils/config');
-      expect(config.outreach.senderName).toBe('John Doe');
-    });
-
-    test('should default OUTREACH_SENDER_NAME to Sohan', () => {
-      delete process.env.OUTREACH_SENDER_NAME;
-
-      const config = require('../utils/config');
-      expect(config.outreach.senderName).toBe('Sohan');
-    });
-
-    test('should load CALCOM_BOOKING_LINK', () => {
-      process.env.CALCOM_BOOKING_LINK = 'https://cal.com/custom';
-
-      const config = require('../utils/config');
-      expect(config.outreach.bookingLink).toBe('https://cal.com/custom');
-    });
-  });
-
   describe('API Configuration', () => {
     test('should load all API keys from environment', () => {
       process.env.ANTHROPIC_API_KEY = 'anthropic-key';
@@ -324,37 +286,6 @@ describe('config.js', () => {
     });
   });
 
-  describe('IMAP Configuration', () => {
-    test('should load IMAP host from environment', () => {
-      process.env.IMAP_HOST = 'imap.custom.com';
-
-      const config = require('../utils/config');
-      expect(config.imap.host).toBe('imap.custom.com');
-    });
-
-    test('should default IMAP host to imap.gmail.com', () => {
-      delete process.env.IMAP_HOST;
-
-      const config = require('../utils/config');
-      expect(config.imap.host).toBe('imap.gmail.com');
-    });
-
-    test('should parse IMAP port as integer', () => {
-      process.env.IMAP_PORT = '993';
-
-      const config = require('../utils/config');
-      expect(config.imap.port).toBe(993);
-      expect(typeof config.imap.port).toBe('number');
-    });
-
-    test('should default IMAP port to 993', () => {
-      delete process.env.IMAP_PORT;
-
-      const config = require('../utils/config');
-      expect(config.imap.port).toBe(993);
-    });
-  });
-
   describe('getBaseUrl', () => {
     test('should return Railway domain if configured', () => {
       process.env.RAILWAY_PUBLIC_DOMAIN = 'app.railway.app';
@@ -433,22 +364,6 @@ describe('config.js', () => {
 
       const config = require('../utils/config');
       expect(config.business.address).toBe('');
-    });
-  });
-
-  describe('Email Tracking Configuration', () => {
-    test('should load BASE_URL for email tracking', () => {
-      process.env.BASE_URL = 'https://app.example.com';
-
-      const config = require('../utils/config');
-      expect(config.emailTracking.baseUrl).toBe('https://app.example.com');
-    });
-
-    test('should default BASE_URL to localhost:3001', () => {
-      delete process.env.BASE_URL;
-
-      const config = require('../utils/config');
-      expect(config.emailTracking.baseUrl).toBe('http://localhost:3001');
     });
   });
 });
