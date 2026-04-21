@@ -5,8 +5,7 @@
  *
  * Specialized agents that collaborate on lead management:
  *   - Receptionist: handles events, decides next actions
- *   - Outreach: composes personalized cold emails
- *   - Qualification: scores leads, classifies replies
+ *   - Qualification: scores leads
  *   - Scheduling: manages follow-ups and appointments
  *
  * Each agent is created once (agent ID cached), environments are shared,
@@ -49,34 +48,11 @@ RESPOND WITH ONLY a JSON object:
 { "reasoning": "2-3 sentences", "actions": [ ... ] }`,
   },
 
-  outreach: {
-    name: 'ELYVN Outreach',
-    model: config.ai.model,
-    description: 'Personalized cold email composer with A/B subject line testing.',
-    instructions: `You are an expert cold email copywriter for service businesses.
-
-RULES:
-- Write warm, professional emails — never salesy or pushy
-- Mention specific business details (rating, city, industry)
-- Include a clear CTA with booking link
-- Keep under 150 words
-- Generate two subject lines for A/B testing
-- Reference how AI answering helps them never miss a call
-
-RESPOND WITH JSON: { "subject_a": "...", "subject_b": "...", "body": "..." }`,
-  },
-
   qualification: {
     name: 'ELYVN Qualifier',
     model: config.ai.model,
-    description: 'Lead scoring and reply classification agent.',
-    instructions: `You are a lead qualification expert. You perform two tasks:
-
-TASK 1 — REPLY CLASSIFICATION:
-Classify email replies into exactly one of: INTERESTED, QUESTION, NOT_INTERESTED, UNSUBSCRIBE.
-Return: { "classification": "...", "confidence": 0.0-1.0, "summary": "..." }
-
-TASK 2 — LEAD SCORING:
+    description: 'Lead scoring agent.',
+    instructions: `You are a lead qualification expert. You perform lead scoring:
 Given lead interaction history, score 1-10 on intent to buy.
 Return: { "score": N, "factors": [...], "recommended_action": "..." }
 
@@ -93,13 +69,13 @@ YOUR ROLE: Given a lead's history, determine the optimal follow-up timing and ch
 
 CONSIDER:
 - Business hours (9 AM - 6 PM local time)
-- Day of week (Tuesday-Thursday are best for outreach)
+- Day of week (Tuesday-Thursday are best)
 - Lead's response patterns (when did they last engage?)
 - Channel preference (if they called, follow up by phone; if texted, follow up by SMS)
 - Urgency (hot leads need same-day follow-up)
 
 RESPOND WITH JSON:
-{ "delay_hours": N, "channel": "sms|call|email", "reasoning": "...", "suggested_message": "..." }`,
+{ "delay_hours": N, "channel": "sms|call", "reasoning": "...", "suggested_message": "..." }`,
   },
 };
 
@@ -168,7 +144,7 @@ async function getOrCreateAgent(type) {
 /**
  * Run a single-turn agent task: create session, send message, collect response.
  *
- * @param {string} agentType - 'receptionist' | 'outreach' | 'qualification' | 'scheduling'
+ * @param {string} agentType - 'receptionist' | 'qualification' | 'scheduling'
  * @param {string} userMessage - The task prompt
  * @param {object} [options] - Optional overrides
  * @param {string} [options.systemOverride] - Override the agent's default instructions
@@ -285,43 +261,6 @@ What actions should ELYVN take?`;
 }
 
 /**
- * Generate a cold email using the outreach agent.
- */
-async function outreachCompose(prospect, bizClient) {
-  const userMessage = `Write a cold email for:
-
-PROSPECT:
-- Business: ${sanitizeForPrompt(prospect.business_name, 100) || 'Unknown'}
-- Industry: ${sanitizeForPrompt(prospect.industry, 50) || 'service business'}
-- City: ${sanitizeForPrompt(prospect.city, 50) || 'Unknown'}${prospect.state ? ', ' + sanitizeForPrompt(prospect.state, 30) : ''}
-- Rating: ${prospect.rating || 'N/A'}/5 (${prospect.review_count || 0} reviews)
-- Website: ${sanitizeForPrompt(prospect.website, 100) || 'N/A'}
-
-SENDER:
-- Name: ${config.outreach.senderName}
-- Company: ELYVN
-- Booking Link: ${config.outreach.bookingLink}
-
-Generate two subject lines for A/B testing and the email body.`;
-
-  return runAgent('outreach', userMessage);
-}
-
-/**
- * Classify an email reply using the qualification agent.
- */
-async function qualifyReply(subject, body) {
-  const userMessage = `Classify this email reply:
-
-SUBJECT: ${sanitizeForPrompt(subject, 200)}
-BODY: ${sanitizeForPrompt(body, 1000)}
-
-Return JSON: { "classification": "INTERESTED|QUESTION|NOT_INTERESTED|UNSUBSCRIBE", "confidence": 0.0-1.0, "summary": "..." }`;
-
-  return runAgent('qualification', userMessage);
-}
-
-/**
  * Determine optimal follow-up timing for a lead.
  */
 async function scheduleOptimize(lead, interactions) {
@@ -335,7 +274,7 @@ ${(interactions || []).slice(-10).map(i => `[${i.timestamp}] ${i.type}: ${saniti
 
 Current time: ${new Date().toISOString()}
 
-Return JSON: { "delay_hours": N, "channel": "sms|call|email", "reasoning": "...", "suggested_message": "..." }`;
+Return JSON: { "delay_hours": N, "channel": "sms|call", "reasoning": "...", "suggested_message": "..." }`;
 
   return runAgent('scheduling', userMessage);
 }
@@ -354,8 +293,6 @@ function getAgentHealth() {
 module.exports = {
   runAgent,
   receptionistDecide,
-  outreachCompose,
-  qualifyReply,
   scheduleOptimize,
   getOrCreateAgent,
   getOrCreateEnvironment,

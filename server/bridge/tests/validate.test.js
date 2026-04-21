@@ -1,6 +1,6 @@
 'use strict';
 
-const { isValidUUID, isValidPhone, isValidEmail, isValidURL, sanitizeString, escapeLikePattern, validateNumericRange } = require('../utils/validate');
+const { isValidUUID, isValidPhone, isValidEmail, isValidURL, sanitizeString, escapeLikePattern, validateNumericRange } = require('../utils/validators');
 
 describe('Validation Utils', () => {
   describe('isValidUUID', () => {

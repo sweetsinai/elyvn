@@ -21,7 +21,6 @@ const navItems = [
   { path: '/messages', label: 'Messages', icon: MessageSquare },
   { path: '/pipeline', label: 'Pipeline', icon: GitBranch },
   { path: '/intelligence', label: 'Intelligence', icon: Brain },
-  { path: '/outreach', label: 'Outreach', icon: Send },
   { path: '/bookings', label: 'Bookings', icon: Calendar },
   { path: '/clients', label: 'Clients', icon: Users },
   { path: '/provision', label: 'Provision', icon: PlusCircle },

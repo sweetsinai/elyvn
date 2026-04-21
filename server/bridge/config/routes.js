@@ -320,10 +320,8 @@ function mountRoutes(app) {
   // --- Route modules ---
   const retellRouter = require('../routes/retell/index');
   const apiRouter = require('../routes/api');
-  const outreachRouter = require('../routes/outreach');
   const onboardRouter = require('../routes/onboard');
   const provisionRouter = require('../routes/provision');
-  const trackingRouter = require('../routes/tracking');
   const twilioRouter = require('../routes/twilio');
   const legacySmsRouter = require('../routes/legacySms');
   const authRouter = require('../routes/auth/index');
@@ -363,12 +361,6 @@ function mountRoutes(app) {
   app.use('/v2/billing', billingRouter);
   app.use('/billing', billingRouter);
 
-  // Outreach routes — apiAuth (10/min) covers general protection;
-  // add fine-grained limits on expensive sub-operations
-  app.use('/v1/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
-  app.use('/v2/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
-  app.use('/api/outreach', apiAuth, enforceClientIsolation, outreachRouter);
-
   // Mount onboard routes — requires admin auth (creates tenants, calls Retell API)
   app.use('/v1/api', authRateLimiter, apiAuth, onboardRouter);
   app.use('/v2/api', authRateLimiter, apiAuth, onboardRouter);
@@ -383,9 +375,6 @@ function mountRoutes(app) {
   app.use('/v1/api', authRateLimiter, apiAuth, enforceClientIsolation, apiRouter);
   app.use('/v2/api', authRateLimiter, apiAuth, enforceClientIsolation, apiRouter);
   app.use('/api', authRateLimiter, apiAuth, enforceClientIsolation, apiRouter);
-
-  // Email tracking routes (no auth required)
-  app.use('/t', trackingRouter);
 
   // Telegram bot webhook — 300/min per IP
   app.use('/webhooks/telegram', publicWebhookLimit, telegramRoutes);

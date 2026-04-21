@@ -2,7 +2,7 @@
 
 ## What Is ELYVN
 
-ELYVN is an AI receptionist SaaS for local service businesses (dental, HVAC, med spa, salons, gyms, real estate). It answers phone calls 24/7 via Retell AI, qualifies leads, books appointments via Cal.com, sends SMS follow-ups via Twilio/Telnyx, and gives business owners full control through a Telegram bot.
+ELYVN is an AI receptionist SaaS for local service businesses (dental, HVAC, med spa, salons, gyms, real estate). It answers phone calls 24/7 via Retell AI, qualifies leads, books appointments via Cal.com, sends SMS follow-ups via Twilio, and gives business owners full control through a Telegram bot.
 
 **Stack:** Node.js + Express + SQLite (better-sqlite3), deployed on Railway. React dashboard on the same server. Landing page on Vercel.
 
@@ -18,10 +18,9 @@ ELYVN is an AI receptionist SaaS for local service businesses (dental, HVAC, med
                     ├─────────────────────────────────────┤
    Retell AI ──────▶│  /retell    (voice call webhooks)   │
    Twilio   ──────▶│  /twilio    (SMS webhooks)          │
-   Telnyx   ──────▶│  /telnyx    (SMS webhooks)          │
    Telegram ──────▶│  /webhooks/telegram (bot commands)  │
    Cal.com  ──────▶│  /calcom-webhook (bookings)         │
-   Stripe   ──────▶│  /billing/webhook (payments)        │
+   Dodo     ──────▶│  /billing/webhook (payments)        │
    Browser  ──────▶│  /auth, /api, /billing (dashboard)  │
                     ├─────────────────────────────────────┤
                     │  BRAIN ENGINE (Claude API)           │
@@ -42,7 +41,7 @@ ELYVN is an AI receptionist SaaS for local service businesses (dental, HVAC, med
 
 ## Telegram Bot — Full Command Reference
 
-### All Plans (Starter, Growth, Scale)
+### All Plans (Growth, Pro, Elite)
 
 | Command | Description | Data Source |
 |---------|-------------|-------------|
@@ -59,19 +58,11 @@ ELYVN is an AI receptionist SaaS for local service businesses (dental, HVAC, med
 | `/resume` | Resume AI answering | clients.is_active |
 | `/help` | Dynamic command list based on plan | telegram.PLAN_COMMANDS |
 
-### Pro + Premium Plans
+### Pro + Elite Plans
 
 | Command | Description | Data Source |
 |---------|-------------|-------------|
 | `/brain` | Last 10 AI Brain decisions with actions, reasoning, and 7-day count | audit_log (action='brain_decision') |
-
-### Premium Plan Only
-
-| Command | Description | Data Source |
-|---------|-------------|-------------|
-| `/outreach` | Campaign stats: sent, replies, positive, booked for last 5 campaigns | campaigns, emails_sent |
-| `/scrape industry city` | Find prospects via Google Maps (triggers internal scrape API) | prospects table |
-| `/prospects` | Top 10 prospects by rating/reviews | prospects, campaign_prospects |
 
 ### Inline Keyboard Actions (Callback Queries)
 
@@ -151,15 +142,15 @@ All scheduling respects business hours. Telegram notification sent with cancel b
 
 ---
 
-## Billing (Stripe Integration)
+## Billing (Dodo Payments Integration)
 
 | Plan | Price | Calls | Features |
 |------|-------|-------|----------|
-| Starter | $199/mo | 500 | AI Phone, SMS Auto-Reply, Missed Call Text-Back, Telegram |
+| Growth | $199/mo | 500 | AI Phone, SMS Auto-Reply, Missed Call Text-Back, Telegram |
 | Pro | $399/mo | 1,500 | + Follow-Up Sequences, AI Brain, Lead Scoring, Weekly Reports |
-| Premium | $799/mo | Unlimited | + New Customer Finder, Automated Outreach, Priority Support |
+| Elite | $799/mo | Unlimited | + Priority Support, Custom Integrations |
 
-All plans include 7-day free trial. Stripe webhook at `/billing/webhook` handles: `checkout.session.completed`, `invoice.payment_succeeded`, `invoice.payment_failed`, `customer.subscription.deleted`.
+All plans include 7-day free trial. Dodo webhook at `/billing/webhook` handles: `subscription.active`, `subscription.renewed`, `subscription.on_hold`, `subscription.failed`, `subscription.cancelled`, `subscription.expired`.
 
 ---
 
@@ -169,16 +160,14 @@ All plans include 7-day free trial. Stripe webhook at `/billing/webhook` handles
 - `ANTHROPIC_API_KEY` — Claude API (brain engine)
 
 **Billing:**
-- `STRIPE_SECRET_KEY` — Stripe API key
-- `STRIPE_WEBHOOK_SECRET` — Webhook verification
-- `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_SCALE` — Price IDs
+- `DODO_API_KEY` — Dodo Payments API key
+- `DODO_WEBHOOK_SECRET` — Webhook verification
 
 **Voice:**
 - `RETELL_API_KEY` — Voice AI provider
 
 **SMS:**
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` — Primary SMS
-- `TELNYX_API_KEY`, `TELNYX_PHONE_NUMBER`, `TELNYX_MESSAGING_PROFILE_ID` — Secondary SMS
 
 **Telegram:**
 - `TELEGRAM_BOT_TOKEN` — Bot token from @BotFather
@@ -191,9 +180,6 @@ All plans include 7-day free trial. Stripe webhook at `/billing/webhook` handles
 
 **Optional:**
 - `CALCOM_API_KEY`, `CALCOM_BOOKING_LINK`, `CALCOM_EVENT_TYPE_ID` — Cal.com booking
-- `SMTP_*` — Cold email sending (Gmail or custom SMTP)
-- `IMAP_*` — Reply checking
-- `GOOGLE_MAPS_API_KEY` — Prospect scraping
 
 ---
 
@@ -203,15 +189,12 @@ All plans include 7-day free trial. Stripe webhook at `/billing/webhook` handles
 
 | Table | Purpose | Key Fields |
 |-------|---------|------------|
-| clients | Business accounts | id, telegram_chat_id, plan, is_active, avg_ticket, stripe_customer_id |
-| leads | Prospect records | client_id, phone, score (0-10), stage, prospect_id |
+| clients | Business accounts | id, telegram_chat_id, plan, is_active, avg_ticket, dodo_customer_id |
+| leads | Prospect records | client_id, phone, score (0-10), stage |
 | calls | Call records | client_id, call_id, outcome, transcript, score, duration |
 | messages | SMS records | client_id, phone, direction, body, confidence |
 | appointments | Bookings | client_id, lead_id, datetime, status |
 | followups | Scheduled actions | lead_id, touch_number, type, scheduled_at, status |
-| prospects | Scraped businesses | business_name, phone, email, rating, review_count |
-| campaigns | Email campaigns | industry, city, total_sent/replied/booked |
-| emails_sent | Individual emails | prospect_id, status, variant (A/B), open_count |
 | job_queue | Background jobs | type, payload, status, retry_count, run_at |
 | audit_log | Security + brain logs | action, details (JSON), client_id |
 | weekly_reports | Aggregated stats | calls, appointments, revenue, missed_rate |
@@ -230,7 +213,7 @@ All plans include 7-day free trial. Stripe webhook at `/billing/webhook` handles
 - Helmet security headers
 - CORS configured
 - Audit logging for all sensitive actions
-- Data retention policies (messages: 90d, calls: 365d, emails: 180d)
+- Data retention policies (messages: 90d, calls: 365d)
 - Circuit breaker pattern for external API calls
 
 ---

@@ -7,11 +7,11 @@ const express = require('express');
 const router = express.Router();
 
 const { logger } = require('../../utils/logger');
-const { verifyLegacy SMSSignature } = require('./middleware');
+const { verifyLegacySmsSignature } = require('./middleware');
 const { handleInboundSMS } = require('./handlers');
 
 // Signature verification on all routes in this router
-router.use(verifyLegacy SMSSignature);
+router.use(verifyLegacySmsSignature);
 
 // POST / — Legacy SMS SMS webhook
 router.post('/', (req, res) => {
