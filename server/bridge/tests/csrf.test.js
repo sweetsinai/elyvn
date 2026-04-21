@@ -213,7 +213,7 @@ describe('CSRF — webhook paths are excluded', () => {
   const WEBHOOK_PATHS = [
     '/webhooks/retell',
     '/retell-webhook',
-    '/webhooks/telnyx',
+    '/webhooks/legacySms',
     '/webhooks/twilio',
     '/webhooks/calcom',
     '/webhooks/telegram',

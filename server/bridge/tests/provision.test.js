@@ -324,7 +324,7 @@ describe('Provision Route', () => {
       expect(response.body.provisioning_status.retell_error).toBeDefined();
     });
 
-    test('should continue provisioning even if Telnyx fails', async () => {
+    test('should continue provisioning even if Legacy SMS fails', async () => {
       mockDb.prepare.mockReturnValue({
         run: jest.fn(),
         get: jest.fn().mockReturnValue({

@@ -3,7 +3,7 @@
  */
 const express = require('express');
 const router = express.Router();
-const { isValidUUID } = require('../../utils/validate');
+const { isValidUUID } = require('../../utils/validators');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 const { success } = require('../../utils/response');

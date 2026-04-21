@@ -33,7 +33,7 @@ async function upsertLeadAndRecordInbound(db, { clientId, from, body, messageId,
           INSERT INTO leads (id, client_id, phone, stage, last_contact, created_at, updated_at)
           VALUES (?, ?, ?, 'new', ?, ?, ?)
         `, [leadId, clientId, from, now, now, now], 'run');
-        try { await db.query('UPDATE leads SET phone_encrypted = ? WHERE id = ?', [encrypt(from), leadId], 'run'); } catch (encErr) { logger.warn('[telnyx] phone encryption failed:', encErr.message); }
+        try { await db.query('UPDATE leads SET phone_encrypted = ? WHERE id = ?', [encrypt(from), leadId], 'run'); } catch (encErr) { logger.warn('[legacySms] phone encryption failed:', encErr.message); }
       }
 
       await db.query(`
@@ -64,7 +64,7 @@ async function upsertLeadAndRecordInbound(db, { clientId, from, body, messageId,
           INSERT INTO leads (id, client_id, phone, stage, last_contact, created_at, updated_at)
           VALUES (?, ?, ?, 'new', ?, ?, ?)
         `).run(lid, clientId, from, now, now, now);
-        try { db.prepare('UPDATE leads SET phone_encrypted = ? WHERE id = ?').run(encrypt(from), lid); } catch (encErr) { logger.warn('[telnyx] phone encryption failed:', encErr.message); }
+        try { db.prepare('UPDATE leads SET phone_encrypted = ? WHERE id = ?').run(encrypt(from), lid); } catch (encErr) { logger.warn('[legacySms] phone encryption failed:', encErr.message); }
       }
 
       db.prepare(`

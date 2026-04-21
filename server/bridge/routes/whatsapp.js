@@ -17,7 +17,7 @@ const express = require('express');
 const router = express.Router();
 const { createHmac, timingSafeEqual } = require('crypto');
 const { logger } = require('../utils/logger');
-const { handleInboundSMS } = require('./telnyx/handlers');
+const { handleInboundSMS } = require('./legacySms/handlers');
 
 // Twilio request validation (same as regular SMS webhook)
 function verifyTwilioSignature(req, res, next) {

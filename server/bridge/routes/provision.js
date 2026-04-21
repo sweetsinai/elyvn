@@ -181,14 +181,34 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
 
     logger.info(`[provision] Starting provisioning for ${business_name} (${clientId})`);
 
-    // Helper to broadcast progress
+    // Helper to broadcast progress and persist to DB
     const sendUpdate = (stage, status, extra = {}) => {
+      // Broadcast via WebSocket for real-time dashboard updates
       broadcast('provisioning_update', {
+        clientId,
         businessName: business_name,
         stage,
         status,
         ...extra
       });
+
+      // Persist to provisioning_logs for progress visibility on refresh
+      const logId = randomUUID();
+      db.query(`
+        INSERT INTO provisioning_logs (
+          id, client_id, business_name, stage, status, details, error, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        logId,
+        clientId,
+        business_name,
+        stage,
+        status,
+        extra.log || extra.details || (extra.skipped ? 'Skipped' : null),
+        extra.error || null,
+        new Date().toISOString(),
+        new Date().toISOString()
+      ], 'run').catch(err => logger.error(`[provision] Failed to write to provisioning_logs: ${err.message}`));
     };
 
     // Step 1: Create Retell agent (optional, don't fail overall provisioning if this fails)

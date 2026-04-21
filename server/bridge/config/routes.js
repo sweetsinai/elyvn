@@ -78,24 +78,24 @@ function safeCompare(a, b) {
 const API_KEY = process.env.ELYVN_API_KEY;
 
 async function apiAuth(req, res, next) {
-  const db = req.app.locals.db;
+const db = req.app.locals.db;
 
-  // Check JWT Bearer token first
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith('Bearer ')) {
-    try {
-      const { verifyToken } = require('../routes/auth');
-      const payload = verifyToken(authHeader.slice(7));
-      if (payload) {
-        req.clientId = payload.clientId;
-        req.email = payload.email;
-        req.isJwtAuth = true;
-        return next();
-      }
-    } catch (err) {
-      logger.error('[auth] JWT verification error:', err.message);
+// Check JWT Bearer token first
+const authHeader = req.headers.authorization;
+if (authHeader?.startsWith('Bearer ')) {
+  try {
+    const { verifyToken } = require('../routes/auth/index');
+    const payload = verifyToken(authHeader.slice(7));
+    if (payload) {
+      req.clientId = payload.clientId;
+      req.email = payload.email;
+      req.isJwtAuth = true;
+      return next();
     }
+  } catch (err) {
+    logger.error('[auth] JWT verification error:', err.message);
   }
+}
 
   const provided = req.headers['x-api-key'];
   if (!provided) {
@@ -236,6 +236,43 @@ function mountRoutes(app) {
       }
     })();
 
+    // Lightweight connectivity checks for external APIs
+    const checkExternalApi = async (service) => {
+      const https = require('https');
+      const configs = {
+        retell: {
+          hostname: 'api.retellai.com',
+          path: '/list-agents?limit=1',
+          headers: { 'Authorization': `Bearer ${process.env.RETELL_API_KEY}` }
+        },
+        twilio: {
+          hostname: 'api.twilio.com',
+          path: `/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}.json`,
+          headers: { 'Authorization': `Basic ${Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64')}` }
+        }
+      };
+      const config = configs[service];
+      if (!config || (service === 'retell' && !process.env.RETELL_API_KEY) || (service === 'twilio' && (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN))) {
+        return 'unconfigured';
+      }
+
+      return new Promise((resolve) => {
+        const req = https.get(config, (res) => {
+          resolve(res.statusCode >= 200 && res.statusCode < 300 ? 'active' : 'degraded');
+        });
+        req.on('error', () => resolve('down'));
+        req.setTimeout(2000, () => {
+          req.destroy();
+          resolve('timeout');
+        });
+      });
+    };
+
+    const [retellStatus, twilioStatus] = await Promise.all([
+      checkExternalApi('retell'),
+      checkExternalApi('twilio')
+    ]);
+
     const apiKey = req.headers['x-api-key'];
     const isValidKey = apiKey && process.env.ELYVN_API_KEY && safeCompare(apiKey, process.env.ELYVN_API_KEY);
     const isAuthenticated = req.isAdmin || req.isJwtAuth || isValidKey;
@@ -246,6 +283,8 @@ function mountRoutes(app) {
         services: {
           db: dbOk,
           mcp: mcpOk,
+          retell: retellStatus,
+          twilio: twilioStatus,
         },
         env_configured: envVars,
       });
@@ -265,6 +304,8 @@ function mountRoutes(app) {
       services: { 
         db: dbOk,
         mcp: mcpOk,
+        retell: retellStatus,
+        twilio: twilioStatus,
       },
       database: dbHealth,
       db_counts: dbCounts,
@@ -277,15 +318,15 @@ function mountRoutes(app) {
   app.use('/', healthRouter);
 
   // --- Route modules ---
-  const retellRouter = require('../routes/retell');
+  const retellRouter = require('../routes/retell/index');
   const apiRouter = require('../routes/api');
   const outreachRouter = require('../routes/outreach');
   const onboardRouter = require('../routes/onboard');
   const provisionRouter = require('../routes/provision');
   const trackingRouter = require('../routes/tracking');
   const twilioRouter = require('../routes/twilio');
-  const telnyxRouter = require('../routes/telnyx');
-  const authRouter = require('../routes/auth');
+  const legacySmsRouter = require('../routes/legacySms');
+  const authRouter = require('../routes/auth/index');
   const billingRouter = require('../routes/billing');
   const telegramRoutes = require('../routes/telegram');
   const formRoutes = require('../routes/forms');
@@ -295,10 +336,10 @@ function mountRoutes(app) {
   const resellerRouter = require('../routes/api/reseller');
   const calculatorRouter = require('../routes/api/calculator');
 
-  // Public webhooks — 300/min per IP (Retell, Twilio, Telnyx are high-volume but controlled sources)
+  // Public webhooks — 300/min per IP (Retell, Twilio are high-volume but controlled sources)
   app.use('/webhooks/twilio', publicWebhookLimit, twilioRouter);
-  app.use('/webhooks/twilio-fallback', publicWebhookLimit, telnyxRouter);
-  app.use('/webhooks/telnyx', publicWebhookLimit, telnyxRouter);
+  app.use('/webhooks/twilio-fallback', publicWebhookLimit, legacySmsRouter);
+  app.use('/webhooks/legacy-sms', publicWebhookLimit, legacySmsRouter);
   app.use('/webhooks/retell', publicWebhookLimit, retellRouter);
   app.use('/retell-webhook', publicWebhookLimit, retellRouter);
   app.use('/webhooks/whatsapp', publicWebhookLimit, whatsappRouter);

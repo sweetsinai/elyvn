@@ -50,9 +50,9 @@ export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => 
           setHealth({
             mcp: services.mcp || false,
             db: services.db || false,
-            retell: data.env_configured?.RETELL_API_KEY || false,
-            twilio: data.env_configured?.TWILIO_ACCOUNT_SID || false,
-            calcom: data.env_configured?.CALCOM_API_KEY || false,
+            retell: services.retell || false,
+            twilio: services.twilio || false,
+            calcom: data.env_configured?.CALCOM_API_KEY ? 'active' : false,
           });
         })
         .catch(() => setHealth({}));
@@ -153,7 +153,7 @@ export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => 
         }}>Connections</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {connections.map(conn => {
-            const isUp = health[conn.key] === true || health[conn.key] === 'connected';
+            const isUp = health[conn.key] === true || health[conn.key] === 'active';
             return (
               <div key={conn.key} style={{
                 display: 'flex',
