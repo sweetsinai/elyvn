@@ -246,7 +246,16 @@ function mountRoutes(app) {
       },
       services: { 
         db: dbOk,
-        mcp: !!process.env.ANTHROPIC_API_KEY
+        mcp: await (async () => {
+          try {
+            const fs = require('fs').promises;
+            const mcpPath = path.join(__dirname, '..', '..', 'mcp', 'knowledge_bases');
+            await fs.access(mcpPath, require('fs').constants.R_OK);
+            return true;
+          } catch (_) {
+            return false;
+          }
+        })()
       },
       database: dbHealth,
       db_counts: dbCounts,
