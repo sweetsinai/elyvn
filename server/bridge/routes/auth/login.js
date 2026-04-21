@@ -84,8 +84,20 @@ router.post('/', validateBody(LoginSchema), async (req, res, next) => {
       subscription_status: client.subscription_status || 'active',
     });
   } catch (err) {
-    logger.error('[auth] Login error:', err.message);
-    return next(new AppError('INTERNAL_ERROR', 'Login failed', 500));
+    logger.error('[auth] Login error:', {
+      message: err.message,
+      stack: err.stack,
+      email: email,
+      ip: req.ip
+    });
+    
+    // If it's a database-related error and we're starting up, return 503
+    if (!req.app.locals.db || err.message.includes('query')) {
+      return next(new AppError('SERVICE_UNAVAILABLE', 'System is still initializing. Please try again in a few seconds.', 503));
+    }
+
+    const message = process.env.NODE_ENV === 'production' ? 'Login failed' : `Login failed: ${err.message}`;
+    return next(new AppError('INTERNAL_ERROR', message, 500));
   }
 });
 

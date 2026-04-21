@@ -297,6 +297,7 @@ function mountRoutes(app) {
 
   // Public webhooks — 300/min per IP (Retell, Twilio, Telnyx are high-volume but controlled sources)
   app.use('/webhooks/twilio', publicWebhookLimit, twilioRouter);
+  app.use('/webhooks/twilio-fallback', publicWebhookLimit, telnyxRouter);
   app.use('/webhooks/telnyx', publicWebhookLimit, telnyxRouter);
   app.use('/webhooks/retell', publicWebhookLimit, retellRouter);
   app.use('/retell-webhook', publicWebhookLimit, retellRouter);
