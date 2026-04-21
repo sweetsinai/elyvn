@@ -21,8 +21,8 @@ Built for home service businesses, dental offices, med spas, salons, auto shops,
    |  Phone (Retell)  |   0-100 score    |  SMS (Twilio)    |
    |  SMS (Twilio)    |   12 industries  |  Voice (Retell)  |
    |  WhatsApp        |   guardrails     |  Telegram        |
-   |  FB Messenger    |                  |  Email (SMTP)    |
-   |  Instagram DM    |                  |  Cal.com Book    |
+   |  FB Messenger    |                  |  Cal.com Book    |
+   |  Instagram DM    |                  |                  |
    |  Web Forms       |                  |                  |
    +------------------+                  +------------------+
           |                                       |
@@ -153,7 +153,7 @@ Business owners manage everything from their phone. No dashboard needed.
 
 ### Commands by Plan
 
-| Command | Starter | Pro | Premium |
+| Command | Growth | Pro | Elite |
 |---------|---------|--------|-------|
 | `/status` | Dashboard overview | | |
 | `/leads` | Lead list by stage | | |
@@ -163,8 +163,6 @@ Business owners manage everything from their phone. No dashboard needed.
 | `/complete +phone` | Mark job done | | |
 | `/pause` / `/resume` | Control AI | | |
 | `/brain` | | AI activity feed | |
-| `/outreach` | | | Campaign stats |
-| `/scrape city industry` | | | Find prospects |
 
 **Two-way reply:** Tap "Reply to lead" on any notification -> type your message -> ELYVN sends it as SMS. The lead's number is verified against your leads table (no spoofing).
 
@@ -176,9 +174,9 @@ Business owners manage everything from their phone. No dashboard needed.
 
 | Plan | Price | Calls | SMS | Best for |
 |------|-------|-------|-----|----------|
-| **Starter** | $199/mo | 500 | 1,000 | Solo operator, 1-2 locations |
+| **Growth** | $199/mo | 500 | 1,000 | Solo operator, 1-2 locations |
 | **Pro** | $399/mo | 1,500 | 3,000 | Growing SMB, multiple services |
-| **Premium** | $799/mo | Unlimited | Unlimited | High-volume, multi-location |
+| **Elite** | $799/mo | Unlimited | Unlimited | High-volume, multi-location |
 
 7-day free trial on all plans. Usage tracked per-client per-month.
 
@@ -240,7 +238,7 @@ Response:
 | PUT | `/api/settings/:clientId` | Update settings |
 | GET | `/api/onboarding/:clientId` | 7-step wizard progress |
 | GET | `/api/usage/:clientId` | Monthly usage vs. limits |
-| POST | `/api/plan/:clientId/upgrade` | Self-serve Stripe upgrade |
+| POST | `/api/plan/:clientId/upgrade` | Self-serve Dodo upgrade |
 
 ### Leads & Analytics
 | Method | Path | Purpose |
@@ -262,7 +260,7 @@ Response:
 | `/webhooks/calcom` | Cal.com bookings | HMAC-SHA256 + timestamp |
 | `/webhooks/form` | Web forms | Rate limited |
 | `/webhooks/telegram` | Telegram bot | Secret token |
-| `/billing/webhook` | Stripe | Stripe signature |
+| `/billing/webhook` | Dodo Payments | Dodo signature |
 
 ---
 
@@ -287,12 +285,10 @@ Response:
 | 3 AM | Data cleanup (old jobs, logs) |
 | 6 AM | Batch lead scoring |
 | 9 AM | AI lead review (brain decides per lead) |
-| 10 AM | Cold email outreach |
 | 7 PM | Daily summary to all clients (Telegram) |
 | Mon 8 AM | AI weekly report with Claude insights |
 | Every 2 min | Appointment reminders |
 | Every 5 min | Follow-up processor |
-| Every 30 min | Email reply checker |
 
 ---
 
@@ -331,7 +327,7 @@ TELEGRAM_BOT_TOKEN   # Owner notifications
 ### Integrations
 ```
 CALCOM_API_KEY       # Booking
-STRIPE_SECRET_KEY    # Billing
+DODO_API_KEY         # Billing
 META_VERIFY_TOKEN    # FB + Instagram
 META_APP_SECRET      # Social webhook verification
 ```
@@ -341,7 +337,6 @@ META_APP_SECRET      # Social webhook verification
 SENTRY_DSN                    # Error tracking
 OTEL_EXPORTER_OTLP_ENDPOINT  # Distributed tracing
 REDIS_URL                     # Nonce dedup (fallback: in-memory)
-SMTP_HOST/USER/PASS           # Email outreach
 ```
 
 ---

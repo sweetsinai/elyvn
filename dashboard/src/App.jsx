@@ -9,7 +9,6 @@ import Calls from './pages/Calls';
 import Messages from './pages/Messages';
 import Pipeline from './pages/Pipeline';
 import Intelligence from './pages/Intelligence';
-import Outreach from './pages/Outreach';
 import Settings from './pages/Settings';
 import Clients from './pages/Clients';
 import ClientDetail from './pages/ClientDetail';
@@ -62,7 +61,6 @@ export default function App() {
                 <Route path="/messages" element={<Messages />} />
                 <Route path="/pipeline" element={<Pipeline />} />
                 <Route path="/intelligence" element={<Intelligence />} />
-                <Route path="/outreach" element={<Outreach />} />
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/client-detail" element={<ClientDetail />} />
                 <Route path="/provision" element={<Provision />} />

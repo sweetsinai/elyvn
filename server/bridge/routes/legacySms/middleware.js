@@ -5,7 +5,7 @@
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
 
-function verifyLegacy SMSSignature(req, res, next) {
+function verifyLegacySmsSignature(req, res, next) {
   const publicKey = process.env.TELNYX_PUBLIC_KEY;
   if (!publicKey) {
     if (process.env.NODE_ENV === 'production') {
@@ -68,4 +68,4 @@ function verifyLegacy SMSSignature(req, res, next) {
   }
 }
 
-module.exports = { verifyLegacy SMSSignature };
+module.exports = { verifyLegacySmsSignature };

@@ -628,24 +628,9 @@ async function handleCommand(db, message) {
       msg += `<b>Revenue</b>\n`;
       msg += `  Est: $${revenue.toLocaleString()} ${revArrow}\n`;
       msg += `  Active leads: ${activeLeads.c || 0}\n`;
+      msg += '\n';
 
       await telegram.sendMessage(chatId, msg);
-      break;
-    }
-
-    case '/brain': {
-      await telegram.sendMessage(chatId, 'This feature is not available. Use /status to see your dashboard.');
-      break;
-    }
-
-    case '/outreach': {
-      await telegram.sendMessage(chatId, 'This feature is not available. Use /status to see your dashboard.');
-      break;
-    }
-
-    case '/scrape':
-    case '/prospects': {
-      await telegram.sendMessage(chatId, 'This feature is not available. Use /status to see your dashboard.');
       break;
     }
 

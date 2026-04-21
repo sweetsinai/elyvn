@@ -85,7 +85,6 @@ router.get('/plans', (req, res) => {
       price: plan.price,
       calls: plan.calls === -1 ? 'Unlimited' : plan.calls,
       sms: plan.sms === -1 ? 'Unlimited' : plan.sms,
-      emails: plan.emails === -1 ? 'Unlimited' : plan.emails,
     }));
   res.json({ plans });
 });
