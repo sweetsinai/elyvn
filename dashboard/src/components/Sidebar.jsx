@@ -33,7 +33,7 @@ const connections = [
   { name: 'Retell', key: 'retell' },
   { name: 'Twilio', key: 'twilio' },
   { name: 'Cal.com', key: 'calcom' },
-  { name: 'MCP', key: 'mcp' },
+  { name: 'Managed Agents', key: 'mcp' },
 ];
 
 export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => {} }) {
