@@ -37,7 +37,13 @@ function getDataRoot() {
 
   // Priority 2: Local development fallback
   // Resolves to [project_root]/server/mcp
-  return path.resolve(__dirname, '../../mcp');
+  const localMcp = path.resolve(__dirname, '../../mcp');
+  if (fs.existsSync(localMcp)) {
+    return localMcp;
+  }
+
+  // Final fallback to current directory mcp if for some reason it's moved
+  return path.resolve(process.cwd(), 'mcp');
 }
 
 /**

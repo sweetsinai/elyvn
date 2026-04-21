@@ -301,13 +301,31 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
       logger.error(`[provision] Database save failed: ${err.message}`);
       sendUpdate('creating_client', 'failed', { error: err.message });
 
-      // Rollback assets if DB save fails
-      logger.info(`[provision] Triggering rollback for client ${clientId} due to DB failure...`);
+      // Rollback assets if DB save fails (Atomic Provisioning with Rollback)
+      logger.info(`[provision] Triggering robust rollback for client ${clientId} due to DB failure...`);
+      sendUpdate('creating_client', 'failed', { log: 'Database error. Rolling back created assets...' });
+      
       const rollbackTasks = [];
-      if (retellAgentId) rollbackTasks.push(deleteRetellAgent(retellAgentId).catch(e => logger.warn(`[provision] Rollback failed for agent ${retellAgentId}: ${e.message}`)));
-      if (retellLlmId) rollbackTasks.push(deleteRetellLlm(retellLlmId).catch(e => logger.warn(`[provision] Rollback failed for LLM ${retellLlmId}: ${e.message}`)));
-      if (provisionedNumber?.phoneNumberSid) rollbackTasks.push(releaseNumber(provisionedNumber.phoneNumberSid).catch(e => logger.warn(`[provision] Rollback failed for phone ${provisionedNumber.phoneNumberSid}: ${e.message}`)));
-      if (provisionedNumber?.trunkSid) rollbackTasks.push(deleteSIPTrunk(provisionedNumber.trunkSid).catch(e => logger.warn(`[provision] Rollback failed for trunk ${provisionedNumber.trunkSid}: ${e.message}`)));
+      if (retellAgentId) {
+        rollbackTasks.push(deleteRetellAgent(retellAgentId)
+          .then(() => logger.info(`[provision] Rollback: Deleted Retell agent ${retellAgentId}`))
+          .catch(e => logger.warn(`[provision] Rollback failed for agent ${retellAgentId}: ${e.message}`)));
+      }
+      if (retellLlmId) {
+        rollbackTasks.push(deleteRetellLlm(retellLlmId)
+          .then(() => logger.info(`[provision] Rollback: Deleted Retell LLM ${retellLlmId}`))
+          .catch(e => logger.warn(`[provision] Rollback failed for LLM ${retellLlmId}: ${e.message}`)));
+      }
+      if (provisionedNumber?.phoneNumberSid) {
+        rollbackTasks.push(releaseNumber(provisionedNumber.phoneNumberSid)
+          .then(() => logger.info(`[provision] Rollback: Released Twilio number ${provisionedNumber.phoneNumberSid}`))
+          .catch(e => logger.warn(`[provision] Rollback failed for phone ${provisionedNumber.phoneNumberSid}: ${e.message}`)));
+      }
+      if (provisionedNumber?.trunkSid) {
+        rollbackTasks.push(deleteSIPTrunk(provisionedNumber.trunkSid)
+          .then(() => logger.info(`[provision] Rollback: Deleted SIP trunk ${provisionedNumber.trunkSid}`))
+          .catch(e => logger.warn(`[provision] Rollback failed for trunk ${provisionedNumber.trunkSid}: ${e.message}`)));
+      }
 
       await Promise.allSettled(rollbackTasks);
       logger.info(`[provision] Rollback complete for client ${clientId}`);

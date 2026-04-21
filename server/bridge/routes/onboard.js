@@ -186,7 +186,7 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
     // Prepare KB file path
     const kbDir = getKBRoot();
     const kbAbsPath = path.join(kbDir, `${clientId}.json`);
-    const kbPath = `server/mcp/knowledge_bases/${clientId}.json`; // Kept for DB compatibility if needed, but getKBRoot is preferred for reading
+    const kbPath = kbAbsPath; // Storing absolute path for reliability
 
     // Write KB file
     await fsPromises.writeFile(kbAbsPath, JSON.stringify(knowledgeBase, null, 2));
