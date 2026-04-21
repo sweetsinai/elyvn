@@ -4,6 +4,7 @@ const { randomUUID } = require('crypto');
 const path = require('path');
 const fsPromises = require('fs').promises;
 const { isValidUUID, sanitizeString } = require('../utils/validate');
+const { getKBRoot } = require('../utils/dbConfig');
 const { logger } = require('../utils/logger');
 const { logDataMutation } = require('../utils/auditLog');
 const { validateBody } = require('../middleware/validateRequest');
@@ -183,12 +184,11 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
     };
 
     // Prepare KB file path
-    const kbDir = path.join(__dirname, '../../mcp/knowledge_bases');
-    const kbPath = `server/mcp/knowledge_bases/${clientId}.json`;
-    const kbAbsPath = path.join(__dirname, '../../mcp/knowledge_bases', `${clientId}.json`);
+    const kbDir = getKBRoot();
+    const kbAbsPath = path.join(kbDir, `${clientId}.json`);
+    const kbPath = `server/mcp/knowledge_bases/${clientId}.json`; // Kept for DB compatibility if needed, but getKBRoot is preferred for reading
 
-    // Create directory and write KB file
-    await fsPromises.mkdir(kbDir, { recursive: true });
+    // Write KB file
     await fsPromises.writeFile(kbAbsPath, JSON.stringify(knowledgeBase, null, 2));
 
     // Insert client record into database

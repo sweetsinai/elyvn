@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const { isValidUUID } = require('../../utils/validate');
+const { getKBRoot } = require('../../utils/dbConfig');
 const config = require('../../utils/config');
 const { withTimeout } = require('../../utils/resilience');
 const { logger } = require('../../utils/logger');
@@ -62,12 +63,13 @@ router.post('/chat', emailSendLimit, validateBody(ChatSchema), async (req, res, 
       }
 
       if (isValidUUID(clientId)) {
-        const kbPath = path.join(__dirname, '../../../mcp/knowledge_bases', `${clientId}.json`);
+        const kbDir = getKBRoot();
+        const kbPath = path.join(kbDir, `${clientId}.json`);
         try {
           // Verify path doesn't escape knowledge_bases directory
           const resolvedPath = path.resolve(kbPath);
-          const kbDir = path.resolve(path.join(__dirname, '../../../mcp/knowledge_bases'));
-          if (!resolvedPath.startsWith(kbDir)) {
+          const resolvedKbDir = path.resolve(kbDir);
+          if (!resolvedPath.startsWith(resolvedKbDir)) {
             logger.error('[api] KB path traversal attempted');
           } else {
             const kbData = await fs.promises.readFile(kbPath, 'utf8');

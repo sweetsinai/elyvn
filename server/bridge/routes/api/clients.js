@@ -10,6 +10,7 @@ const { AppError } = require('../../utils/AppError');
 const { validateEmail, validatePhone, validateLength, LENGTH_LIMITS } = require('../../utils/inputValidation');
 const { cachedGet, invalidateCache, CACHE_TTL } = require('../../utils/dbAdapter');
 const { parsePagination } = require('../../utils/dbHelpers');
+const { getKBRoot } = require('../../utils/dbConfig');
 const { logDataMutation } = require('../../utils/auditLog');
 const { validateParams, validateBody, validateQuery } = require('../../middleware/validateRequest');
 const { ClientParamsSchema, ClientCreateSchema } = require('../../utils/schemas/client');
@@ -180,9 +181,8 @@ router.post('/clients', validateBody(ClientCreateSchema), async (req, res, next)
 
     // Save knowledge base JSON if provided (UUID validated — id is from randomUUID())
     if (knowledge_base) {
-      const kbDir = path.join(__dirname, '../../../mcp/knowledge_bases');
+      const kbDir = getKBRoot();
       try {
-        await fsPromises.mkdir(kbDir, { recursive: true });
         await fsPromises.writeFile(path.join(kbDir, `${id}.json`), JSON.stringify(knowledge_base, null, 2));
       } catch (err) {
         logger.error('[api] Failed to save KB:', err.message);
@@ -327,9 +327,8 @@ router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req,
 
     // Update knowledge base if provided (filesystem op — outside transaction intentionally)
     if (updates.knowledge_base) {
-      const kbDir = path.join(__dirname, '../../../mcp/knowledge_bases');
+      const kbDir = getKBRoot();
       try {
-        await fsPromises.mkdir(kbDir, { recursive: true });
         await fsPromises.writeFile(path.join(kbDir, `${clientId}.json`), JSON.stringify(updates.knowledge_base, null, 2));
       } catch (err) {
         logger.error('[api] Failed to save KB:', err.message);

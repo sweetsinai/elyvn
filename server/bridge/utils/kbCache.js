@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { getKBRoot } = require('./dbConfig');
 
 const kbCache = new Map();
 const KB_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -50,7 +51,7 @@ async function loadKnowledgeBase(clientId) {
   }
 
   const readPromise = (async () => {
-    const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${clientId}.json`);
+    const kbPath = path.join(getKBRoot(), `${clientId}.json`);
     try {
       const content = await fs.promises.readFile(kbPath, 'utf8');
       const entryBytes = Buffer.byteLength(content, 'utf8');
