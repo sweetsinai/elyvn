@@ -11,7 +11,8 @@ const { logDataMutation } = require('../utils/auditLog');
 const { AppError } = require('../utils/AppError');
 const { validateBody } = require('../middleware/validateRequest');
 const { ProvisionSchema } = require('../utils/schemas/provision');
-const { generateRetellPrompt } = require('../utils/retellSync');
+const { generateRetellPrompt, deleteRetellAgent, deleteRetellLlm } = require('../utils/retellSync');
+const { provisionUnifiedNumber, releaseNumber, deleteSIPTrunk } = require('../utils/twilioProvisioning');
 
 // NOTE: The 'plan' column is handled by migration 022_auth_and_billing.
 // Removed rogue DB connection that opened a second database handle at module load.
@@ -227,7 +228,6 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     if (retellAgentId && process.env.TWILIO_ACCOUNT_SID) {
       try {
         sendUpdate('buying_number', 'in_progress');
-        const { provisionUnifiedNumber } = require('../utils/twilioProvisioning');
         const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
           ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
           : process.env.BASE_URL || 'http://localhost:3001';
@@ -299,6 +299,18 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
       provisioning_status.db_error = err.message;
       logger.error(`[provision] Database save failed: ${err.message}`);
       sendUpdate('creating_client', 'failed', { error: err.message });
+
+      // Rollback assets if DB save fails
+      logger.info(`[provision] Triggering rollback for client ${clientId} due to DB failure...`);
+      const rollbackTasks = [];
+      if (retellAgentId) rollbackTasks.push(deleteRetellAgent(retellAgentId).catch(e => logger.warn(`[provision] Rollback failed for agent ${retellAgentId}: ${e.message}`)));
+      if (retellLlmId) rollbackTasks.push(deleteRetellLlm(retellLlmId).catch(e => logger.warn(`[provision] Rollback failed for LLM ${retellLlmId}: ${e.message}`)));
+      if (provisionedNumber?.phoneNumberSid) rollbackTasks.push(releaseNumber(provisionedNumber.phoneNumberSid).catch(e => logger.warn(`[provision] Rollback failed for phone ${provisionedNumber.phoneNumberSid}: ${e.message}`)));
+      if (provisionedNumber?.trunkSid) rollbackTasks.push(deleteSIPTrunk(provisionedNumber.trunkSid).catch(e => logger.warn(`[provision] Rollback failed for trunk ${provisionedNumber.trunkSid}: ${e.message}`)));
+
+      await Promise.allSettled(rollbackTasks);
+      logger.info(`[provision] Rollback complete for client ${clientId}`);
+
       return res.status(500).json({
         error: 'Failed to save client to database',
         message: process.env.NODE_ENV !== 'production' ? err.message : undefined,

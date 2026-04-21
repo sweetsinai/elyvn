@@ -223,6 +223,17 @@ function mountRoutes(app) {
       ELYVN_API_KEY: !!process.env.ELYVN_API_KEY,
     };
 
+    const mcpOk = await (async () => {
+      try {
+        const fs = require('fs').promises;
+        const mcpPath = path.join(__dirname, '..', '..', 'mcp', 'knowledge_bases');
+        await fs.access(mcpPath, require('fs').constants.R_OK);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    })();
+
     const apiKey = req.headers['x-api-key'];
     const isValidKey = apiKey && process.env.ELYVN_API_KEY && safeCompare(apiKey, process.env.ELYVN_API_KEY);
     const isAuthenticated = req.isAdmin || req.isJwtAuth || isValidKey;
@@ -230,6 +241,11 @@ function mountRoutes(app) {
       return res.status(dbOk ? 200 : 503).json({
         status: dbOk ? 'ok' : 'degraded',
         timestamp: new Date().toISOString(),
+        services: {
+          db: dbOk,
+          mcp: mcpOk,
+        },
+        env_configured: envVars,
       });
     }
 
@@ -246,16 +262,7 @@ function mountRoutes(app) {
       },
       services: { 
         db: dbOk,
-        mcp: await (async () => {
-          try {
-            const fs = require('fs').promises;
-            const mcpPath = path.join(__dirname, '..', '..', 'mcp', 'knowledge_bases');
-            await fs.access(mcpPath, require('fs').constants.R_OK);
-            return true;
-          } catch (_) {
-            return false;
-          }
-        })()
+        mcp: mcpOk,
       },
       database: dbHealth,
       db_counts: dbCounts,

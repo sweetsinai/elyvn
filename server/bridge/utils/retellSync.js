@@ -195,7 +195,37 @@ async function syncClientToRetell(clientId, db) {
   }
 }
 
+/**
+ * Deletes a Retell agent.
+ */
+async function deleteRetellAgent(agentId) {
+  if (!agentId) return;
+  logger.info(`[retellSync] Deleting Retell agent ${agentId}`);
+  try {
+    return await retellRequest(`/delete-agent/${agentId}`, 'DELETE');
+  } catch (err) {
+    logger.warn(`[retellSync] Failed to delete Retell agent ${agentId}: ${err.message}`);
+    throw err;
+  }
+}
+
+/**
+ * Deletes a Retell LLM.
+ */
+async function deleteRetellLlm(llmId) {
+  if (!llmId) return;
+  logger.info(`[retellSync] Deleting Retell LLM ${llmId}`);
+  try {
+    return await retellRequest(`/delete-retell-llm/${llmId}`, 'DELETE');
+  } catch (err) {
+    logger.warn(`[retellSync] Failed to delete Retell LLM ${llmId}: ${err.message}`);
+    throw err;
+  }
+}
+
 module.exports = {
   generateRetellPrompt,
-  syncClientToRetell
+  syncClientToRetell,
+  deleteRetellAgent,
+  deleteRetellLlm
 };

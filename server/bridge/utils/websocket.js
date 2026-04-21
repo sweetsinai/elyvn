@@ -22,6 +22,11 @@ function initWebSocket(server, db) {
       let authenticated = false;
       let authTimeout = null;
 
+      ws.isAlive = true;
+      ws.on('pong', () => {
+        ws.isAlive = true;
+      });
+
       // Give client 5s to authenticate, otherwise disconnect
       authTimeout = setTimeout(() => {
         if (!authenticated) {
@@ -120,6 +125,14 @@ function initWebSocket(server, db) {
     // Heartbeat
     heartbeatInterval = setInterval(() => {
       for (const [client] of authenticatedClients) {
+        if (client.isAlive === false) {
+          logger.info('[ws] Terminating inactive connection');
+          authenticatedClients.delete(client);
+          client.terminate();
+          continue;
+        }
+
+        client.isAlive = false;
         if (client.readyState === WebSocket.OPEN && typeof client.ping === 'function') {
           client.ping();
         } else {
