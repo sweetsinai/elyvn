@@ -7,7 +7,7 @@ const { WEBSOCKET_HEARTBEAT_INTERVAL_MS } = require('../config/timing');
 const WebSocket = require('ws');
 const crypto = require('crypto');
 const { logger } = require('./logger');
-const { verifyToken } = require('../routes/auth/utils');
+const { verifyToken } = require('../routes/auth');
 
 let wss = null;
 // Map of ws => { clientId: string|null } — null means admin/global key, string means per-tenant
