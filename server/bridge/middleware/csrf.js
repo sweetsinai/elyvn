@@ -51,12 +51,15 @@ function csrfProtection(req, res, next) {
     return next();
   }
 
-  // 3. Origin matches allowed origins
+  // 3. Origin or Referer matches allowed origins
   const origin = req.headers['origin'];
-  if (origin) {
+  const referer = req.headers['referer'];
+  const source = origin || referer;
+
+  if (source) {
     // Same-origin: dashboard served from same host as API always passes
     const host = req.headers['host'];
-    if (host && origin === `https://${host}`) {
+    if (host && (source === `https://${host}` || source.startsWith(`https://${host}/`))) {
       return next();
     }
 
@@ -69,7 +72,10 @@ function csrfProtection(req, res, next) {
       ...(process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
     ];
 
-    if (allowed.includes(origin)) {
+    // Check if source matches any allowed origin exactly or as a prefix (for referer)
+    const isAllowed = allowed.some(a => source === a || source.startsWith(a + '/'));
+
+    if (isAllowed) {
       return next();
     }
 
@@ -79,14 +85,14 @@ function csrfProtection(req, res, next) {
     }
   }
 
-  // In non-production, be lenient — log a warning but allow
+  // 4. In non-production, be lenient — log a warning but allow
   if (process.env.NODE_ENV !== 'production') {
-    logger.warn(`[csrf] Suspicious ${req.method} ${req.path} — no auth, no AJAX header, origin: ${origin || 'none'}`);
+    logger.warn(`[csrf] Suspicious ${req.method} ${req.path} — no auth, no AJAX header, origin: ${origin || 'none'}, referer: ${referer || 'none'}`);
     return next();
   }
 
-  logger.warn(`[csrf] Blocked ${req.method} ${req.path} — failed CSRF checks (origin: ${origin || 'none'}, ip: ${req.ip})`);
-  return res.status(403).json({ code: 'CSRF_REJECTED', message: 'Request rejected — missing authentication or invalid origin' });
+  logger.warn(`[csrf] Blocked ${req.method} ${req.path} — failed CSRF checks (origin: ${origin || 'none'}, referer: ${referer || 'none'}, ip: ${req.ip})`);
+  return res.status(403).json({ code: 'CSRF_REJECTED', message: 'Request rejected — invalid source origin or missing authentication' });
 }
 
 module.exports = { csrfProtection };

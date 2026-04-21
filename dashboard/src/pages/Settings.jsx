@@ -524,7 +524,7 @@ Phone numbers are provisioned via the Provision page. Edit transfer_phone in a c
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[
             { label: 'Retell Webhook', url: `${baseUrl}/webhooks/retell` },
-            { label: 'Twilio Webhook (Fallback)', url: `${baseUrl}/webhooks/telnyx` },
+            { label: 'Twilio Webhook (Secondary)', url: `${baseUrl}/webhooks/twilio-fallback` },
           ].map(wh => (
             <div key={wh.label} className="card" style={{
               padding: '12px 16px',
