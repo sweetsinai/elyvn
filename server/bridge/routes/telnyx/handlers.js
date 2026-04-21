@@ -16,11 +16,11 @@ const { SMS_MAX_LENGTH } = require('../../config/timing');
 
 async function handleInboundSMS(db, { from, to, body, messageId }) {
   try {
-    logger.info(`[telnyx] SMS from ${from ? from.replace(/\d(?=\d{4})/g, '*') : '?'} to ${to} (${(body || '').length} chars)`);
+    logger.info(`[sms] SMS from ${from ? from.replace(/\d(?=\d{4})/g, '*') : '?'} to ${to} (${(body || '').length} chars)`);
 
     // Fast nonce check (Redis or in-memory) before hitting the DB
     if (messageId && await hasNonce(messageId)) {
-      logger.warn(`[telnyx] Duplicate webhook rejected: ${messageId}`);
+      logger.warn(`[sms] Duplicate webhook rejected: ${messageId}`);
       return;
     }
     if (messageId) {
@@ -31,7 +31,7 @@ async function handleInboundSMS(db, { from, to, body, messageId }) {
     if (messageId) {
       const dup = await db.query('SELECT id FROM messages WHERE message_sid = ?', [messageId], 'get');
       if (dup) {
-        logger.info(`[telnyx] Duplicate messageId ${messageId}, skipping`);
+        logger.info(`[sms] Duplicate messageId ${messageId}, skipping`);
         return;
       }
     }
@@ -45,7 +45,7 @@ async function handleInboundSMS(db, { from, to, body, messageId }) {
     );
 
     if (!client) {
-      logger.error(`[telnyx] No client found for number ${to}`);
+      logger.error(`[sms] No client found for number ${to}`);
       return;
     }
 
@@ -64,7 +64,7 @@ async function handleInboundSMS(db, { from, to, body, messageId }) {
       await handleNormalMessage(db, client, from, to, body, messageId);
     }
   } catch (err) {
-    logger.error('[telnyx] handleInboundSMS error:', err);
+    logger.error('[sms] handleInboundSMS error:', err);
   }
 }
 
@@ -76,9 +76,9 @@ async function handleOptOut(db, client, from, to, keyword) {
     const msg = `You've been unsubscribed from ${client.business_name || 'our'} messages. Reply START to resubscribe.`;
     await sendSMS(from, msg.slice(0, SMS_MAX_LENGTH), to, db, client.id);
 
-    logger.info(`[telnyx] Recorded opt-out for ${from} (${keyword})`);
+    logger.info(`[sms] Recorded opt-out for ${from} (${keyword})`);
   } catch (err) {
-    logger.error('[telnyx] handleOptOut error:', err);
+    logger.error('[sms] handleOptOut error:', err);
   }
 }
 
@@ -90,9 +90,9 @@ async function handleOptIn(db, client, from, to) {
     const msg = `Welcome back! You're now subscribed to ${client.business_name || 'our'} messages.`;
     await sendSMS(from, msg.slice(0, SMS_MAX_LENGTH), to, db, client.id);
 
-    logger.info(`[telnyx] Recorded opt-in for ${from}`);
+    logger.info(`[sms] Recorded opt-in for ${from}`);
   } catch (err) {
-    logger.error('[telnyx] handleOptIn error:', err);
+    logger.error('[sms] handleOptIn error:', err);
   }
 }
 
@@ -118,13 +118,13 @@ async function handleCancel(db, client, from, replyFrom) {
         'run'
       );
       await sendSMS(from, 'Your appointment has been cancelled.', replyFrom, db, client.id);
-      logger.info(`[telnyx] Booking ${lead.calcom_booking_id} cancelled for ${from}`);
+      logger.info(`[sms] Booking ${lead.calcom_booking_id} cancelled for ${from}`);
     } else {
       await sendSMS(from, 'Sorry, we couldn\'t cancel your appointment right now. Please call us directly.', replyFrom, db, client.id);
     }
   } catch (err) {
-    logger.error('[telnyx] handleCancel error:', err);
-    await sendSMS(from, 'Sorry, something went wrong. Please call us directly.', replyFrom, db, client.id).catch(e => logger.warn('[telnyx] Error SMS send failed', e.message));
+    logger.error('[sms] handleCancel error:', err);
+    await sendSMS(from, 'Sorry, something went wrong. Please call us directly.', replyFrom, db, client.id).catch(e => logger.warn('[sms] Error SMS send failed', e.message));
   }
 }
 
@@ -136,7 +136,7 @@ async function handleYes(db, client, from, replyFrom) {
       : 'Please call us to schedule your appointment.';
     await sendSMS(from, msg.slice(0, SMS_MAX_LENGTH), replyFrom, db, client.id);
   } catch (err) {
-    logger.error('[telnyx] handleYes error:', err);
+    logger.error('[sms] handleYes error:', err);
   }
 }
 

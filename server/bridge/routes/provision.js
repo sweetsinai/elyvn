@@ -168,6 +168,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     }
 
     const clientId = randomUUID();
+    const provisioningSessionId = randomUUID();
     const now = new Date().toISOString();
     const provisioning_status = {
       client_id: clientId,
@@ -179,23 +180,43 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
       kb_error: null,
     };
 
-    logger.info(`[provision] Starting provisioning for ${business_name} (${clientId})`);
+    logger.info(`[provision] Starting provisioning for ${business_name} (${clientId}) - Session: ${provisioningSessionId}`);
 
-    // Helper to broadcast progress
-    const sendUpdate = (stage, status, extra = {}) => {
+    // Helper to broadcast progress and persist to DB
+    const sendUpdate = async (stage, status, extra = {}) => {
+      // 1. WebSocket broadcast
       broadcast('provisioning_update', {
+        provisioningId: provisioningSessionId,
         businessName: business_name,
         stage,
         status,
         ...extra
       });
+
+      // 2. Persist to DB
+      try {
+        await db.query(`
+          INSERT INTO provisioning_logs (id, client_id, business_name, stage, status, details, error)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+          randomUUID(),
+          clientId,
+          business_name,
+          stage,
+          status,
+          extra.log || extra.details || null,
+          extra.error || null
+        ], 'run');
+      } catch (err) {
+        logger.error(`[provision] Failed to write to provisioning_logs: ${err.message}`);
+      }
     };
 
     // Step 1: Create Retell agent (optional, don't fail overall provisioning if this fails)
     let retellAgentId = null;
     let retellLlmId = null;
     try {
-      sendUpdate('creating_agent', 'in_progress', { log: 'Creating AI agent and LLM...' });
+      await sendUpdate('creating_agent', 'in_progress', { log: 'Creating AI agent and LLM...' });
       logger.info(`[provision] Creating Retell agent for ${business_name}...`);
       
       // Merge top-level fields into knowledge_base for comprehensive prompting
@@ -216,11 +237,11 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
       retellLlmId = retellData.llmId;
       provisioning_status.retell_agent_id = retellAgentId;
       logger.info(`[provision] Successfully created Retell agent: ${retellAgentId} (LLM: ${retellLlmId})`);
-      sendUpdate('creating_agent', 'completed', { log: 'AI agent created successfully.' });
+      await sendUpdate('creating_agent', 'completed', { log: 'AI agent created successfully.' });
     } catch (err) {
       provisioning_status.retell_error = err.message;
       logger.error(`[provision] Retell provisioning failed: ${err.message}`);
-      sendUpdate('creating_agent', 'failed', { error: err.message });
+      await sendUpdate('creating_agent', 'failed', { error: err.message });
       // Don't return — allow client creation without Retell
     }
 
@@ -228,7 +249,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     let provisionedNumber = null;
     if (retellAgentId && process.env.TWILIO_ACCOUNT_SID) {
       try {
-        sendUpdate('buying_number', 'in_progress');
+        await sendUpdate('buying_number', 'in_progress');
         const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
           ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
           : process.env.BASE_URL || 'http://localhost:3001';
@@ -239,22 +260,22 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
           smsWebhookUrl: `${baseUrl}/webhooks/twilio`,
           countryCode: 'US',
           areaCode: area_code || undefined,
-        }, (log) => {
+        }, async (log) => {
           logger.info(`[provision] ${log}`);
-          sendUpdate('buying_number', 'in_progress', { log });
+          await sendUpdate('buying_number', 'in_progress', { log });
         });
         provisioning_status.phone_number = provisionedNumber.phoneNumber;
         logger.info(`[provision] Dedicated number provisioned: ${provisionedNumber.phoneNumber}`);
-        sendUpdate('buying_number', 'completed', { log: 'Phone number provisioned successfully.' });
+        await sendUpdate('buying_number', 'completed', { log: 'Phone number provisioned successfully.' });
       } catch (err) {
         provisioning_status.phone_error = err.message;
         logger.warn(`[provision] Phone provisioning failed (non-fatal): ${err.message}`);
-        sendUpdate('buying_number', 'failed', { error: err.message });
+        await sendUpdate('buying_number', 'failed', { error: err.message });
         // Fall back to shared number
       }
     } else {
        // Skip buying number if no retell agent or no sid
-       sendUpdate('buying_number', 'completed', { skipped: true });
+       await sendUpdate('buying_number', 'completed', { skipped: true });
     }
 
     const phoneNumber = provisionedNumber?.phoneNumber || process.env.TWILIO_PHONE_NUMBER || null;
@@ -262,7 +283,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
 
     // Step 3: Save client to database
     try {
-      sendUpdate('creating_client', 'in_progress', { log: 'Saving client record...' });
+      await sendUpdate('creating_client', 'in_progress', { log: 'Saving client record...' });
       await db.query(`
         INSERT INTO clients (
           id, business_name, owner_name, owner_phone, owner_email,
@@ -294,16 +315,16 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
 
       provisioning_status.db_save = true;
       logger.info(`[provision] Successfully saved client to database: ${clientId}`);
-      sendUpdate('creating_client', 'completed', { log: 'Client record saved.' });
+      await sendUpdate('creating_client', 'completed', { log: 'Client record saved.' });
       try { logDataMutation(db, { action: 'client_created', table: 'clients', recordId: clientId, newValues: { business_name, owner_phone, plan, industry }, ip: req.ip }); } catch (_) {}
     } catch (err) {
       provisioning_status.db_error = err.message;
       logger.error(`[provision] Database save failed: ${err.message}`);
-      sendUpdate('creating_client', 'failed', { error: err.message });
+      await sendUpdate('creating_client', 'failed', { error: err.message });
 
       // Rollback assets if DB save fails (Atomic Provisioning with Rollback)
       logger.info(`[provision] Triggering robust rollback for client ${clientId} due to DB failure...`);
-      sendUpdate('creating_client', 'failed', { log: 'Database error. Rolling back created assets...' });
+      await sendUpdate('creating_client', 'failed', { log: 'Database error. Rolling back created assets...' });
       
       const rollbackTasks = [];
       if (retellAgentId) {
@@ -340,7 +361,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     // Step 4: Save knowledge base JSON
     if (knowledge_base) {
       try {
-        sendUpdate('syncing_kb', 'in_progress', { log: 'Generating knowledge base...' });
+        await sendUpdate('syncing_kb', 'in_progress', { log: 'Generating knowledge base...' });
         const kbDir = getKBRoot();
         await fs.promises.writeFile(
           path.join(kbDir, `${clientId}.json`),
@@ -348,51 +369,51 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
         );
         provisioning_status.kb_save = true;
         logger.info(`[provision] Successfully saved knowledge base: ${clientId}.json`);
-        sendUpdate('syncing_kb', 'completed', { log: 'Knowledge base synchronized.' });
+        await sendUpdate('syncing_kb', 'completed', { log: 'Knowledge base synchronized.' });
       } catch (err) {
         provisioning_status.kb_error = err.message;
         logger.error(`[provision] Knowledge base save failed: ${err.message}`);
-        sendUpdate('syncing_kb', 'failed', { error: err.message });
+        await sendUpdate('syncing_kb', 'failed', { error: err.message });
         // Don't fail the entire provisioning for KB save failures
       }
     } else {
-      sendUpdate('syncing_kb', 'completed', { skipped: true });
+      await sendUpdate('syncing_kb', 'completed', { skipped: true });
     }
 
     // Retrieve the full client record
     const client = await db.query('SELECT id, business_name, owner_name, owner_email, owner_phone, industry, timezone, plan, retell_agent_id, retell_phone, twilio_phone, phone_number, is_active, created_at FROM clients WHERE id = ?', [clientId], 'get');
 
     // Generate Telegram onboarding link
-    sendUpdate('setting_up_telegram', 'in_progress', { log: 'Creating Telegram bot access...' });
+    await sendUpdate('setting_up_telegram', 'in_progress', { log: 'Creating Telegram bot access...' });
     const telegram_link = getOnboardingLink(clientId);
     provisioning_status.telegram_link = telegram_link;
 
     logger.info(`[provision] Provisioning complete for ${business_name} (${clientId})`);
     logger.info(`[provision] Telegram link: ${telegram_link}`);
-    sendUpdate('setting_up_telegram', 'completed', { log: 'Telegram bot access ready.' });
+    await sendUpdate('setting_up_telegram', 'completed', { log: 'Telegram bot access ready.' });
 
     // Post-signup: create Google Sheet (non-blocking)
     try {
       const { createClientSheet, isConfigured } = require('../utils/googleSheets');
       if (isConfigured() && owner_email) {
-        sendUpdate('creating_sheet', 'in_progress');
+        await sendUpdate('creating_sheet', 'in_progress');
         createClientSheet(business_name, owner_email).then(async (sheet) => {
           if (sheet) {
             await db.query("UPDATE clients SET google_sheet_id = ?, updated_at = ? WHERE id = ?",
               [sheet.spreadsheetId, new Date().toISOString(), clientId], 'run');
-            sendUpdate('creating_sheet', 'completed');
+            await sendUpdate('creating_sheet', 'completed');
           } else {
-            sendUpdate('creating_sheet', 'failed', { error: 'Sheet creation returned null' });
+            await sendUpdate('creating_sheet', 'failed', { error: 'Sheet creation returned null' });
           }
-        }).catch((err) => {
+        }).catch(async (err) => {
           logger.warn(`[provision] Google Sheet creation failed: ${err.message}`);
-          sendUpdate('creating_sheet', 'failed', { error: err.message });
+          await sendUpdate('creating_sheet', 'failed', { error: err.message });
         });
       } else {
-        sendUpdate('creating_sheet', 'completed', { skipped: true });
+        await sendUpdate('creating_sheet', 'completed', { skipped: true });
       }
     } catch (_) {
-      sendUpdate('creating_sheet', 'completed', { skipped: true });
+      await sendUpdate('creating_sheet', 'completed', { skipped: true });
     }
 
     return res.status(201).json({

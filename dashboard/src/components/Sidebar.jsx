@@ -30,8 +30,8 @@ const navItems = [
 ];
 
 const connections = [
-  { name: 'Retell', key: 'retell' },
-  { name: 'Twilio', key: 'twilio' },
+  { name: 'Retell AI', key: 'retell' },
+  { name: 'Twilio SMS', key: 'twilio' },
   { name: 'Cal.com', key: 'calcom' },
   { name: 'Managed Agents', key: 'mcp' },
 ];
@@ -50,9 +50,9 @@ export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => 
           setHealth({
             mcp: services.mcp || false,
             db: services.db || false,
-            retell: data.env_configured?.RETELL_API_KEY || false,
-            twilio: data.env_configured?.TWILIO_ACCOUNT_SID || false,
-            calcom: data.env_configured?.CALCOM_API_KEY || false,
+            retell: services.retell || false,
+            twilio: services.twilio || false,
+            calcom: data.env_configured?.CALCOM_API_KEY ? 'active' : false,
           });
         })
         .catch(() => setHealth({}));
@@ -150,10 +150,13 @@ export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => 
           letterSpacing: '0.06em',
           color: '#444',
           marginBottom: 10,
-        }}>Connections</div>
+        }}>System Health</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {connections.map(conn => {
-            const isUp = health[conn.key] === true || health[conn.key] === 'connected';
+            const status = health[conn.key];
+            const isUp = status === true || status === 'active' || status === 'connected';
+            const isDegraded = status === 'timeout' || status === 'error';
+            
             return (
               <div key={conn.key} style={{
                 display: 'flex',
@@ -166,10 +169,13 @@ export default function Sidebar({ mobileMenuOpen = false, onCloseMobile = () => 
                   width: 6,
                   height: 6,
                   borderRadius: '50%',
-                  background: isUp ? '#4ade80' : '#f87171',
-                  boxShadow: isUp ? '0 0 6px #4ade80' : '0 0 6px #f87171',
+                  background: isUp ? '#4ade80' : isDegraded ? '#fbbf24' : '#f87171',
+                  boxShadow: isUp ? '0 0 6px #4ade80' : isDegraded ? '0 0 6px #fbbf24' : '0 0 6px #f87171',
                 }} />
-                {conn.name}
+                <span style={{ color: isUp ? '#999' : '#666' }}>{conn.name}</span>
+                {status && status !== true && status !== 'connected' && (
+                  <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 'auto' }}>{status}</span>
+                )}
               </div>
             );
           })}

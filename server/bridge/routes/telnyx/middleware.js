@@ -9,10 +9,10 @@ function verifyTelnyxSignature(req, res, next) {
   const publicKey = process.env.TELNYX_PUBLIC_KEY;
   if (!publicKey) {
     if (process.env.NODE_ENV === 'production') {
-      logger.error('[telnyx] TELNYX_PUBLIC_KEY not configured in production — rejecting');
+      logger.error('[sms] TELNYX_PUBLIC_KEY not configured in production — rejecting');
       return next(new AppError('WEBHOOK_NOT_CONFIGURED', 'Webhook signature verification not configured', 500));
     }
-    logger.warn('[telnyx] TELNYX_PUBLIC_KEY not configured — skipping signature validation');
+    logger.warn('[sms] TELNYX_PUBLIC_KEY not configured — skipping signature validation');
     return next();
   }
   try {
@@ -22,10 +22,10 @@ function verifyTelnyxSignature(req, res, next) {
 
     if (!signature || !timestamp) {
       if (process.env.NODE_ENV === 'production') {
-        logger.warn('[telnyx] Missing signature headers in production — rejecting');
+        logger.warn('[sms] Missing signature headers in production — rejecting');
         return next(new AppError('MISSING_SIGNATURE', 'Missing webhook signature', 401));
       }
-      logger.warn('[telnyx] Missing telnyx-signature-ed25519 or telnyx-timestamp header');
+      logger.warn('[sms] Missing telnyx-signature-ed25519 or telnyx-timestamp header');
       return next(); // Allow through in dev — might be test webhook
     }
 
@@ -49,7 +49,7 @@ function verifyTelnyxSignature(req, res, next) {
     );
 
     if (!isValid) {
-      logger.error('[telnyx] Invalid webhook signature');
+      logger.error('[sms] Invalid webhook signature');
       return next(new AppError('INVALID_SIGNATURE', 'Invalid signature', 401));
     }
 
@@ -57,13 +57,13 @@ function verifyTelnyxSignature(req, res, next) {
     const tsMs = parseInt(timestamp, 10) * 1000; // Telnyx sends seconds
     const drift = Math.abs(Date.now() - tsMs);
     if (drift > 5 * 60 * 1000) {
-      logger.warn('[telnyx] Webhook timestamp too old or too far in future — possible replay attack');
+      logger.warn('[sms] Webhook timestamp too old or too far in future — possible replay attack');
       return res.status(400).json({ error: 'Webhook timestamp too old — possible replay attack' });
     }
 
     next();
   } catch (err) {
-    logger.error('[telnyx] Signature validation error:', err.message);
+    logger.error('[sms] Signature validation error:', err.message);
     return next(new AppError('SIGNATURE_VALIDATION_ERROR', 'Webhook signature validation failed', 401));
   }
 }

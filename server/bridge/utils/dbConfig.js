@@ -68,7 +68,7 @@ function getDatabasePath() {
  */
 function getKBRoot() {
   const root = getDataRoot();
-  const kbPath = path.join(root, 'knowledge_bases');
+  const kbPath = path.join(root, 'kb');
   
   if (!fs.existsSync(kbPath)) {
     try {

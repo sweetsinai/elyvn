@@ -23,30 +23,30 @@ router.post('/', (req, res) => {
 
     const db = req.app.locals.db;
     if (!db) {
-      logger.error('[telnyx] No database connection');
+      logger.error('[sms] No database connection');
       return;
     }
 
     if (!data || !data.payload) {
-      logger.warn('[telnyx] Missing data.payload in webhook');
+      logger.warn('[sms] Missing data.payload in webhook');
       return;
     }
 
     const { payload } = data;
 
     if (!data.event_type || typeof data.event_type !== 'string') {
-      logger.warn('[telnyx] Missing or invalid event_type in webhook');
+      logger.warn('[sms] Missing or invalid event_type in webhook');
       return;
     }
 
     if (!payload.direction || typeof payload.direction !== 'string') {
-      logger.warn('[telnyx] Missing or invalid direction in webhook');
+      logger.warn('[sms] Missing or invalid direction in webhook');
       return;
     }
 
     // Only process inbound messages
     if (data.event_type !== 'message.received' || payload.direction !== 'inbound') {
-      logger.info(`[telnyx] Ignoring event_type: ${data.event_type}, direction: ${payload.direction}`);
+      logger.info(`[sms] Ignoring event_type: ${data.event_type}, direction: ${payload.direction}`);
       return;
     }
 
@@ -56,23 +56,23 @@ router.post('/', (req, res) => {
     const messageId = payload.id;
 
     if (!from || typeof from !== 'string' || !to || typeof to !== 'string') {
-      logger.warn('[telnyx] Missing or invalid from/to in SMS webhook');
+      logger.warn('[sms] Missing or invalid from/to in SMS webhook');
       return;
     }
 
     if (from.length > 20 || to.length > 20) {
-      logger.warn('[telnyx] Phone number exceeds length limit');
+      logger.warn('[sms] Phone number exceeds length limit');
       return;
     }
 
     // Process async — response already sent
     setImmediate(() => {
       handleInboundSMS(db, { from, to, body, messageId }).catch(err => {
-        logger.error('[telnyx] setImmediate error:', err);
+        logger.error('[sms] setImmediate error:', err);
       });
     });
   } catch (err) {
-    logger.error('[telnyx] Webhook parsing error:', err);
+    logger.error('[sms] Webhook parsing error:', err);
     res.status(200).json({ success: false }); // Still 200 to prevent Telnyx retries
   }
 });

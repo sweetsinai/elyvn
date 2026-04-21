@@ -1799,4 +1799,31 @@ migrations.push({
   },
 });
 
+// ── 054: Create provisioning_logs table ──
+migrations.push({
+  id: '054_provisioning_logs',
+  description: 'Create provisioning_logs table to track state and progress of client provisioning',
+  up(db) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS provisioning_logs (
+        id TEXT PRIMARY KEY,
+        client_id TEXT,
+        business_name TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        status TEXT NOT NULL, -- 'pending', 'in_progress', 'completed', 'failed'
+        details TEXT,
+        error TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_provisioning_logs_client ON provisioning_logs(client_id);
+      CREATE INDEX IF NOT EXISTS idx_provisioning_logs_business ON provisioning_logs(business_name);
+    `);
+    getLogger().info('[migrations] 054: Created provisioning_logs table');
+  },
+  down(db) {
+    db.exec('DROP TABLE IF EXISTS provisioning_logs');
+  },
+});
+
 module.exports = { runMigrations, rollbackMigration, migrations };

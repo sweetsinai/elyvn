@@ -5,7 +5,7 @@
  * Import the specific limiter you need and apply it to a route.
  *
  * Tiers:
- *   publicWebhookLimiter  — 300/min per IP  (Retell, Twilio, Telnyx)
+ *   publicWebhookLimiter  — 300/min per IP  (Retell, Twilio)
  *   authLimiter           — 10/min per IP   (login, signup — already applied in routes.js)
  *   leadLimiter           — 60/min per client
  *   emailSendLimiter      — 20/min per client

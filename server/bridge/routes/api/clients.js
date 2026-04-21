@@ -23,7 +23,7 @@ router.param('clientId', clientIsolationParam);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Safe columns to return — never expose password_hash, verification_token, verification_expires
-const CLIENT_SAFE_COLS = 'id, business_name, owner_name, owner_email, owner_phone, industry, plan, subscription_status, dodo_customer_id, dodo_subscription_id, retell_agent_id, retell_llm_id, retell_phone, twilio_phone, telnyx_phone, transfer_phone, phone_number, calcom_event_type_id, calcom_booking_link, google_review_link, google_sheet_id, telegram_chat_id, avg_ticket, is_active, notification_mode, whatsapp_phone, lead_webhook_url, booking_webhook_url, call_webhook_url, sms_webhook_url, stage_change_webhook_url, created_at, updated_at';
+const CLIENT_SAFE_COLS = 'id, business_name, owner_name, owner_email, owner_phone, industry, plan, subscription_status, dodo_customer_id, dodo_subscription_id, retell_agent_id, retell_llm_id, retell_phone, twilio_phone, transfer_phone, phone_number, calcom_event_type_id, calcom_booking_link, google_review_link, google_sheet_id, telegram_chat_id, avg_ticket, is_active, notification_mode, whatsapp_phone, lead_webhook_url, booking_webhook_url, call_webhook_url, sms_webhook_url, stage_change_webhook_url, created_at, updated_at';
 
 // Whitelist of allowed client fields for updates (prevents SQL injection)
 const ALLOWED_CLIENT_FIELDS = new Set([

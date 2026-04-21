@@ -17,7 +17,6 @@ const { logger } = require('../utils/logger');
 const WEBHOOK_PREFIXES = [
   '/webhooks/retell',
   '/retell-webhook',
-  '/webhooks/telnyx',
   '/webhooks/twilio',
   '/webhooks/calcom',
   '/webhooks/telegram',
