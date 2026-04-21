@@ -284,6 +284,46 @@ async function provisionUnifiedNumber(opts, onProgress = () => {}) {
   };
 }
 
+/**
+ * Release a purchased Twilio number.
+ * @param {string} numberSid - Twilio phone number SID
+ */
+async function releaseNumber(numberSid) {
+  if (!numberSid) return;
+  const response = await httpsRequest({
+    hostname: 'api.twilio.com',
+    port: 443,
+    path: `/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/IncomingPhoneNumbers/${numberSid}.json`,
+    method: 'DELETE',
+    headers: { 'Authorization': `Basic ${getAuth()}` },
+  });
+
+  if (response.status !== 204) {
+    throw new Error(`Twilio release failed (${response.status}): ${JSON.stringify(response.body)}`);
+  }
+  logger.info(`[twilio-provision] Released number: ${numberSid}`);
+}
+
+/**
+ * Delete a SIP trunk.
+ * @param {string} trunkSid - SIP trunk SID
+ */
+async function deleteSIPTrunk(trunkSid) {
+  if (!trunkSid) return;
+  const response = await httpsRequest({
+    hostname: 'trunking.twilio.com',
+    port: 443,
+    path: `/v1/Trunks/${trunkSid}`,
+    method: 'DELETE',
+    headers: { 'Authorization': `Basic ${getAuth()}` },
+  });
+
+  if (response.status !== 204) {
+    throw new Error(`SIP trunk deletion failed (${response.status}): ${JSON.stringify(response.body)}`);
+  }
+  logger.info(`[twilio-provision] Deleted SIP trunk: ${trunkSid}`);
+}
+
 module.exports = {
   searchAvailableNumbers,
   purchaseNumber,
@@ -291,4 +331,6 @@ module.exports = {
   addOriginationURI,
   associateNumberWithTrunk,
   provisionUnifiedNumber,
+  releaseNumber,
+  deleteSIPTrunk,
 };
