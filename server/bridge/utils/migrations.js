@@ -551,7 +551,7 @@ const migrations = [
   },
   {
     id: '020_telnyx_phone_column',
-    description: 'Add telnyx_phone to clients for Telnyx SMS provider migration',
+    description: 'Add telnyx_phone to clients for Legacy SMS SMS provider migration',
     down(db) { /* safe to skip — data predates rollback support */ },
     up(db) {
       const clientCols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
@@ -1796,6 +1796,32 @@ migrations.push({
   },
   down() {
     // SQLite cannot drop columns
+  },
+});
+
+migrations.push({
+  id: '054_provisioning_logs',
+  description: 'Create provisioning_logs table to track state of ongoing client provisioning',
+  up(db) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS provisioning_logs (
+        id TEXT PRIMARY KEY,
+        client_id TEXT,
+        business_name TEXT,
+        stage TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('pending', 'in_progress', 'completed', 'failed')),
+        details TEXT,
+        error TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_provisioning_logs_client ON provisioning_logs(client_id);
+      CREATE INDEX IF NOT EXISTS idx_provisioning_logs_business ON provisioning_logs(business_name);
+    `);
+    getLogger().info('[migrations] 054: Created provisioning_logs table');
+  },
+  down(db) {
+    db.exec('DROP TABLE IF EXISTS provisioning_logs');
   },
 });
 

@@ -9,7 +9,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { sendSMS } = require('../../utils/sms');
 const telegram = require('../../utils/telegram');
 const config = require('../../utils/config');
-const { isValidUUID } = require('../../utils/validate');
+const { isValidUUID } = require('../../utils/validators');
 const { withTimeout } = require('../../utils/resilience');
 const { logger } = require('../../utils/logger');
 const { appendEvent, Events } = require('../../utils/eventStore');
@@ -35,7 +35,7 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
       'get'
     );
     if (recentOutbound.c > 0) {
-      logger.info(`[telnyx] Rate limited outbound to ${from} — already replied within 5 min`);
+      logger.info(`[legacySms] Rate limited outbound to ${from} — already replied within 5 min`);
       const existingLead2 = await db.query('SELECT id FROM leads WHERE phone = ? AND client_id = ?', [from, client.id], 'get');
       if (existingLead2) {
         const convId = await ensureConversation(db, client.id, from, existingLead2.id);
@@ -102,7 +102,7 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
       await fireSmsReceived(client, { from, to, body, messageId, leadId });
     } catch (_whErr) { /* webhook fire must not break request */ }
 
-    // Send reply via Telnyx REST API (max SMS_MAX_LENGTH chars = 10 concatenated segments)
+    // Send reply via Legacy SMS REST API (max SMS_MAX_LENGTH chars = 10 concatenated segments)
     const truncatedReply = finalReply.slice(0, SMS_MAX_LENGTH);
     await sendSMS(from, truncatedReply, to, db, client.id);
 
@@ -135,7 +135,7 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
       const { broadcast } = require('../../utils/websocket');
       broadcast('new_message', { id: inboundId, conversationId, phone: from, direction: 'inbound', body, confidence: finalConfidence, lead_id: leadId }, client.id);
     } catch (err) {
-      logger.warn('[telnyx] WebSocket broadcast error:', err.message);
+      logger.warn('[legacySms] WebSocket broadcast error:', err.message);
     }
 
     // Schedule follow-up touch for brand-new SMS contacts
@@ -147,14 +147,14 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
           VALUES (?, ?, ?, 2, 'nudge', NULL, 'pending', ?, 'scheduled')
         `, [randomUUID(), leadId, client.id, tomorrow], 'run');
       } catch (fuErr) {
-        logger.error('[telnyx] Follow-up scheduling error:', fuErr.message);
+        logger.error('[legacySms] Follow-up scheduling error:', fuErr.message);
       }
     }
 
     // Telegram notification
     await sendTelegramNotification(db, client, from, body, finalReply, finalConfidence, messageId);
 
-    logger.info(`[telnyx] Replied to ${from ? from.replace(/\d(?=\d{4})/g, '*') : '?'}: ${finalReply.substring(0, 50)}...`);
+    logger.info(`[legacySms] Replied to ${from ? from.replace(/\d(?=\d{4})/g, '*') : '?'}: ${finalReply.substring(0, 50)}...`);
 
     // BRAIN — autonomous post-SMS decisions
     try {
@@ -174,14 +174,14 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
       logger.error('[Brain] Post-SMS error:', brainErr.message);
     }
   } catch (err) {
-    logger.error('[telnyx] handleNormalMessage error:', err);
+    logger.error('[legacySms] handleNormalMessage error:', err);
   }
 }
 
 // --- Helpers ---
 
 async function handleAiPaused(db, client, from, to, body, messageId) {
-  logger.info(`[telnyx] AI paused for client ${client.id} — logging message from ${from} without reply`);
+  logger.info(`[legacySms] AI paused for client ${client.id} — logging message from ${from} without reply`);
   const existingLead = await db.query('SELECT id FROM leads WHERE phone = ? AND client_id = ?', [from, client.id], 'get');
   let leadId;
   if (existingLead) {
@@ -192,7 +192,7 @@ async function handleAiPaused(db, client, from, to, body, messageId) {
       INSERT INTO leads (id, client_id, phone, stage, last_contact, created_at, updated_at)
       VALUES (?, ?, ?, 'new', ?, ?, ?)
     `, [leadId, client.id, from, new Date().toISOString(), new Date().toISOString(), new Date().toISOString()], 'run');
-    try { await db.query('UPDATE leads SET phone_encrypted = ? WHERE id = ?', [encrypt(from), leadId], 'run'); } catch (encErr) { logger.warn('[telnyx] phone encryption failed:', encErr.message); }
+    try { await db.query('UPDATE leads SET phone_encrypted = ? WHERE id = ?', [encrypt(from), leadId], 'run'); } catch (encErr) { logger.warn('[legacySms] phone encryption failed:', encErr.message); }
     try { appendEvent(db, leadId, 'lead', Events.LeadCreated, { phone: from, source: 'sms_inbound', ai_paused: true }, client.id); } catch (_) {}
   }
   const convId = await ensureConversation(db, client.id, from, leadId);
@@ -214,13 +214,13 @@ async function handleAiPaused(db, client, from, to, body, messageId) {
     tg.sendMessage(
       client.telegram_chat_id,
       `⏸ <b>AI paused</b> — message received (no auto-reply)\n\nFrom: ${from}\nMessage: "${escapedBody}"`
-    ).catch(err => logger.warn('[telnyx] Telegram AI-paused notification failed', err.message));
+    ).catch(err => logger.warn('[legacySms] Telegram AI-paused notification failed', err.message));
   }
 }
 
 async function loadKnowledgeBase(client) {
   if (!isValidUUID(client.id)) {
-    logger.warn('[telnyx] Invalid client UUID, skipping KB load');
+    logger.warn('[legacySms] Invalid client UUID, skipping KB load');
     return '';
   }
   try {
@@ -232,7 +232,7 @@ async function loadKnowledgeBase(client) {
     if (kb.length > 5000) kb = kb.substring(0, 5000) + '\n[...truncated]';
     return kb;
   } catch (err) {
-    logger.error(`[telnyx] KB load failed for client ${client.id}:`, err.message);
+    logger.error(`[legacySms] KB load failed for client ${client.id}:`, err.message);
     return '';
   }
 }
@@ -267,11 +267,11 @@ If you cannot answer from the knowledge base, set confidence to "low".`,
       }
       return { reply: rawText, confidence: 'medium' };
     } catch (parseErr) {
-      logger.warn('[telnyx] Claude response JSON parse failed, using raw text:', parseErr.message);
+      logger.warn('[legacySms] Claude response JSON parse failed, using raw text:', parseErr.message);
       return { reply: rawText, confidence: 'medium' };
     }
   } catch (err) {
-    logger.error('[telnyx] Claude reply generation failed:', err.message);
+    logger.error('[legacySms] Claude reply generation failed:', err.message);
     return { reply: 'Thanks for your message! We\'ll get back to you shortly.', confidence: 'low' };
   }
 }
@@ -283,7 +283,7 @@ async function handleConfidence(client, from, body, reply, confidence) {
   if (client.owner_phone) {
     Promise.resolve().then(() =>
       sendSMS(client.owner_phone, `[ELYVN] Question from ${from} that needs your input:\n"${body}"`, client.phone_number, db, client.id)
-    ).catch(err => logger.error('[telnyx] Owner notification failed:', err.message));
+    ).catch(err => logger.error('[legacySms] Owner notification failed:', err.message));
   }
   return { finalReply, finalConfidence: 'low' };
 }
@@ -307,7 +307,7 @@ async function sendTelegramNotification(db, client, from, body, reply, confidenc
       telegram.sendMessage(clientForNotify.telegram_chat_id, text, { reply_markup: { inline_keyboard: buttons } });
     }
   } catch (tgErr) {
-    logger.error('[telnyx] Telegram notification failed:', tgErr.message);
+    logger.error('[legacySms] Telegram notification failed:', tgErr.message);
   }
 }
 
@@ -350,7 +350,7 @@ async function ensureConversation(db, clientId, phone, leadId) {
     `, [convId, clientId, leadId, phone, leadName, convNow, convNow], 'run');
     return convId;
   } catch (err) {
-    logger.warn('[telnyx] ensureConversation error:', err.message);
+    logger.warn('[legacySms] ensureConversation error:', err.message);
     return null;
   }
 }

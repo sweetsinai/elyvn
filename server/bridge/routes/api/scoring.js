@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
-const { isValidUUID } = require('../../utils/validate');
+const { isValidUUID } = require('../../utils/validators');
 const { success } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 router.param('clientId', clientIsolationParam);

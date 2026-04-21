@@ -43,7 +43,7 @@ async function speedToLeadSms(db, sendSMS, payload) {
     logger.info(`[jobHandlers] Skipping duplicate SMS to ${payload.phone}`);
     return;
   }
-  // Truncate to SMS max for concatenated messages (Telnyx/Twilio compat)
+  // Truncate to SMS max for concatenated messages (Legacy SMS/Twilio compat)
   const message = (payload.message || '').slice(0, SMS_MAX_LENGTH);
   const result = await sendSMS(payload.phone, message, payload.from, db, payload.clientId);
   if (result && !result.success) {

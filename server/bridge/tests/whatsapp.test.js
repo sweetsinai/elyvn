@@ -10,8 +10,8 @@ jest.mock('../utils/logger', () => ({
   logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() },
 }));
 
-// Mock the telnyx handlers that whatsapp.js re-uses
-jest.mock('../routes/telnyx/handlers', () => ({
+// Mock the legacySms handlers that whatsapp.js re-uses
+jest.mock('../routes/legacySms/handlers', () => ({
   handleInboundSMS: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -142,7 +142,7 @@ describe('POST /webhooks/whatsapp — inbound message handling', () => {
   });
 
   test('returns 200 and calls handleInboundSMS with normalized phone numbers', async () => {
-    const { handleInboundSMS } = require('../routes/telnyx/handlers');
+    const { handleInboundSMS } = require('../routes/legacySms/handlers');
     const db = { query: jest.fn() };
     const app = buildApp(db);
     const res = await request(app)
@@ -204,7 +204,7 @@ describe('POST /webhooks/whatsapp — inbound message handling', () => {
   });
 
   test('handleInboundSMS error does not surface as HTTP error', async () => {
-    const { handleInboundSMS } = require('../routes/telnyx/handlers');
+    const { handleInboundSMS } = require('../routes/legacySms/handlers');
     handleInboundSMS.mockRejectedValueOnce(new Error('SMS handler boom'));
     const db = { query: jest.fn() };
     const app = buildApp(db);
@@ -216,7 +216,7 @@ describe('POST /webhooks/whatsapp — inbound message handling', () => {
   });
 
   test('strips whatsapp: prefix (case-insensitive) from phone numbers', async () => {
-    const { handleInboundSMS } = require('../routes/telnyx/handlers');
+    const { handleInboundSMS } = require('../routes/legacySms/handlers');
     handleInboundSMS.mockResolvedValue(undefined);
     const db = { query: jest.fn() };
     const app = buildApp(db);

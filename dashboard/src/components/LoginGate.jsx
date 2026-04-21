@@ -62,7 +62,7 @@ export default function LoginGate({ children }) {
         body: JSON.stringify({ email: email.trim(), password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Login failed');
+      if (!res.ok) throw new Error(data.message || data.error || 'Login failed');
 
       sessionStorage.setItem('elyvn_token', data.token);
       sessionStorage.setItem('elyvn_client_id', data.clientId);
@@ -92,7 +92,7 @@ export default function LoginGate({ children }) {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Signup failed');
+      if (!res.ok) throw new Error(data.message || data.error || 'Signup failed');
 
       sessionStorage.setItem('elyvn_token', data.token);
       sessionStorage.setItem('elyvn_client_id', data.clientId);

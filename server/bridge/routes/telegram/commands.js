@@ -1,7 +1,7 @@
 'use strict';
 
 const telegram = require('../../utils/telegram');
-const { isValidURL } = require('../../utils/validate');
+const { isValidURL } = require('../../utils/validators');
 const { logger } = require('../../utils/logger');
 const { isAsync } = require('../../utils/dbAdapter');
 const kbCache = require('../../utils/kbCache');

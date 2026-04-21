@@ -1,14 +1,14 @@
 /**
  * Twilio Inbound SMS Webhook Handler
  *
- * Routes through the same AI pipeline as Telnyx (brain, scoring, guardrails).
+ * Routes through the same AI pipeline as Legacy SMS (brain, scoring, guardrails).
  * Twilio sends form-encoded POST (not JSON).
  */
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const { logger } = require('../utils/logger');
-const { handleInboundSMS } = require('./telnyx/handlers');
+const { handleInboundSMS } = require('./legacySms/handlers');
 
 /**
  * Validate Twilio request signature (X-Twilio-Signature)
@@ -76,7 +76,7 @@ router.post('/', (req, res) => {
 
   logger.info(`[twilio] Inbound SMS from ${from.replace(/\d(?=\d{4})/g, '*')} to ${to}`);
 
-  // Route through the unified SMS pipeline (same as Telnyx)
+  // Route through the unified SMS pipeline (same as Legacy SMS)
   // This gives us: brain decisions, lead scoring, guardrails, rate limiting,
   // opt-out checking, Telegram notifications, usage tracking — everything.
   setImmediate(() => {
