@@ -146,7 +146,7 @@ export default function Integrations() {
               {[
                 { label: 'Retell Webhook', url: `${baseUrl}/webhooks/retell` },
                 { label: 'Twilio Webhook', url: `${baseUrl}/webhooks/twilio` },
-                { label: 'Twilio Webhook (Secondary)', url: `${baseUrl}/webhooks/telnyx` },
+                { label: 'Twilio Webhook (Legacy)', url: `${baseUrl}/webhooks/telnyx` },
                 { label: 'Cal.com Webhook', url: `${baseUrl}/webhooks/calcom` },
                 { label: 'Form Webhook', url: `${baseUrl}/webhooks/form` },
               ].map(wh => (

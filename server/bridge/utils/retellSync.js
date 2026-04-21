@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs').promises;
+const { getKBRoot } = require('./dbConfig');
 const { logger } = require('./logger');
 
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
@@ -159,7 +160,7 @@ async function syncClientToRetell(clientId, db) {
     }
 
     // 3. Load KB from file
-    const kbPath = path.join(__dirname, '../../mcp/knowledge_bases', `${clientId}.json`);
+    const kbPath = path.join(getKBRoot(), `${clientId}.json`);
     let kb = {};
     try {
       const kbContent = await fs.readFile(kbPath, 'utf8');

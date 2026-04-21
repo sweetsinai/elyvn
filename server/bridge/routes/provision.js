@@ -8,6 +8,7 @@ const { broadcast } = require('../utils/websocket');
 const { getOnboardingLink } = require('../utils/telegram');
 const { logger } = require('../utils/logger');
 const { logDataMutation } = require('../utils/auditLog');
+const { getKBRoot } = require('../utils/dbConfig');
 const { AppError } = require('../utils/AppError');
 const { validateBody } = require('../middleware/validateRequest');
 const { ProvisionSchema } = require('../utils/schemas/provision');
@@ -322,8 +323,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     if (knowledge_base) {
       try {
         sendUpdate('syncing_kb', 'in_progress', { log: 'Generating knowledge base...' });
-        const kbDir = path.join(__dirname, '../../mcp/knowledge_bases');
-        await fs.promises.mkdir(kbDir, { recursive: true });
+        const kbDir = getKBRoot();
         await fs.promises.writeFile(
           path.join(kbDir, `${clientId}.json`),
           JSON.stringify(knowledge_base, null, 2)

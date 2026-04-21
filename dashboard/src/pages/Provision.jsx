@@ -85,7 +85,8 @@ export default function Provision() {
     timezone: '',
     plan: '',
     calcom_booking_link: '',
-    transfer_phone: ''
+    transfer_phone: '',
+    area_code: ''
   });
 
   const [validationErrors, setValidationErrors] = useState({});
@@ -249,7 +250,8 @@ export default function Provision() {
       timezone: '',
       plan: '',
       calcom_booking_link: '',
-      transfer_phone: ''
+      transfer_phone: '',
+      area_code: ''
     });
     setValidationErrors({});
     setStatus('form');
@@ -429,9 +431,42 @@ export default function Provision() {
                         {validationErrors.timezone}
                       </p>
                     )}
-                  </div>
-                </div>
-              </div>
+                    </div>
+
+                    <div>
+                    <label style={{
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: '#666',
+                      display: 'block',
+                      marginBottom: '8px'
+                    }}>
+                      Optional Area Code (3 digits)
+                    </label>
+                    <input
+                      type="text"
+                      name="area_code"
+                      value={formData.area_code}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 3);
+                        setFormData(prev => ({ ...prev, area_code: val }));
+                      }}
+                      placeholder="e.g. 212"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        background: '#0a0a0a',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: '#fff',
+                        fontSize: '13px',
+                        fontFamily: 'inherit',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    </div>
+                    </div>
+                    </div>
 
               {/* Owner Info Section */}
               <div className="card" style={{

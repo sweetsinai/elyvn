@@ -10,10 +10,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const { getKBRoot } = require('./dbConfig');
 const { logger } = require('./logger');
 const { syncClientToRetell } = require('./retellSync');
 
-const KB_DIR = path.resolve(__dirname, '../../mcp/knowledge_bases');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // In-memory debounce to avoid double-syncing on rapid file writes
@@ -27,22 +27,7 @@ let watcher = null;
 function initKBWatcher(db) {
   if (watcher) return; // Already watching
 
-  if (!fs.existsSync(KB_DIR)) {
-    logger.warn(`[kbWatcher] Knowledge base directory not found: ${KB_DIR}`);
-    // Attempt to create it if we're in development
-    if (process.env.NODE_ENV !== 'production') {
-      try {
-        fs.mkdirSync(KB_DIR, { recursive: true });
-        logger.info(`[kbWatcher] Created KB directory: ${KB_DIR}`);
-      } catch (err) {
-        logger.error(`[kbWatcher] Failed to create KB directory: ${err.message}`);
-        return;
-      }
-    } else {
-      return;
-    }
-  }
-
+  const KB_DIR = getKBRoot();
   logger.info(`[kbWatcher] Starting watcher for ${KB_DIR}`);
 
   try {

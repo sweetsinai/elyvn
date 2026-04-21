@@ -6,7 +6,7 @@
 const { logger } = require('../utils/logger');
 const { captureException } = require('../utils/monitoring');
 const { createDatabase } = require('../utils/dbAdapter');
-const { getDatabasePath } = require('../utils/dbConfig');
+const { getDatabasePath, getKBRoot } = require('../utils/dbConfig');
 const { migrations } = require('../utils/migrations');
 const { backupDatabase } = require('../utils/backup');
 const { JOB_PROCESSOR_INTERVAL, DATA_RETENTION_DAILY_INTERVAL_MS, AUTO_CLASSIFY_INTERVAL_MS } = require('./timing');
@@ -125,15 +125,10 @@ async function initializeDatabase(app) {
 
   // Ensure knowledge base directory exists
   try {
-    const fs = require('fs');
-    const path = require('path');
-    const kbDir = path.join(__dirname, '../../mcp/knowledge_bases');
-    if (!fs.existsSync(kbDir)) {
-      fs.mkdirSync(kbDir, { recursive: true });
-      logger.info(`[startup] Created knowledge base directory: ${kbDir}`);
-    }
+    const kbDir = getKBRoot();
+    logger.info(`[startup] Knowledge base directory verified: ${kbDir}`);
   } catch (err) {
-    logger.warn('[startup] Failed to create knowledge base directory:', err.message);
+    logger.warn('[startup] Failed to verify knowledge base directory:', err.message);
   }
 
   // Schema validation removed — the validator had incorrect column names

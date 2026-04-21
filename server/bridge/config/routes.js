@@ -225,9 +225,11 @@ function mountRoutes(app) {
 
     const mcpOk = await (async () => {
       try {
+        const { getKBRoot } = require('../utils/dbConfig');
         const fs = require('fs').promises;
-        const mcpPath = path.join(__dirname, '..', '..', 'mcp', 'knowledge_bases');
-        await fs.access(mcpPath, require('fs').constants.R_OK);
+        const kbDir = getKBRoot();
+        // Check if directory exists and is writable
+        await fs.access(kbDir, require('fs').constants.W_OK);
         return true;
       } catch (_) {
         return false;
