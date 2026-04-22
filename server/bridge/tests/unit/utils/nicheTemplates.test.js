@@ -41,4 +41,28 @@ describe('nicheTemplates', () => {
       expect(text).toContain('our team');
     });
   });
+
+  describe('getNichePrompt', () => {
+    it('should return system prompt for known niche', () => {
+      const prompt = getNichePrompt('dental');
+      expect(prompt).toContain('dental office receptionist');
+    });
+
+    it('should handle unknown niche with general default', () => {
+      const prompt = getNichePrompt('unknown');
+      expect(prompt).toContain('professional, helpful receptionist');
+    });
+  });
+
+  describe('getNicheGreeting', () => {
+    it('should return greeting for known niche', () => {
+      const greeting = getNicheGreeting('dental');
+      expect(greeting).toContain('office assistant');
+    });
+
+    it('should return null for unknown niche', () => {
+      const greeting = getNicheGreeting('nonexistent');
+      expect(greeting).toContain('how can I help you today?'); // Should return general greeting
+    });
+  });
 });

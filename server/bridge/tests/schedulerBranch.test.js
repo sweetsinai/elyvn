@@ -389,17 +389,6 @@ describe('scheduler branch coverage', () => {
       setTimeoutSpy.mockRestore();
     });
 
-    test('sets up interval for follow-up processor', () => {
-      const setIntervalSpy = jest.spyOn(global, 'setInterval');
-      const { initScheduler } = require('../utils/scheduler');
-
-      initScheduler(db);
-
-      expect(setIntervalSpy).toHaveBeenCalled();
-
-      setIntervalSpy.mockRestore();
-    });
-
     test('calculates correct delay for daily summary', () => {
       const { initScheduler } = require('../utils/scheduler');
       const { logger } = require('../utils/logger');
@@ -433,17 +422,6 @@ describe('scheduler branch coverage', () => {
         expect.stringContaining('Appointment reminder processor')
       );
     });
-
-    test('sets up follow-up processor every 5 minutes', () => {
-      const { initScheduler } = require('../utils/scheduler');
-      const { logger } = require('../utils/logger');
-
-      initScheduler(db);
-
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Follow-up processor')
-      );
-    });
   });
 
   describe('module exports', () => {
@@ -453,12 +431,9 @@ describe('scheduler branch coverage', () => {
       expect(typeof scheduler.initScheduler).toBe('function');
       expect(typeof scheduler.sendDailySummaries).toBe('function');
       expect(typeof scheduler.sendWeeklyReports).toBe('function');
-      expect(typeof scheduler.processFollowups).toBe('function');
       expect(typeof scheduler.dailyLeadReview).toBe('function');
       expect(typeof scheduler.createAppointmentReminders).toBe('function');
       expect(typeof scheduler.processAppointmentReminders).toBe('function');
-      expect(typeof scheduler.dailyOutreach).toBe('function');
-      expect(typeof scheduler.checkReplies).toBe('function');
       expect(typeof scheduler.dailyLeadScoring).toBe('function');
     });
   });

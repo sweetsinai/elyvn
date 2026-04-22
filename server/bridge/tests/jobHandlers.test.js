@@ -42,15 +42,7 @@ jest.mock('../utils/AppError', () => ({
   },
 }));
 
-jest.mock('../utils/mailer', () => ({
-  getTransporter: jest.fn(),
-}));
-
 jest.mock('../utils/config', () => ({
-  outreach: {
-    bookingLink: 'https://cal.com/test',
-    senderName: 'Test Sender',
-  },
   ai: { model: 'claude-3-5-haiku-latest' },
 }));
 

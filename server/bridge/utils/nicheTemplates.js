@@ -50,7 +50,29 @@ function generateVoicemailText(client, phone) {
   return text.trim();
 }
 
+/**
+ * getNichePrompt
+ * @param {string} nicheKey 
+ * @returns {string|null}
+ */
+function getNichePrompt(nicheKey) {
+  const key = INDUSTRY_MAP[(nicheKey || '').toLowerCase()] || 'general';
+  return NICHE_TEMPLATES[key]?.systemPrompt || null;
+}
+
+/**
+ * getNicheGreeting
+ * @param {string} nicheKey 
+ * @returns {string|null}
+ */
+function getNicheGreeting(nicheKey) {
+  const key = INDUSTRY_MAP[(nicheKey || '').toLowerCase()] || 'general';
+  return NICHE_TEMPLATES[key]?.greeting || null;
+}
+
 module.exports = {
   generateFollowUpSms,
-  generateVoicemailText
+  generateVoicemailText,
+  getNichePrompt,
+  getNicheGreeting
 };

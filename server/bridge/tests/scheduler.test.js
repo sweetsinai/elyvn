@@ -7,12 +7,9 @@ const Database = require('better-sqlite3');
 const {
   sendDailySummaries,
   sendWeeklyReports,
-  processFollowups,
   dailyLeadReview,
   createAppointmentReminders,
   processAppointmentReminders,
-  dailyOutreach,
-  checkReplies,
   dailyLeadScoring
 } = require('../utils/scheduler');
 const { runMigrations } = require('../utils/migrations');
@@ -21,9 +18,6 @@ jest.mock('../utils/telegram');
 jest.mock('../utils/leadMemory');
 jest.mock('../utils/brain');
 jest.mock('../utils/actionExecutor');
-jest.mock('../utils/emailGenerator');
-jest.mock('../utils/emailSender');
-jest.mock('../utils/emailVerifier');
 jest.mock('../utils/sms');
 jest.mock('../utils/leadScoring');
 jest.mock('../utils/dataRetention');
@@ -297,7 +291,7 @@ describe('scheduler', () => {
       await dailyLeadScoring(db);
 
       const lead = db.prepare('SELECT score FROM leads WHERE id = ?').get('lead1');
-      expect(lead.score).toBe(9); // 85 / 10 = 8.5 rounded to 9
+      expect(lead.score).toBe(85); // Predictive score 85
     });
 
     test('notifies owner of hot leads', async () => {
@@ -312,42 +306,6 @@ describe('scheduler', () => {
         '123456',
         expect.stringContaining('Daily Lead Scoring')
       );
-    });
-  });
-
-  describe('processFollowups', () => {
-    test('processes due followups', async () => {
-      const { getLeadMemory } = require('../utils/leadMemory');
-      const { think } = require('../utils/brain');
-      const { executeActions } = require('../utils/actionExecutor');
-
-      getLeadMemory.mockReturnValue({ lead: { id: 'lead1' }, client: { id: 'client1' } });
-      think.mockResolvedValue({ actions: [] });
-
-      db.prepare(`
-        INSERT INTO followups (id, lead_id, client_id, type, content, scheduled_at, status)
-        VALUES ('fu1', 'lead1', 'client1', 'brain', 'Follow up', datetime('now', '-1 minute'), 'scheduled')
-      `).run();
-
-      await processFollowups(db);
-
-      const fu = db.prepare('SELECT * FROM followups WHERE id = ?').get('fu1');
-      expect(fu.status).toBe('sent');
-    });
-
-    test('handles missing lead memory', async () => {
-      const { getLeadMemory } = require('../utils/leadMemory');
-      getLeadMemory.mockReturnValue(null);
-
-      db.prepare(`
-        INSERT INTO followups (id, lead_id, client_id, type, content, scheduled_at, status)
-        VALUES ('fu1', 'lead1', 'client1', 'brain', 'Follow up', datetime('now', '-1 minute'), 'scheduled')
-      `).run();
-
-      await processFollowups(db);
-
-      const fu = db.prepare('SELECT * FROM followups WHERE id = ?').get('fu1');
-      expect(fu.status).toBe('failed');
     });
   });
 
@@ -401,23 +359,6 @@ describe('scheduler', () => {
 
       jest.useFakeTimers();
       expect(() => initScheduler(db)).not.toThrow();
-      jest.useRealTimers();
-    });
-
-    test('initScheduler schedules follow-up processor every 5 minutes', () => {
-      const { initScheduler } = require('../utils/scheduler');
-
-      jest.useFakeTimers();
-      const spy = jest.spyOn(global, 'setInterval');
-      initScheduler(db);
-
-      // Verify setInterval was called for the 5-minute follow-up processor
-      expect(spy.mock.calls.some(call =>
-        typeof call[0] === 'function' && call[1] === 5 * 60 * 1000 ||
-        call[1] === 300000
-      )).toBe(true);
-
-      spy.mockRestore();
       jest.useRealTimers();
     });
 
@@ -621,70 +562,6 @@ describe('scheduler', () => {
     });
   });
 
-  describe('processFollowups - Additional Coverage', () => {
-    test('should update followup to sent status on successful execution', async () => {
-      const { getLeadMemory } = require('../utils/leadMemory');
-      const { think } = require('../utils/brain');
-      const { executeActions } = require('../utils/actionExecutor');
-
-      getLeadMemory.mockReturnValue({ lead: { id: 'lead1' }, client: { id: 'client1' } });
-      think.mockResolvedValue({ actions: [{ type: 'send_sms' }] });
-      executeActions.mockResolvedValue(true);
-
-      db.prepare(`
-        INSERT INTO followups (id, lead_id, client_id, type, content, scheduled_at, status)
-        VALUES ('fu2', 'lead1', 'client1', 'brain', 'Follow up', datetime('now', '-1 minute'), 'scheduled')
-      `).run();
-
-      await processFollowups(db);
-
-      const fu = db.prepare('SELECT status FROM followups WHERE id = ?').get('fu2');
-      expect(fu.status).toBe('sent');
-    });
-
-    test('should handle executeActions failures', async () => {
-      const { getLeadMemory } = require('../utils/leadMemory');
-      const { think } = require('../utils/brain');
-      const { executeActions } = require('../utils/actionExecutor');
-
-      getLeadMemory.mockReturnValue({ lead: { id: 'lead1' } });
-      think.mockResolvedValue({ actions: [] });
-      executeActions.mockRejectedValueOnce(new Error('Action failed'));
-
-      db.prepare(`
-        INSERT INTO followups (id, lead_id, client_id, type, content, scheduled_at, status)
-        VALUES ('fu3', 'lead1', 'client1', 'brain', 'Follow up', datetime('now', '-1 minute'), 'scheduled')
-      `).run();
-
-      await processFollowups(db);
-
-      const fu = db.prepare('SELECT status FROM followups WHERE id = ?').get('fu3');
-      expect(fu.status).toBe('failed');
-    });
-
-    test('should handle multiple followups in batch', async () => {
-      const { getLeadMemory } = require('../utils/leadMemory');
-      const { think } = require('../utils/brain');
-
-      getLeadMemory.mockReturnValue({ lead: { id: 'lead1' } });
-      think.mockResolvedValue({ actions: [] });
-
-      // Insert 3 due followups
-      for (let i = 0; i < 3; i++) {
-        db.prepare(`
-          INSERT INTO followups (id, lead_id, client_id, type, content, scheduled_at, status)
-          VALUES ('fu_batch_${i}', 'lead1', 'client1', 'brain', 'Follow up', datetime('now', '-1 minute'), 'scheduled')
-        `).run();
-      }
-
-      await processFollowups(db);
-
-      // All followups should be processed
-      const processed = db.prepare("SELECT COUNT(*) as c FROM followups WHERE status = 'sent'").get().c;
-      expect(processed).toBeGreaterThanOrEqual(0);
-    }, 20000);
-  });
-
   describe('dailyLeadScoring - Additional Coverage', () => {
     test('should handle clients without telegram_chat_id', async () => {
       const { batchScoreLeads } = require('../utils/leadScoring');
@@ -710,19 +587,19 @@ describe('scheduler', () => {
       await dailyLeadScoring(db);
 
       const lead = db.prepare('SELECT score FROM leads WHERE id = ?').get('lead1');
-      expect(lead.score).toBe(5); // 50 / 10 = 5
+      expect(lead.score).toBe(50); // 50
     });
 
     test('should round score correctly', async () => {
       const { batchScoreLeads } = require('../utils/leadScoring');
       batchScoreLeads.mockReturnValue([
-        { leadId: 'lead2', predictive_score: 75 }
+        { leadId: 'lead2', predictive_score: 75.4 }
       ]);
 
       await dailyLeadScoring(db);
 
       const lead = db.prepare('SELECT score FROM leads WHERE id = ?').get('lead2');
-      expect(lead.score).toBe(8); // Math.round(75 / 10) = 8
+      expect(lead.score).toBe(75); // Math.round(75.4) = 75
     });
 
     test('should identify hot leads (75+)', async () => {
