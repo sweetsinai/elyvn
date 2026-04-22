@@ -19,13 +19,13 @@ const { z } = require('zod');
 
 // Schemas
 const RunAgentSchema = z.object({
-  agent: z.enum(['receptionist', 'outreach', 'qualification', 'scheduling']),
+  agent: z.enum(['receptionist', 'qualification', 'scheduling']),
   message: z.string().min(1).max(10000),
   systemOverride: z.string().max(5000).optional(),
 });
 
 const PipelineSchema = z.object({
-  pipeline: z.enum(['newLead', 'reply', 'outreach', 'scoring']),
+  pipeline: z.enum(['newLead', 'reply', 'scoring']),
   data: z.record(z.unknown()),
 });
 
@@ -91,9 +91,6 @@ router.post('/agents/pipeline', validateBody(PipelineSchema), async (req, res, n
         break;
       case 'reply':
         result = await orchestrator.replyPipeline({ db, ...data });
-        break;
-      case 'outreach':
-        result = await orchestrator.outreachPipeline(data.prospect, data.client);
         break;
       case 'scoring':
         result = await orchestrator.scoringPipeline(data.lead, data.interactions);
