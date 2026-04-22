@@ -274,7 +274,7 @@ describe('telegram utils', () => {
         caller_name: 'John Doe',
         caller_phone: '+1234567890',
         duration: 180,
-        score: 9
+        score: 90
       };
 
       const result = telegram.formatCallNotification(call, {});
@@ -282,7 +282,7 @@ describe('telegram utils', () => {
       expect(result.text).toContain('Call booked');
       expect(result.text).toContain('John Doe');
       expect(result.text).toContain('3m 0s');
-      expect(result.text).toContain('9/10');
+      expect(result.text).toContain('90/100');
       expect(result.buttons).toBeDefined();
       expect(result.buttons.length).toBeGreaterThan(0);
     });
@@ -345,7 +345,7 @@ describe('telegram utils', () => {
         outcome: 'booked',
         caller_name: 'Hot Lead',
         duration: 120,
-        score: 8
+        score: 80
       };
 
       const result = telegram.formatCallNotification(call, {});

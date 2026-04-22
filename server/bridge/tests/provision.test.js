@@ -25,6 +25,7 @@ jest.mock('path', () => ({
   join: jest.fn((...args) => args.join('/')),
 }));
 
+process.env.JWT_SECRET = 'test-jwt-secret-that-is-at-least-32-chars';
 const provisionRouter = require('../routes/provision');
 
 describe('Provision Route', () => {
@@ -540,7 +541,7 @@ describe('Provision Route', () => {
         get: jest.fn().mockReturnValue({
           id: 'client-123',
           business_name: 'Test Business',
-          owner_phone: '+1 (415) 555-1234',
+          owner_phone: '+14155551234',
           created_at: new Date().toISOString(),
         }),
       });
@@ -549,7 +550,7 @@ describe('Provision Route', () => {
         .post('/provision')
         .send({
           business_name: 'Test Business',
-          owner_phone: '+1 (415) 555-1234',
+          owner_phone: '+14155551234',
           plan: 'starter',
         });
 
