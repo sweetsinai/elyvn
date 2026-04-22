@@ -19,7 +19,7 @@ jest.mock('../utils/phone', () => ({
   }),
 }));
 
-jest.mock('../utils/validate', () => ({
+jest.mock('../utils/validators', () => ({
   isValidUUID: jest.fn((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)),
   isValidPhone: jest.fn((phone) => /^\d{10,}$/.test(phone)),
   isValidEmail: jest.fn((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)),

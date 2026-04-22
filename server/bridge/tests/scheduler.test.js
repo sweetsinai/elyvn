@@ -11,8 +11,6 @@ const {
   dailyLeadReview,
   createAppointmentReminders,
   processAppointmentReminders,
-  dailyOutreach,
-  checkReplies,
   dailyLeadScoring
 } = require('../utils/scheduler');
 const { runMigrations } = require('../utils/migrations');
@@ -21,9 +19,6 @@ jest.mock('../utils/telegram');
 jest.mock('../utils/leadMemory');
 jest.mock('../utils/brain');
 jest.mock('../utils/actionExecutor');
-jest.mock('../utils/emailGenerator');
-jest.mock('../utils/emailSender');
-jest.mock('../utils/emailVerifier');
 jest.mock('../utils/sms');
 jest.mock('../utils/leadScoring');
 jest.mock('../utils/dataRetention');

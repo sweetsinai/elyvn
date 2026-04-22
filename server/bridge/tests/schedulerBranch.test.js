@@ -457,8 +457,6 @@ describe('scheduler branch coverage', () => {
       expect(typeof scheduler.dailyLeadReview).toBe('function');
       expect(typeof scheduler.createAppointmentReminders).toBe('function');
       expect(typeof scheduler.processAppointmentReminders).toBe('function');
-      expect(typeof scheduler.dailyOutreach).toBe('function');
-      expect(typeof scheduler.checkReplies).toBe('function');
       expect(typeof scheduler.dailyLeadScoring).toBe('function');
     });
   });

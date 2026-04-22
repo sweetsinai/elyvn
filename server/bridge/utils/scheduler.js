@@ -1,4 +1,4 @@
-const { SCHEDULER_DAILY_INTERVAL_MS, SCHEDULER_WEEKLY_INTERVAL_MS, SCHEDULER_APPOINTMENT_REMINDER_INTERVAL_MS } = require('../config/timing');
+const { SCHEDULER_DAILY_INTERVAL_MS, SCHEDULER_WEEKLY_INTERVAL_MS, SCHEDULER_APPOINTMENT_REMINDER_INTERVAL_MS, SCHEDULER_FOLLOWUP_INTERVAL_MS } = require('../config/timing');
 const { logger } = require('./logger');
 const { getDelayUntilHour, getDelayUntilDayOfWeek, formatDelay } = require('./scheduling');
 
@@ -7,6 +7,7 @@ const { sendWeeklyReports } = require('./schedulerJobs/weeklyReport');
 const { createAppointmentReminders, processAppointmentReminders } = require('./schedulerJobs/appointmentReminders');
 const { dailyLeadReview } = require('./schedulerJobs/brainReview');
 const { dailyLeadScoring } = require('./schedulerJobs/leadScoring');
+const { processFollowups } = require('./schedulerJobs/followups');
 
 const timerHandles = [];
 let schedulerInitialized = false;
@@ -145,6 +146,12 @@ function initScheduler(db) {
   }, SCHEDULER_APPOINTMENT_REMINDER_INTERVAL_MS).unref());
   logger.info('[Scheduler] Appointment reminder processor running every 2 minutes');
 
+  // Follow-up processor — every 5 minutes
+  timerHandles.push(setInterval(() => {
+    processFollowups(db).catch(err => logger.error('[Scheduler] followup processor error:', err));
+  }, SCHEDULER_FOLLOWUP_INTERVAL_MS).unref());
+  logger.info(`[Scheduler] Follow-up processor running every ${Math.round(SCHEDULER_FOLLOWUP_INTERVAL_MS / 60000)} minutes`);
+
   // Daily lead review — 9 AM
   const reviewDelay = getDelayUntilHour(9);
 
@@ -198,4 +205,5 @@ module.exports = {
   createAppointmentReminders,
   processAppointmentReminders,
   dailyLeadScoring,
+  processFollowups,
 };
