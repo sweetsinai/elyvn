@@ -24,13 +24,12 @@ The ELYVN bridge server is a feature-rich communication platform with 7 route ha
 
 ## Code Debt Issues (Prioritized)
 
-### 1. DUPLICATE VALIDATION MODULES
+### 1. DUPLICATE VALIDATION MODULES (RESOLVED)
 
-**Files**: `/server/bridge/utils/validate.js`, `/server/bridge/utils/validators.js`
+**Files**: `/server/bridge/utils/validators.js`
 
-**Issue**: Two nearly identical validator modules exist. Routes import from both inconsistently:
-- `validate.js`: Used by api.js, outreach.js
-- `validators.js`: Used by validators.test.js, presumably for testing
+**Status**: Fixed. `validate.js` was merged into `validators.js` and all imports updated.
+
 
 **Impact**:
 - Maintenance burden (fixes must be applied twice)

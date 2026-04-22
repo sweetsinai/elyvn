@@ -246,7 +246,7 @@ If Retell sends malformed phone data (empty string, null, invalid format), corru
 **Suggested Fix:**
 ```javascript
 const { normalizePhone } = require('../utils/phone');
-const { isValidPhone } = require('../utils/validate');
+const { isValidPhone } = require('../utils/validators');
 
 // In handleCallEnded after setting callerPhone
 if (!callerPhone || !isValidPhone(callerPhone)) {
