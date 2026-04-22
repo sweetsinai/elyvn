@@ -1,0 +1,4 @@
+
+> elyvn-bridge@1.0.0 test
+> jest --forceExit --passWithNoTests
+
