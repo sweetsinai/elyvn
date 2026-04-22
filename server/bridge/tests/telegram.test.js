@@ -7,12 +7,12 @@ jest.mock('../utils/telegram');
 jest.mock('../utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
-jest.mock('../utils/validate', () => ({
+jest.mock('../utils/validators', () => ({
   isValidURL: jest.fn((url) => url && (url.startsWith('http://') || url.startsWith('https://'))),
 }));
 
 const telegram = require('../utils/telegram');
-const { isValidURL } = require('../utils/validate');
+const { isValidURL } = require('../utils/validators');
 
 describe('Telegram Route Handler', () => {
   let app;

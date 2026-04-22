@@ -420,7 +420,7 @@ What actions should ELYVN take?`;
 
     // Validate actions
     if (decision.actions && Array.isArray(decision.actions)) {
-      const { isValidAction, isValidStage, VALID_ACTIONS } = require('./validate');
+      const { isValidAction, isValidStage, VALID_ACTIONS } = require('./validators');
       const { validateBrainAction } = require('./groundingEnforcer');
       const { recordMetric } = require('./metrics');
 

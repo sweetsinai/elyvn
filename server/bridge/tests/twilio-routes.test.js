@@ -24,7 +24,7 @@ jest.mock('../utils/calcom', () => ({ cancelBooking: jest.fn() }));
 jest.mock('../utils/config', () => ({
   ai: { model: 'claude-sonnet-4-20250514', maxTokens: 300 },
 }));
-jest.mock('../utils/validate', () => ({ isValidUUID: jest.fn(() => true) }));
+jest.mock('../utils/validators', () => ({ isValidUUID: jest.fn(() => true) }));
 jest.mock('../utils/resilience', () => ({
   withTimeout: jest.fn((promise) => promise),
 }));
