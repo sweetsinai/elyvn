@@ -246,7 +246,7 @@ If Retell sends malformed phone data (empty string, null, invalid format), corru
 **Suggested Fix:**
 ```javascript
 const { normalizePhone } = require('../utils/phone');
-const { isValidPhone } = require('../utils/validate');
+const { isValidPhone } = require('../utils/validators');
 
 // In handleCallEnded after setting callerPhone
 if (!callerPhone || !isValidPhone(callerPhone)) {
@@ -369,7 +369,7 @@ An attacker controlling `filter.payloadContains` can inject LIKE wildcards (`%` 
 
 **Suggested Fix:**
 ```javascript
-const { escapeLikePattern } = require('./validate');
+const { escapeLikePattern } = require('./validators');
 
 if (filter.payloadContains) {
   const escaped = escapeLikePattern(filter.payloadContains);

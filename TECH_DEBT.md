@@ -26,7 +26,7 @@ The ELYVN bridge server is a feature-rich communication platform with 7 route ha
 
 ### 1. DUPLICATE VALIDATION MODULES
 
-**Files**: `/server/bridge/utils/validate.js`, `/server/bridge/utils/validators.js`
+**Files**: `/server/bridge/utils/validators.js`
 
 **Issue**: Two nearly identical validator modules exist. Routes import from both inconsistently:
 - `validate.js`: Used by api.js, outreach.js
