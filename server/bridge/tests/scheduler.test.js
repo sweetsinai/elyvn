@@ -292,7 +292,7 @@ describe('scheduler', () => {
       await dailyLeadScoring(db);
 
       const lead = db.prepare('SELECT score FROM leads WHERE id = ?').get('lead1');
-      expect(lead.score).toBe(9); // 85 / 10 = 8.5 rounded to 9
+      expect(lead.score).toBe(85); // Matches 0-100 scale
     });
 
     test('notifies owner of hot leads', async () => {
@@ -647,8 +647,8 @@ describe('scheduler', () => {
       executeActions.mockRejectedValueOnce(new Error('Action failed'));
 
       db.prepare(`
-        INSERT INTO followups (id, lead_id, client_id, type, content, scheduled_at, status)
-        VALUES ('fu3', 'lead1', 'client1', 'brain', 'Follow up', datetime('now', '-1 minute'), 'scheduled')
+        INSERT INTO followups (id, lead_id, client_id, type, content, scheduled_at, status, attempts)
+        VALUES ('fu3', 'lead1', 'client1', 'brain', 'Follow up', datetime('now', '-1 minute'), 'scheduled', 3)
       `).run();
 
       await processFollowups(db);
@@ -696,7 +696,7 @@ describe('scheduler', () => {
       await expect(dailyLeadScoring(db)).resolves.not.toThrow();
     });
 
-    test('should map 0-100 predictive score to 0-10 lead score', async () => {
+    test('should map 0-100 predictive score to 0-100 lead score', async () => {
       const { batchScoreLeads } = require('../utils/leadScoring');
       batchScoreLeads.mockReturnValue([
         { leadId: 'lead1', predictive_score: 50 }
@@ -705,19 +705,19 @@ describe('scheduler', () => {
       await dailyLeadScoring(db);
 
       const lead = db.prepare('SELECT score FROM leads WHERE id = ?').get('lead1');
-      expect(lead.score).toBe(5); // 50 / 10 = 5
+      expect(lead.score).toBe(50);
     });
 
     test('should round score correctly', async () => {
       const { batchScoreLeads } = require('../utils/leadScoring');
       batchScoreLeads.mockReturnValue([
-        { leadId: 'lead2', predictive_score: 75 }
+        { leadId: 'lead2', predictive_score: 75.4 }
       ]);
 
       await dailyLeadScoring(db);
 
       const lead = db.prepare('SELECT score FROM leads WHERE id = ?').get('lead2');
-      expect(lead.score).toBe(8); // Math.round(75 / 10) = 8
+      expect(lead.score).toBe(75); // Math.round(75.4) = 75
     });
 
     test('should identify hot leads (75+)', async () => {

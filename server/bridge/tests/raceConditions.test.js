@@ -494,11 +494,11 @@ describe('Scheduler init guard', () => {
     initScheduler(db);
     initScheduler(db);
 
-    // The immediately-registered intervals (follow-up + appointment + reply-check) are 3
+    // The immediately-registered intervals (follow-up + appointment) are 2
     // A duplicate init must not add more
     const immediateIntervals = spy.mock.calls.length;
-    // After one init there should be exactly 3 immediate setIntervals (follow-up, appointment, reply-check)
-    expect(immediateIntervals).toBe(3);
+    // After one init there should be exactly 2 immediate setIntervals (follow-up, appointment)
+    expect(immediateIntervals).toBe(2);
 
     spy.mockRestore();
     jest.useRealTimers();
