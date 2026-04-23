@@ -1,0 +1,51 @@
+[33mcommit 3442f146adfc0a431a93f64de26d8ee00c282cae[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: cto.new <cto@elyvn.net>
+Date:   Thu Apr 23 15:25:57 2026 +0000
+
+    fix: adjust vite config for Vercel and fix JSX indentation in Calls.jsx
+
+[1mdiff --git a/dashboard/src/pages/Calls.jsx b/dashboard/src/pages/Calls.jsx[m
+[1mindex 3cc7312..d877d33 100644[m
+[1m--- a/dashboard/src/pages/Calls.jsx[m
+[1m+++ b/dashboard/src/pages/Calls.jsx[m
+[36m@@ -226,7 +226,7 @@[m [mexport default function Calls() {[m
+             </div>[m
+             <TrendingUp size={24} style={{ color: '#D4AF37', opacity: 0.7 }} />[m
+           </div>[m
+[31m-[m
+[32m+[m[32m        </div>[m
+       </div>[m
+       </div>[m
+ [m
+[1mdiff --git a/dashboard/vercel.json b/dashboard/vercel.json[m
+[1mnew file mode 100644[m
+[1mindex 0000000..1a4c723[m
+[1m--- /dev/null[m
+[1m+++ b/dashboard/vercel.json[m
+[36m@@ -0,0 +1,3 @@[m
+[32m+[m[32m{[m
+[32m+[m[32m  "framework": "vite"[m
+[32m+[m[32m}[m
+[1mdiff --git a/dashboard/vite.config.js b/dashboard/vite.config.js[m
+[1mindex fe15880..495d765 100644[m
+[1m--- a/dashboard/vite.config.js[m
+[1m+++ b/dashboard/vite.config.js[m
+[36m@@ -11,6 +11,6 @@[m [mexport default defineConfig({[m
+     }[m
+   },[m
+   build: {[m
+[31m-    outDir: '../server/bridge/public'[m
+[32m+[m[32m    outDir: process.env.VERCEL ? 'dist' : '../server/bridge/public'[m
+   }[m
+ });[m
+[1mdiff --git a/vercel.json b/vercel.json[m
+[1mnew file mode 100644[m
+[1mindex 0000000..38195a7[m
+[1m--- /dev/null[m
+[1m+++ b/vercel.json[m
+[36m@@ -0,0 +1,5 @@[m
+[32m+[m[32m{[m
+[32m+[m[32m  "buildCommand": "npm run build",[m
+[32m+[m[32m  "outputDirectory": "server/bridge/public",[m
+[32m+[m[32m  "framework": "vite"[m
+[32m+[m[32m}[m
