@@ -1,0 +1,5 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "server/bridge/public",
+  "framework": "vite"
+}

@@ -226,7 +226,7 @@ export default function Calls() {
             </div>
             <TrendingUp size={24} style={{ color: '#D4AF37', opacity: 0.7 }} />
           </div>
-
+        </div>
       </div>
       </div>
 
