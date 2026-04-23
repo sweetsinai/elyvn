@@ -228,6 +228,7 @@ export default function Calls() {
           </div>
 
       </div>
+      </div>
 
       {/* Active Calls Banner */}
       {activeCalls.length > 0 && (
