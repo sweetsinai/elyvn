@@ -1,0 +1,401 @@
+FAIL tests/onboard.test.js
+  ● Console
+
+    console.log
+      2026-04-23 13:47:56.001 [32m[INFO][0m [retellSync] Starting sync for client 6bc9a7cd-e1fb-4117-b750-1ef9d1888546
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:56.055 [33m[WARN][0m [retellSync] Client not found: 6bc9a7cd-e1fb-4117-b750-1ef9d1888546
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:56.305 [32m[INFO][0m [retellSync] Starting sync for client 4b096dea-572b-4c98-8efe-b7fcdb470af3
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:56.306 [33m[WARN][0m [retellSync] Client not found: 4b096dea-572b-4c98-8efe-b7fcdb470af3
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:56.349 [32m[INFO][0m [retellSync] Starting sync for client d46fbacd-d677-4ee7-9b39-091e651023a0
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:56.349 [33m[WARN][0m [retellSync] Client not found: d46fbacd-d677-4ee7-9b39-091e651023a0
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:56.408 [32m[INFO][0m [retellSync] Starting sync for client 0e2a5041-7d2f-440c-b1f6-efe9c0c22405
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:56.409 [33m[WARN][0m [retellSync] Client not found: 0e2a5041-7d2f-440c-b1f6-efe9c0c22405
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:56.452 [32m[INFO][0m [retellSync] Starting sync for client 6b36243c-031f-4003-83db-8b3b788066ab
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:56.453 [33m[WARN][0m [retellSync] Client not found: 6b36243c-031f-4003-83db-8b3b788066ab
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:56.525 [32m[INFO][0m [retellSync] Starting sync for client 4dd36dd2-e9ec-423a-a9cd-4390ad248d99
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:56.525 [33m[WARN][0m [retellSync] Client not found: 4dd36dd2-e9ec-423a-a9cd-4390ad248d99
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:56.575 [32m[INFO][0m [retellSync] Starting sync for client 1f655c60-392e-4151-9e84-78caced1d607
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:56.575 [33m[WARN][0m [retellSync] Client not found: 1f655c60-392e-4151-9e84-78caced1d607
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:56.647 [32m[INFO][0m [retellSync] Starting sync for client 0dbd9547-a71e-4497-9030-90c429de28f7
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:56.648 [33m[WARN][0m [retellSync] Client not found: 0dbd9547-a71e-4497-9030-90c429de28f7
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:56.712 [32m[INFO][0m [retellSync] Starting sync for client 8fc0f29f-ee6b-4ee4-8e82-93ad3272c438
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:56.729 [33m[WARN][0m [retellSync] Client not found: 8fc0f29f-ee6b-4ee4-8e82-93ad3272c438
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:56.941 [32m[INFO][0m [retellSync] Starting sync for client b9029f27-fe84-4816-ab4f-e5ac87475fec
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:56.942 [33m[WARN][0m [retellSync] Client not found: b9029f27-fe84-4816-ab4f-e5ac87475fec
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:56.986 [32m[INFO][0m [retellSync] Starting sync for client 7bb809cc-7452-406e-9f35-0c661ed32e91
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:56.987 [33m[WARN][0m [retellSync] Client not found: 7bb809cc-7452-406e-9f35-0c661ed32e91
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.error
+      2026-04-23 13:47:57.053 [31m[ERROR][0m [onboard] Error: Error: Database error
+          at Object.<anonymous> (/home/engine/project/elyvn/server/bridge/tests/onboard.test.js:437:17)
+          at /home/engine/project/elyvn/server/bridge/node_modules/jest-mock/build/index.js:397:39
+          at Object.<anonymous> (/home/engine/project/elyvn/server/bridge/node_modules/jest-mock/build/index.js:404:13)
+          at Object.mockConstructor [as run] (/home/engine/project/elyvn/server/bridge/node_modules/jest-mock/build/index.js:148:19)
+          at Object.run (/home/engine/project/elyvn/server/bridge/tests/onboard.test.js:446:57)
+          at /home/engine/project/elyvn/server/bridge/node_modules/jest-mock/build/index.js:397:39
+          at Object.<anonymous> (/home/engine/project/elyvn/server/bridge/node_modules/jest-mock/build/index.js:404:13)
+          at Object.mockConstructor [as query] (/home/engine/project/elyvn/server/bridge/node_modules/jest-mock/build/index.js:103:19)
+          at query (/home/engine/project/elyvn/server/bridge/routes/onboard.js:195:14)
+          at processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+      315 |   error: (...args) => {
+      316 |     if (!shouldLog('error')) return;
+    > 317 |     originalError.apply(console, formatConsoleArgs('ERROR', args));
+          |                   ^
+      318 |     try {
+      319 |       getStream().write(formatFileEntry('ERROR', args));
+      320 |     } catch (_) {}
+
+      at Object.apply (utils/logger.js:317:19)
+      at error (routes/onboard.js:304:12)
+
+    console.error
+      2026-04-23 13:47:57.112 [31m[ERROR][0m [onboard] Error: Error: File system error
+          at Object.<anonymous> (/home/engine/project/elyvn/server/bridge/tests/onboard.test.js:470:9)
+          at Promise.then.completed (/home/engine/project/elyvn/server/bridge/node_modules/jest-circus/build/utils.js:298:28)
+          at new Promise (<anonymous>)
+          at callAsyncCircusFn (/home/engine/project/elyvn/server/bridge/node_modules/jest-circus/build/utils.js:231:10)
+          at _callCircusTest (/home/engine/project/elyvn/server/bridge/node_modules/jest-circus/build/run.js:316:40)
+          at processTicksAndRejections (node:internal/process/task_queues:104:5)
+          at _runTest (/home/engine/project/elyvn/server/bridge/node_modules/jest-circus/build/run.js:252:3)
+          at _runTestsForDescribeBlock (/home/engine/project/elyvn/server/bridge/node_modules/jest-circus/build/run.js:126:9)
+          at _runTestsForDescribeBlock (/home/engine/project/elyvn/server/bridge/node_modules/jest-circus/build/run.js:121:9)
+          at _runTestsForDescribeBlock (/home/engine/project/elyvn/server/bridge/node_modules/jest-circus/build/run.js:121:9)
+          at run (/home/engine/project/elyvn/server/bridge/node_modules/jest-circus/build/run.js:71:3)
+          at runAndTransformResultsToJestFormat (/home/engine/project/elyvn/server/bridge/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+          at jestAdapter (/home/engine/project/elyvn/server/bridge/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+          at runTestInternal (/home/engine/project/elyvn/server/bridge/node_modules/jest-runner/build/runTest.js:367:16)
+          at runTest (/home/engine/project/elyvn/server/bridge/node_modules/jest-runner/build/runTest.js:444:34)
+
+      315 |   error: (...args) => {
+      316 |     if (!shouldLog('error')) return;
+    > 317 |     originalError.apply(console, formatConsoleArgs('ERROR', args));
+          |                   ^
+      318 |     try {
+      319 |       getStream().write(formatFileEntry('ERROR', args));
+      320 |     } catch (_) {}
+
+      at Object.apply (utils/logger.js:317:19)
+      at error (routes/onboard.js:304:12)
+
+    console.log
+      2026-04-23 13:47:57.198 [32m[INFO][0m [retellSync] Starting sync for client 937069a6-dbd3-4bb6-bade-49573217172c
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:57.199 [33m[WARN][0m [retellSync] Client not found: 937069a6-dbd3-4bb6-bade-49573217172c
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:57.254 [32m[INFO][0m [retellSync] Starting sync for client 36e92da6-5297-4c0c-b7d0-4edf495458aa
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:57.255 [33m[WARN][0m [retellSync] Client not found: 36e92da6-5297-4c0c-b7d0-4edf495458aa
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:57.320 [32m[INFO][0m [retellSync] Starting sync for client 0bc48bf9-9107-4787-9f66-e52ff714a332
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:57.321 [33m[WARN][0m [retellSync] Client not found: 0bc48bf9-9107-4787-9f66-e52ff714a332
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+    console.log
+      2026-04-23 13:47:57.362 [32m[INFO][0m [retellSync] Starting sync for client 4894449f-f0a9-4edc-90ad-6a188b73583b
+
+      at Object.apply [as info] (utils/logger.js:303:17)
+
+    console.warn
+      2026-04-23 13:47:57.363 [33m[WARN][0m [retellSync] Client not found: 4894449f-f0a9-4edc-90ad-6a188b73583b
+
+      308 |   warn: (...args) => {
+      309 |     if (!shouldLog('warn')) return;
+    > 310 |     originalWarn.apply(console, formatConsoleArgs('WARN', args));
+          |                  ^
+      311 |     try {
+      312 |       getStream().write(formatFileEntry('WARN', args));
+      313 |     } catch (_) {}
+
+      at Object.apply [as warn] (utils/logger.js:310:18)
+      at warn (utils/retellSync.js:131:14)
+
+  ● Onboard Route › POST /onboard - Validation › validates optional booking_link as URL
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 422
+    Received: 201
+
+      242 |         });
+      243 |
+    > 244 |       expect(res.status).toBe(422);
+          |                          ^
+      245 |       expect(res.body.error).toMatch(/booking_link|booking link|url/i);
+      246 |     });
+      247 |
+
+      at Object.toBe (tests/onboard.test.js:244:26)
+
+  ● Onboard Route › POST /onboard - Successful Onboarding › creates knowledge base file on success
+
+    expect(jest.fn()).toHaveBeenCalled()
+
+    Expected number of calls: >= 1
+    Received number of calls:    0
+
+      348 |
+      349 |       if (res.status === 201) {
+    > 350 |         expect(fsPromisesMock.mkdir).toHaveBeenCalled();
+          |                                      ^
+      351 |         expect(fsPromisesMock.writeFile).toHaveBeenCalled();
+      352 |       }
+      353 |     });
+
+      at Object.toHaveBeenCalled (tests/onboard.test.js:350:38)
+
+FAIL tests/csrf.test.js
+  ● CSRF — webhook paths are excluded › POST to /webhooks/legacySms is skipped (webhook exclusion)
+
+    expect(jest.fn()).toHaveBeenCalled()
+
+    Expected number of calls: >= 1
+    Received number of calls:    0
+
+      241 |       csrfProtection(req, makeRes(), next);
+      242 |
+    > 243 |       expect(next).toHaveBeenCalled();
+          |                    ^
+      244 |     }
+      245 |   );
+      246 |
+
+      at toHaveBeenCalled (tests/csrf.test.js:243:20)
+
+PASS tests/speedToLead.test.js
+
+Test Suites: 2 failed, 1 passed, 3 total
+Tests:       3 failed, 52 passed, 55 total
+Snapshots:   0 total
+Time:        3.546 s
+Ran all test suites matching /tests\/speedToLead.test.js|tests\/onboard.test.js|tests\/csrf.test.js/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

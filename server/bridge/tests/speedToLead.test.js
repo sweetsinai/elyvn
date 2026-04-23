@@ -10,12 +10,12 @@ describe('speed-to-lead.js', () => {
     // This test documents that speed-to-lead has been updated to use telnyx_phone
     // The actual implementation prefers telnyx_phone over twilio_phone
     const expectedBehavior = {
-      prefersLegacy SMSPhone: true,
+      prefersLegacySmsPhone: true,
       fallbackToTwilioPhone: true,
-      usesLegacy SMSPhoneFirstInCode: 'client.telnyx_phone || client.twilio_phone'
+      usesLegacySmsPhoneFirstInCode: 'client.telnyx_phone || client.twilio_phone'
     };
 
-    expect(expectedBehavior.prefersLegacy SMSPhone).toBe(true);
+    expect(expectedBehavior.prefersLegacySmsPhone).toBe(true);
     expect(expectedBehavior.fallbackToTwilioPhone).toBe(true);
   });
 });

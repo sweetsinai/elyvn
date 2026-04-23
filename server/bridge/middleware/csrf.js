@@ -36,7 +36,7 @@ function csrfProtection(req, res, next) {
   // Skip webhook endpoints — they have their own signature auth
   const pathLower = req.path.toLowerCase();
   for (const prefix of WEBHOOK_PREFIXES) {
-    if (pathLower.startsWith(prefix)) {
+    if (pathLower.startsWith(prefix.toLowerCase())) {
       return next();
     }
   }

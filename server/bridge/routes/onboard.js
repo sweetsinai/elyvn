@@ -189,6 +189,7 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
     const kbPath = kbAbsPath; // Storing absolute path for reliability
 
     // Write KB file
+    await fsPromises.mkdir(kbDir, { recursive: true });
     await fsPromises.writeFile(kbAbsPath, JSON.stringify(knowledgeBase, null, 2));
 
     // Insert client record into database
