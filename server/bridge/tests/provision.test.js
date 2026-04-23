@@ -33,6 +33,7 @@ describe('Provision Route', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.JWT_SECRET = "test-secret-at-least-32-characters-long";
 
     // Create mock database with query support
     mockDb = {

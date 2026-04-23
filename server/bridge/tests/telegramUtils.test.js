@@ -345,7 +345,7 @@ describe('telegram utils', () => {
         outcome: 'booked',
         caller_name: 'Hot Lead',
         duration: 120,
-        score: 80
+        score: 800
       };
 
       const result = telegram.formatCallNotification(call, {});
