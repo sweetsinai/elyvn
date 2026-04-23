@@ -11,6 +11,6 @@ export default defineConfig({
     }
   },
   build: {
-    outDir: '../server/bridge/public'
+    outDir: process.env.VERCEL ? 'dist' : '../server/bridge/public'
   }
 });
