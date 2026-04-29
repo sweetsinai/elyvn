@@ -119,6 +119,7 @@ router.put('/settings/:clientId', validateBody(SettingsUpdateSchema), async (req
       'notification_mode', 'is_active', 'auto_followup_enabled',
       'lead_webhook_url', 'booking_webhook_url', 'call_webhook_url',
       'sms_webhook_url', 'stage_change_webhook_url',
+      'calcom_api_key', 'calcom_webhook_secret',
     ]);
 
     // Fields that require encryption before storage
@@ -130,8 +131,14 @@ router.put('/settings/:clientId', validateBody(SettingsUpdateSchema), async (req
 
     for (const [key, value] of Object.entries(body)) {
       if (ALLOWED.has(key)) {
-        updates.push(`${key} = ?`);
-        params.push(value);
+        if (key === 'calcom_api_key' || key === 'calcom_webhook_secret') {
+          const { encrypt } = require('../../utils/encryption');
+          updates.push(`${key}_encrypted = ?`);
+          params.push(encrypt(value));
+        } else {
+          updates.push(`${key} = ?`);
+          params.push(value);
+        }
       }
     }
 

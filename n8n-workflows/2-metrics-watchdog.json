@@ -82,10 +82,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.telegram.org/bot8199060422:AAEQGNGN6Nrxpy4NXFVaWjOn5xeUW_oz8F0/sendMessage",
+        "url": "https://api.telegram.org/botREPLACE_WITH_TELEGRAM_BOT_TOKEN/sendMessage",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"chat_id\":\"5919406237\",\"text\":\"⚠️ ELYVN SMS Alert\\n\\nSMS success rate dropped below 90%\\nCurrent: {{ $json.data?.metrics?.sms_success_rate ?? $json.metrics?.sms_success_rate ?? 'unknown' }}%\\nSent: {{ $json.data?.metrics?.total_sms_sent ?? $json.metrics?.total_sms_sent ?? 0 }}\\nFailed: {{ $json.data?.metrics?.total_sms_failed ?? $json.metrics?.total_sms_failed ?? 0 }}\\nTime: {{ $now.toISO() }}\"}",
+        "jsonBody": "={\"chat_id\":\"REPLACE_WITH_TELEGRAM_CHAT_ID\",\"text\":\"⚠️ ELYVN SMS Alert\\n\\nSMS success rate dropped below 90%\\nCurrent: {{ $json.data?.metrics?.sms_success_rate ?? $json.metrics?.sms_success_rate ?? 'unknown' }}%\\nSent: {{ $json.data?.metrics?.total_sms_sent ?? $json.metrics?.total_sms_sent ?? 0 }}\\nFailed: {{ $json.data?.metrics?.total_sms_failed ?? $json.metrics?.total_sms_failed ?? 0 }}\\nTime: {{ $now.toISO() }}\"}",
         "options": {}
       },
       "id": "5",
@@ -97,10 +97,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.telegram.org/bot8199060422:AAEQGNGN6Nrxpy4NXFVaWjOn5xeUW_oz8F0/sendMessage",
+        "url": "https://api.telegram.org/botREPLACE_WITH_TELEGRAM_BOT_TOKEN/sendMessage",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"chat_id\":\"5919406237\",\"text\":\"🐢 ELYVN Slow\\n\\nAvg response time > 1 second\\nCurrent: {{ $json.data?.metrics?.avg_response_time_ms ?? $json.metrics?.avg_response_time_ms ?? 'unknown' }}ms\\nTime: {{ $now.toISO() }}\"}",
+        "jsonBody": "={\"chat_id\":\"REPLACE_WITH_TELEGRAM_CHAT_ID\",\"text\":\"🐢 ELYVN Slow\\n\\nAvg response time > 1 second\\nCurrent: {{ $json.data?.metrics?.avg_response_time_ms ?? $json.metrics?.avg_response_time_ms ?? 'unknown' }}ms\\nTime: {{ $now.toISO() }}\"}",
         "options": {}
       },
       "id": "6",

@@ -165,6 +165,15 @@ async function executeOne(db, action, lead, client) {
       if (eventTypeId && email && action.start_time) {
         try {
           const { createBooking } = require('./calcom');
+          let clientApiKey = null;
+          if (client?.id) {
+            const clientRecord = await db.query('SELECT calcom_api_key_encrypted FROM clients WHERE id = ?', [client.id], 'get');
+            if (clientRecord && clientRecord.calcom_api_key_encrypted) {
+              const { decrypt } = require('./encryption');
+              clientApiKey = decrypt(clientRecord.calcom_api_key_encrypted);
+            }
+          }
+
           const result = await createBooking({
             eventTypeId,
             startTime: action.start_time,
@@ -172,7 +181,7 @@ async function executeOne(db, action, lead, client) {
             email,
             phone,
             metadata: { lead_id: lead?.id, client_id: client?.id, source: 'brain' },
-          });
+          }, clientApiKey);
 
           if (result.success) {
             // Record appointment in DB
@@ -222,6 +231,21 @@ async function executeOne(db, action, lead, client) {
         ).catch(err => logger.warn('[actionExecutor] Telegram manual-book notify failed', err.message));
       }
       return { booked: false, reason: 'manual_booking_needed' };
+    }
+
+    case 'record_opt_out': {
+      if (!lead?.phone || !client?.id) return { opted_out: false, reason: 'missing data' };
+      const { recordOptOut } = require('./optOut');
+      const success = await recordOptOut(db, lead.phone, client.id, action.reason || 'brain_initiated');
+      
+      // Notify owner
+      if (client?.telegram_chat_id && success) {
+        telegram.sendMessage(client.telegram_chat_id,
+          `⛔ <b>Brain recorded opt-out</b>\n\nLead: ${lead.name || lead.phone}\nReason: ${action.reason || 'brain_initiated'}`
+        ).catch(err => logger.warn('[actionExecutor] Telegram opt-out notify failed', err.message));
+      }
+      
+      return { opted_out: success };
     }
 
     case 'log_insight': {

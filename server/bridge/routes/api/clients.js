@@ -27,7 +27,7 @@ const CLIENT_SAFE_COLS = 'id, business_name, owner_name, owner_email, owner_phon
 
 // Whitelist of allowed client fields for updates (prevents SQL injection)
 const ALLOWED_CLIENT_FIELDS = new Set([
-  'business_name', 'business_address', 'phone', 'email', 'website',
+  'business_name', 'business_address', 'website',
   'google_review_link', 'ticket_price', 'timezone', 'ai_enabled',
   'booking_link', 'industry', 'auto_followup_enabled',
   'owner_name', 'owner_phone', 'owner_email',

@@ -372,9 +372,10 @@ function mountRoutes(app) {
 
   // General API routes — 10/min per client (authRateLimiter)
   // Lead creation endpoints get an additional 60/min per-client limiter
-  app.use('/v1/api', authRateLimiter, apiAuth, enforceClientIsolation, apiRouter);
-  app.use('/v2/api', authRateLimiter, apiAuth, enforceClientIsolation, apiRouter);
-  app.use('/api', authRateLimiter, apiAuth, enforceClientIsolation, apiRouter);
+  const { checkSubscriptionStatus } = require('../middleware/subscription');
+  app.use('/v1/api', authRateLimiter, apiAuth, checkSubscriptionStatus, enforceClientIsolation, apiRouter);
+  app.use('/v2/api', authRateLimiter, apiAuth, checkSubscriptionStatus, enforceClientIsolation, apiRouter);
+  app.use('/api', authRateLimiter, apiAuth, checkSubscriptionStatus, enforceClientIsolation, apiRouter);
 
   // Telegram bot webhook — 300/min per IP
   app.use('/webhooks/telegram', publicWebhookLimit, telegramRoutes);

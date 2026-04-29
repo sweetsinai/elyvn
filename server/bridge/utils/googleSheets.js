@@ -138,7 +138,11 @@ async function appendRow(spreadsheetId, tabName, row) {
 
     logger.debug(`[sheets] Appended row to ${tabName} in ${spreadsheetId}`);
   } catch (err) {
-    logger.error(`[sheets] appendRow failed (${tabName}):`, err.message);
+    let msg = err.message;
+    if (msg.includes('storageQuotaExceeded') || msg.includes('quota has been exceeded')) {
+      msg = 'Google Drive storage quota exceeded. If using a free Gmail service account, you must upgrade to Google Workspace to enable Drive storage for service accounts.';
+    }
+    logger.error(`[sheets] appendRow failed (${tabName}):`, msg);
   }
 }
 
@@ -261,7 +265,11 @@ async function createClientSheet(businessName, clientEmail) {
     logger.info(`[sheets] Created sheet for "${businessName}": ${spreadsheetId} (shared with ${clientEmail})`);
     return { spreadsheetId, url };
   } catch (err) {
-    logger.error('[sheets] createClientSheet failed:', err.message);
+    let msg = err.message;
+    if (msg.includes('storageQuotaExceeded') || msg.includes('quota has been exceeded')) {
+      msg = 'Google Drive storage quota exceeded. If using a free Gmail service account, you must upgrade to Google Workspace to enable Drive storage for service accounts.';
+    }
+    logger.error('[sheets] createClientSheet failed:', msg);
     return null;
   }
 }

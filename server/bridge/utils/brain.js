@@ -278,6 +278,7 @@ ${guardrails.some(g => g.includes('OWNER_HANDLING')) ? '- schedule_followup is D
 - { "action": "update_lead_score", "score": N, "reason": "..." }
 - { "action": "book_appointment", "start_time": "ISO datetime", "service": "...", "email": "...", "phone": "+1..." }
 - { "action": "notify_owner", "message": "...", "urgency": "low|medium|high|critical" }
+- { "action": "record_opt_out", "reason": "..." }
 - { "action": "log_insight", "insight": "..." }
 - { "action": "no_action", "reason": "..." }
 
@@ -365,7 +366,7 @@ What actions should ELYVN take?`;
               items: {
                 type: 'object',
                 properties: {
-                  action: { type: 'string', enum: ['send_sms', 'schedule_followup', 'cancel_pending_followups', 'update_lead_stage', 'update_lead_score', 'book_appointment', 'notify_owner', 'log_insight', 'no_action'] },
+                  action: { type: 'string', enum: ['send_sms', 'schedule_followup', 'cancel_pending_followups', 'update_lead_stage', 'update_lead_score', 'book_appointment', 'notify_owner', 'record_opt_out', 'log_insight', 'no_action'] },
                 },
                 required: ['action'],
               },
@@ -413,13 +414,14 @@ What actions should ELYVN take?`;
       } catch (parseErr) {
         logger.error('[Brain] JSON parse failed (no tool_use block):', parseErr.message);
         return {
-        reasoning: 'Brain parse error — unreadable response',
-        actions: [{ action: 'notify_owner', message: 'Brain returned unparseable response for ' + eventType, urgency: 'high' }],
-      };
+          reasoning: 'Brain parse error — unreadable response',
+          actions: [{ action: 'notify_owner', message: 'Brain returned unparseable response for ' + eventType, urgency: 'high' }],
+        };
+      }
     }
 
     // Validate actions
-    if (decision.actions && Array.isArray(decision.actions)) {
+    if (decision && decision.actions && Array.isArray(decision.actions)) {
       const { isValidAction, isValidStage, VALID_ACTIONS } = require('./validators');
       const { validateBrainAction } = require('./groundingEnforcer');
       const { recordMetric } = require('./metrics');
@@ -434,8 +436,8 @@ What actions should ELYVN take?`;
           logger.warn(`[Brain] Invalid stage "${a.stage}" — filtering out`);
           return false;
         }
-        // Validate score range
-        if (a.action === 'update_lead_score' && (typeof a.score !== 'number' || a.score < 0 || a.score > 10)) {
+        // Validate score range (0-100)
+        if (a.action === 'update_lead_score' && (typeof a.score !== 'number' || a.score < 0 || a.score > 100)) {
           logger.warn(`[Brain] Invalid score ${a.score} — filtering out`);
           return false;
         }
@@ -456,7 +458,6 @@ What actions should ELYVN take?`;
     logger.info(`[Brain] Actions: ${decision.actions.map(a => a.action).join(', ')}`);
 
     return decision;
-    }  // end if (!decision)
   } catch (error) {
     logger.error('[Brain] Error:', error.message);
     return {

@@ -1825,4 +1825,113 @@ migrations.push({
   },
 });
 
+migrations.push({
+  id: '055_cleanup_orphans',
+  description: 'Clean up orphaned rows that violate foreign key constraints before enforcing them',
+  up(db) {
+    // Delete rows referencing deleted or non-existent clients
+    db.exec('DELETE FROM leads WHERE client_id IS NOT NULL AND client_id NOT IN (SELECT id FROM clients)');
+    db.exec('DELETE FROM calls WHERE client_id IS NOT NULL AND client_id NOT IN (SELECT id FROM clients)');
+    db.exec('DELETE FROM messages WHERE client_id IS NOT NULL AND client_id NOT IN (SELECT id FROM clients)');
+    db.exec('DELETE FROM followups WHERE client_id IS NOT NULL AND client_id NOT IN (SELECT id FROM clients)');
+    db.exec('DELETE FROM appointments WHERE client_id IS NOT NULL AND client_id NOT IN (SELECT id FROM clients)');
+    db.exec('DELETE FROM job_queue WHERE client_id IS NOT NULL AND client_id NOT IN (SELECT id FROM clients)');
+    db.exec('DELETE FROM conversations WHERE client_id IS NOT NULL AND client_id NOT IN (SELECT id FROM clients)');
+    db.exec('DELETE FROM usage_records WHERE client_id IS NOT NULL AND client_id NOT IN (SELECT id FROM clients)');
+    
+    // Delete rows referencing deleted or non-existent leads
+    db.exec('DELETE FROM messages WHERE lead_id IS NOT NULL AND lead_id NOT IN (SELECT id FROM leads)');
+    db.exec('DELETE FROM followups WHERE lead_id IS NOT NULL AND lead_id NOT IN (SELECT id FROM leads)');
+    db.exec('DELETE FROM appointments WHERE lead_id IS NOT NULL AND lead_id NOT IN (SELECT id FROM leads)');
+    db.exec('DELETE FROM feature_store WHERE lead_id IS NOT NULL AND lead_id NOT IN (SELECT id FROM leads)');
+    db.exec('DELETE FROM conversations WHERE lead_id IS NOT NULL AND lead_id NOT IN (SELECT id FROM leads)');
+
+    // Additional cross-checks
+    db.exec('DELETE FROM experiment_assignments WHERE experiment_id IS NOT NULL AND experiment_id NOT IN (SELECT id FROM experiments)');
+    db.exec('DELETE FROM experiment_outcomes WHERE experiment_id IS NOT NULL AND experiment_id NOT IN (SELECT id FROM experiments)');
+
+    getLogger().info('[migrations] 055: orphaned rows cleaned up');
+  },
+  down() {}
+});
+
+migrations.push({
+  id: '056_calcom_api_key',
+  description: 'Add per-client calcom api key columns for multi-tenant isolation',
+  up(db) {
+    const cols = db.prepare("PRAGMA table_info('clients')").all().map(c => c.name);
+    if (!cols.includes('calcom_api_key_encrypted')) {
+      db.exec('ALTER TABLE clients ADD COLUMN calcom_api_key_encrypted TEXT');
+    }
+    if (!cols.includes('calcom_webhook_secret_encrypted')) {
+      db.exec('ALTER TABLE clients ADD COLUMN calcom_webhook_secret_encrypted TEXT');
+    }
+    getLogger().info('[migrations] 056: calcom columns added');
+  },
+  down() {}
+});
+
+migrations.push({
+  id: '057_refresh_tokens',
+  description: 'Add refresh_tokens table for secure session persistence and rotation',
+  up(db) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS refresh_tokens (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at DATETIME NOT NULL,
+        revoked INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(client_id) REFERENCES clients(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_refresh_tokens_client ON refresh_tokens(client_id);
+      CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash);
+    `);
+  },
+  down(db) {
+    db.exec('DROP TABLE IF EXISTS refresh_tokens');
+  }
+});
+
+migrations.push({
+  id: '058_billing_hardening',
+  description: 'Add processed_webhooks, grace period, and payments tracking',
+  up(db) {
+    db.exec(`
+      -- DB-backed webhook idempotency
+      CREATE TABLE IF NOT EXISTS processed_webhooks (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL,
+        event_type TEXT,
+        processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Subscription grace period and admin roles
+      ALTER TABLE clients ADD COLUMN role TEXT DEFAULT 'user';
+      ALTER TABLE clients ADD COLUMN grace_period_until DATETIME;
+      
+      -- Payments history and invoices
+      CREATE TABLE IF NOT EXISTS payments (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES clients(id),
+        dodo_payment_id TEXT UNIQUE,
+        amount_cents INTEGER NOT NULL,
+        currency TEXT DEFAULT 'USD',
+        status TEXT NOT NULL,
+        invoice_url TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Index for performance
+      CREATE INDEX IF NOT EXISTS idx_payments_client_id ON payments(client_id);
+      CREATE INDEX IF NOT EXISTS idx_processed_webhooks_at ON processed_webhooks(processed_at);
+    `);
+  },
+  down(db) {
+    db.exec('DROP TABLE IF EXISTS payments; DROP TABLE IF EXISTS processed_webhooks;');
+  }
+});
+
 module.exports = { runMigrations, rollbackMigration, migrations };

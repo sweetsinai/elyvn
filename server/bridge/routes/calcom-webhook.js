@@ -12,8 +12,19 @@ const { logDataMutation } = require('../utils/auditLog');
 const { AppError } = require('../utils/AppError');
 
 // Cal.com webhook signature verification (timing-safe comparison)
-router.use((req, res, next) => {
-  const secret = process.env.CALCOM_WEBHOOK_SECRET;
+async function verifySignature(req, res, next) {
+  try {
+    const db = req.app.locals.db;
+    const clientId = req.params.clientId || req.headers['x-elyvn-client-id'];
+    let secret = process.env.CALCOM_WEBHOOK_SECRET;
+
+    if (clientId) {
+      const client = await db.query('SELECT calcom_webhook_secret_encrypted FROM clients WHERE id = ?', [clientId], 'get');
+      if (client && client.calcom_webhook_secret_encrypted) {
+        const { decrypt } = require('../utils/encryption');
+        secret = decrypt(client.calcom_webhook_secret_encrypted) || secret;
+      }
+    }
   if (!secret) {
     if (process.env.NODE_ENV === 'production') {
       logger.error('[calcom-webhook] CALCOM_WEBHOOK_SECRET not configured in production');
@@ -39,8 +50,13 @@ router.use((req, res, next) => {
   }
 
   // Timestamp validation — reject webhooks older than 5 minutes
-  const webhookTimestamp = req.headers['x-cal-timestamp'] || req.body?.createdAt;
-  if (webhookTimestamp) {
+  const webhookTimestamp = req.headers['x-cal-timestamp'];
+  if (!webhookTimestamp) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.warn('[calcom-webhook] Missing x-cal-timestamp header in production');
+      return next(new AppError('MISSING_TIMESTAMP', 'Missing timestamp', 400));
+    }
+  } else {
     const ts = new Date(webhookTimestamp).getTime();
     if (!isNaN(ts) && (Date.now() - ts) > 300000) {
       logger.warn('[calcom-webhook] Webhook timestamp too old — possible replay attack');
@@ -48,11 +64,14 @@ router.use((req, res, next) => {
     }
   }
 
-  next();
-});
+  } catch (err) {
+    logger.error('[calcom-webhook] Signature verification error:', err.message);
+    return next(new AppError('SIGNATURE_ERROR', 'Signature error', 500));
+  }
+}
 
-// POST /webhooks/calcom
-router.post('/', async (req, res) => {
+// POST /webhooks/calcom or /webhooks/calcom/:clientId
+router.post('/:clientId?', verifySignature, async (req, res) => {
   // Always respond 200 fast
   res.status(200).json({ received: true });
 
@@ -68,7 +87,7 @@ router.post('/', async (req, res) => {
     logger.info(`[calcom-webhook] Event: ${triggerEvent}`);
 
     if (triggerEvent === 'BOOKING_CREATED') {
-      await handleBookingCreated(db, payload);
+      await handleBookingCreated(db, payload, req);
     } else if (triggerEvent === 'BOOKING_CANCELLED') {
       await handleBookingCancelled(db, payload);
     } else if (triggerEvent === 'BOOKING_RESCHEDULED') {
@@ -79,7 +98,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-async function handleBookingCreated(db, payload) {
+async function handleBookingCreated(db, payload, req) {
   const {
     bookingId,
     uid,
@@ -111,9 +130,13 @@ async function handleBookingCreated(db, payload) {
   }
 
   // Find which client this booking belongs to
-  // Priority: 1) organizer email, 2) Cal.com event type ID, 3) single-tenant fallback
+  // Priority: 1) explicit clientId from URL/headers, 2) organizer email, 3) event type ID
   let client = null;
-  if (organizer?.email) {
+  const explicitClientId = req.params?.clientId || req.headers?.['x-elyvn-client-id'];
+  if (explicitClientId) {
+    client = await db.query('SELECT * FROM clients WHERE id = ? AND is_active = 1', [explicitClientId], 'get');
+  }
+  if (!client && organizer?.email) {
     client = await db.query('SELECT * FROM clients WHERE owner_email = ? AND is_active = 1', [organizer.email], 'get');
   }
   // Fallback: match by calcom_event_type_id if the booking payload includes it

@@ -30,10 +30,10 @@ const JWT_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 const JWT_ISSUER = 'elyvn-api';
 const JWT_AUDIENCE = 'elyvn-dashboard';
 
-function createToken(payload) {
+function createToken(payload, expiryMs = JWT_EXPIRY) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const now = Date.now();
-  const data = { ...payload, iat: now, exp: now + JWT_EXPIRY, iss: JWT_ISSUER, aud: JWT_AUDIENCE };
+  const data = { ...payload, iat: now, exp: now + expiryMs, iss: JWT_ISSUER, aud: JWT_AUDIENCE };
   const body = Buffer.from(JSON.stringify(data)).toString('base64url');
   const sig = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${sig}`;

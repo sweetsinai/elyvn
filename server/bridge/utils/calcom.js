@@ -22,9 +22,11 @@ const calcomBreaker = new CircuitBreaker(
   }
 );
 
-function headers() {
+function headers(clientApiKey) {
+  const key = clientApiKey || CALCOM_API_KEY;
+  if (!key) throw new AppError('CONFIG_ERROR', 'No Cal.com API key available', 500);
   return {
-    'Authorization': `Bearer ${CALCOM_API_KEY}`,
+    'Authorization': `Bearer ${key}`,
     'Content-Type': 'application/json',
     'cal-api-version': API_VERSION
   };
@@ -35,9 +37,10 @@ function headers() {
  * @param {string|number} eventTypeId
  * @param {string} [startDate] - ISO date string
  * @param {string} [endDate] - ISO date string
+ * @param {string} [clientApiKey] - The client's specific Cal.com API key
  * @returns {Promise<Array>}
  */
-async function getBookings(eventTypeId, startDate, endDate) {
+async function getBookings(eventTypeId, startDate, endDate, clientApiKey) {
   try {
     const params = new URLSearchParams();
     if (eventTypeId) params.set('eventTypeId', eventTypeId);
@@ -45,7 +48,7 @@ async function getBookings(eventTypeId, startDate, endDate) {
     if (endDate) params.set('beforeEnd', endDate);
 
     const resp = await calcomBreaker.call(`${BASE_URL}/bookings?${params.toString()}`, {
-      headers: headers(),
+      headers: headers(clientApiKey),
     });
 
     if (resp.fallback) {
@@ -64,13 +67,14 @@ async function getBookings(eventTypeId, startDate, endDate) {
 /**
  * Cancel a booking by ID.
  * @param {string|number} bookingId
+ * @param {string} [clientApiKey]
  * @returns {Promise<{success: boolean}>}
  */
-async function cancelBooking(bookingId) {
+async function cancelBooking(bookingId, clientApiKey) {
   try {
     const resp = await calcomBreaker.call(`${BASE_URL}/bookings/${bookingId}/cancel`, {
       method: 'POST',
-      headers: headers(),
+      headers: headers(clientApiKey),
     });
 
     if (resp.fallback) {
@@ -90,9 +94,10 @@ async function cancelBooking(bookingId) {
  * Get available time slots for an event type on a given date.
  * @param {string|number} eventTypeId
  * @param {string} date - ISO date string (YYYY-MM-DD)
+ * @param {string} [clientApiKey]
  * @returns {Promise<Array>}
  */
-async function getAvailability(eventTypeId, date) {
+async function getAvailability(eventTypeId, date, clientApiKey) {
   try {
     const params = new URLSearchParams({
       eventTypeId: String(eventTypeId),
@@ -101,7 +106,7 @@ async function getAvailability(eventTypeId, date) {
     });
 
     const resp = await calcomBreaker.call(`${BASE_URL}/slots/available?${params.toString()}`, {
-      headers: headers(),
+      headers: headers(clientApiKey),
     });
 
     if (resp.fallback) {
@@ -126,12 +131,13 @@ async function getAvailability(eventTypeId, date) {
  * @param {string} opts.email - Attendee email
  * @param {string} [opts.phone] - Attendee phone
  * @param {object} [opts.metadata] - Additional metadata
+ * @param {string} [clientApiKey]
  * @returns {Promise<{success: boolean, booking?: object, error?: string}>}
  */
-async function createBooking(opts) {
+async function createBooking(opts, clientApiKey) {
   const { eventTypeId, startTime, name, email, phone, metadata } = opts;
 
-  if (!CALCOM_API_KEY) {
+  if (!clientApiKey && !CALCOM_API_KEY) {
     logger.error('[calcom] No CALCOM_API_KEY configured');
     return { success: false, error: 'Cal.com API key not configured' };
   }
@@ -157,7 +163,7 @@ async function createBooking(opts) {
 
     const resp = await calcomBreaker.call(`${BASE_URL}/bookings`, {
       method: 'POST',
-      headers: headers(),
+      headers: headers(clientApiKey),
       body: JSON.stringify(body),
     });
 

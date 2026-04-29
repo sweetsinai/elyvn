@@ -22,8 +22,35 @@ const VALID_ACTIONS = new Set([
   'call_started', 'call_completed', 'sms_sent', 'sms_received', 'email_sent',
   'settings_changed', 'client_created', 'client_updated', 'brain_decision',
   'speed_lead_triggered', 'webhook_received', 'isolation_violation',
-  'job_completed', 'job_failed', 'rate_limited', 'webhook_signature_invalid'
+  'job_completed', 'job_failed', 'rate_limited', 'webhook_signature_invalid',
+  'settings_updated'
 ]);
+
+/**
+ * Mask sensitive PII and secrets in objects
+ * @param {object} obj - Object to mask
+ * @returns {object} Masked object copy
+ */
+function maskSensitiveFields(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const SENSITIVE_FIELDS = new Set([
+    'calcom_api_key', 'calcom_webhook_secret',
+    'facebook_page_token', 'instagram_access_token',
+    'api_key', 'auth_token', 'password', 'password_hash',
+    'verification_token', 'google_refresh_token', 'stripe_key',
+    'retell_api_key', 'twilio_auth_token'
+  ]);
+
+  const masked = { ...obj };
+  for (const key in masked) {
+    if (SENSITIVE_FIELDS.has(key.toLowerCase())) {
+      masked[key] = '[REDACTED]';
+    } else if (typeof masked[key] === 'object' && masked[key] !== null) {
+      masked[key] = maskSensitiveFields(masked[key]);
+    }
+  }
+  return masked;
+}
 
 /**
  * Sanitize details to prevent log injection and limit size
@@ -274,8 +301,8 @@ async function logDataMutation(db, { action, table, recordId, clientId, userId, 
     }
   };
 
-  const oldValuesStr = serialiseValues(oldValues);
-  const newValuesStr = serialiseValues(newValues);
+  const oldValuesStr = serialiseValues(maskSensitiveFields(oldValues));
+  const newValuesStr = serialiseValues(maskSensitiveFields(newValues));
 
   const entry = {
     id,

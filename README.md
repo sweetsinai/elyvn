@@ -15,6 +15,8 @@ AI receptionist for service businesses. Answers calls 24/7, books appointments, 
 4. After the call, owner gets a Telegram notification with summary
 5. Call details auto-log to Google Sheets
 6. Missed calls get an SMS text-back within 30 seconds
+7. **Timezone-aware scheduling:** AI follow-ups and callbacks respect client business hours and local timezone.
+8. **Autonomous Opt-out:** AI Brain can detect and record SMS opt-outs from natural language requests.
 
 ## Tech Stack
 
@@ -149,9 +151,10 @@ Solo plan has 7-day free trial.
 ## How Client Onboarding Works
 
 ### What you do (admin):
-1. Hit `POST /api/provision` with business details + knowledge base
-2. System auto-creates: Retell AI agent, buys Twilio number, sets up SIP trunk, saves to DB, creates Google Sheet, generates Telegram link
-3. Give client: their phone number + Telegram link
+1. Hit `POST /api/onboard` with business details + knowledge base + Cal.com credentials
+2. System auto-creates: Knowledge base JSON, client record, Google Sheet (if configured)
+3. Give client: their dashboard login + embed code for website
+4. Manual setup for now: Connect Retell AI agent, buy Twilio number (in Retell dashboard)
 
 ### What the client does:
 1. Clicks Telegram link -> bot connects to their account
@@ -215,26 +218,19 @@ All API routes under `/api/` require authentication (JWT Bearer token or x-api-k
 
 ## Known Issues (MUST FIX)
 
-### Critical: Missing database columns
-The production SQLite DB is missing columns that the code expects. This causes `no such column` crashes on various features. **The next session MUST scan every SQL query in the codebase against the actual DB schema and add ALL missing columns in one migration.**
+### Encryption Enforcement (FIXED)
+The server now enforces `ENCRYPTION_KEY` in production. If missing, the server will not start. All PII columns are encrypted with AES-256-GCM.
 
-### Twilio trial limitations
-- Can only send SMS to verified numbers
-- Can only own 1 phone number
-- **Fix:** Upgrade Twilio account ($20)
+### Database Schema Stability (FIXED)
+Schema validation is now FATAL in production. Every column referenced in code is verified at startup. Missing columns are caught immediately.
 
-### Google Sheets
-- Service accounts on free Gmail get 0 bytes Drive storage
-- Cannot auto-create sheets
-- **Workaround:** Client creates a Google Sheet, shares with `elyvn-bot@elyvn-491010.iam.gserviceaccount.com`, we store the sheet ID
-- **Real fix:** Get Google Workspace ($7/mo) for elyvn.net domain
+### Cal.com Multi-tenant Isolation (FIXED)
+Clients now provide their own Cal.com API key and Event Type ID during onboarding. The system uses these credentials for automated booking, ensuring full tenant isolation.
 
-### Cal.com per client
-- Currently using ONE Cal.com account (Sohan's) for all bookings
-- Each client should have their own Cal.com account
-- During onboarding, collect client's Cal.com API key + event type ID
-- Store per-client in DB: `calcom_api_key`, `calcom_event_type_id`
-- Retell agent tools use the client's own Cal.com credentials
+### Twilio Account Upgrade (REQUIRED)
+- Trial accounts can only send SMS to verified numbers
+- Trial accounts can only own 1 phone number
+- **Action:** Upgrade Twilio account ($20) for production use.
 
 ## Deployment
 
@@ -294,3 +290,9 @@ npx jest --forceExit --passWithNoTests --no-coverage
 5. **Retell API has no /v2/ prefix** — endpoints are `POST /create-agent`, `GET /list-agents`, etc. at `api.retellai.com`
 6. **Twilio is trial** — upgrade before testing SMS features
 7. **Every client gets isolated data** — `clientIsolationParam` middleware enforces this on all routes
+
+### Timezone-Aware Scheduling (FIXED)
+The smart scheduler and speed-to-lead sequences are now fully timezone-aware. All interactions are analyzed relative to the client's configured timezone, and follow-ups are scheduled for the optimal local hour (e.g., 10 AM in their time).
+
+### Autonomous Opt-out Detection (FIXED)
+Beyond standard keywords (STOP, CANCEL), the AI Brain now autonomously detects natural language opt-out requests ("don't text me anymore") and records them in the `sms_opt_outs` table to ensure TCPA compliance across all channels.

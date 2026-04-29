@@ -36,10 +36,10 @@ function getMessageText(action) {
 }
 
 /**
- * Check if a date/time reference in the message exists in the timeline.
- * Returns an array of date/time strings found in the message that are NOT in the timeline.
+ * Check if a date/time reference in the message is a "claim" (e.g. "Your appointment is...")
+ * that doesn't exist in the timeline.
  */
-function findUngroundedDateReferences(messageText, timeline) {
+function findUngroundedDateClaims(messageText, timeline) {
   const timelineText = (timeline || []).map(t => {
     const parts = [t.timestamp || '', t.summary || '', t.body || '', t.reply || '', t.content || '', t.outcome || ''];
     return parts.join(' ');
@@ -47,14 +47,19 @@ function findUngroundedDateReferences(messageText, timeline) {
 
   const violations = [];
 
-  for (const pattern of DATE_TIME_PATTERNS) {
-    const matches = messageText.match(new RegExp(pattern, 'gi'));
+  // Only check patterns that sound like claims of fact
+  const claimPatterns = [
+    /your appointment (?:is|at|on) (?:on )?\b\d{1,2}\/\d{1,2}/i,
+    /we (?:have|had) you (?:booked|scheduled) for/i,
+    /reminder:?\s+you(?:'re| are) (?:booked|scheduled)/i,
+  ];
+
+  for (const pattern of claimPatterns) {
+    const matches = messageText.match(pattern);
     if (matches) {
-      for (const match of matches) {
-        // Check if this date/time reference appears somewhere in the timeline
-        if (!timelineText.includes(match.toLowerCase())) {
-          violations.push(`Date/time reference "${match}" not found in timeline`);
-        }
+      // If it sounds like a claim, it MUST be in the timeline
+      if (!timelineText.includes(matches[0].toLowerCase())) {
+        violations.push(`Hallucinated appointment claim: "${matches[0]}" not found in history`);
       }
     }
   }
@@ -174,10 +179,24 @@ function validateBrainAction(action, timeline, leadData, knowledgeBase) {
     if (!messageText) {
       violations.push('Empty message body');
     } else {
-      violations.push(...findUngroundedDateReferences(messageText, timeline));
+      violations.push(...findUngroundedDateClaims(messageText, timeline));
       violations.push(...findUngroundedClaims(messageText, leadData, knowledgeBase));
       violations.push(...findFabricatedInteractionRefs(messageText, timeline));
       violations.push(...findFabricatedUrgency(messageText, timeline));
+    }
+  }
+
+  // --- book_appointment checks ---
+  if (action.action === 'book_appointment') {
+    if (!action.start_time) {
+      violations.push('book_appointment missing start_time');
+    } else {
+      const startTime = new Date(action.start_time);
+      if (isNaN(startTime.getTime())) {
+        violations.push('book_appointment invalid start_time format');
+      } else if (startTime < new Date(Date.now() - 3600000)) { // Allow 1h buffer for server skew
+        violations.push('book_appointment cannot book in the past');
+      }
     }
   }
 

@@ -20,6 +20,8 @@ const OnboardSchema = z.object({
     question: safeString({ max: 500 }).pipe(z.string().min(1)),
     answer: safeString({ max: 2000 }).pipe(z.string().min(1)),
   })).optional(),
+  calcom_api_key: safeString({ max: 200 }).optional(),
+  calcom_event_type_id: z.union([z.string(), z.number()]).optional(),
 });
 
 const UpdateOnboardSchema = OnboardSchema.partial();

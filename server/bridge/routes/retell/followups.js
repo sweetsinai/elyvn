@@ -351,6 +351,9 @@ async function handleTransfer(db, call, correlationId) {
 
     if (!transferTarget) {
       logger.warn(`[retell] transfer: no transfer_phone or owner_phone for client ${callRecord.client_id}`, { correlationId });
+      await db.query(`
+        UPDATE calls SET outcome = 'transfer_failed', updated_at = ? WHERE call_id = ?
+      `, [new Date().toISOString(), callId], 'run');
       await notifyTransferFallback(db, client, callRecord.client_id, callerPhone, summary, 'no_target');
       return;
     }
@@ -383,6 +386,12 @@ async function handleTransfer(db, call, correlationId) {
 
     // --- Step 6: Fallback — voicemail notification ---
     logger.info(`[retell] Transfer fallback: notifying owner for ${callId}`, { correlationId });
+    
+    // Update outcome to failed so Brain knows
+    await db.query(`
+      UPDATE calls SET outcome = 'transfer_failed', updated_at = ? WHERE call_id = ?
+    `, [new Date().toISOString(), callId], 'run');
+
     await notifyTransferFallback(db, client, callRecord.client_id, callerPhone, summary, 'transfer_failed');
 
   } catch (err) {

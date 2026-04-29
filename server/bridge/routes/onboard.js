@@ -13,14 +13,19 @@ const { syncClientToRetell } = require('../utils/retellSync');
 const timing = require('../config/timing');
 
 // Rate limiting for onboarding
-const onboardRateLimits = new Map();
-const ONBOARD_RATE_LIMIT = timing.ONBOARD_RATE_LIMIT;
-const ONBOARD_RATE_WINDOW = timing.ONBOARD_RATE_WINDOW_MS;
+const { LRUCache } = require('lru-cache');
+const ONBOARD_RATE_LIMIT = timing.ONBOARD_RATE_LIMIT || 5;
+const ONBOARD_RATE_WINDOW = timing.ONBOARD_RATE_WINDOW_MS || 3600000;
+
+const onboardRateLimits = new LRUCache({
+  max: 1000,
+  ttl: ONBOARD_RATE_WINDOW,
+});
 
 function onboardRateLimit(req, res, next) {
   const key = req.ip || req.connection.remoteAddress;
   const now = Date.now();
-  const record = onboardRateLimits.get(key);
+  let record = onboardRateLimits.get(key);
 
   if (record) {
     // Clean old entries
@@ -35,30 +40,8 @@ function onboardRateLimit(req, res, next) {
     onboardRateLimits.set(key, { timestamps: [now] });
   }
 
-  // Cleanup old entries periodically to prevent memory leak
-  if (onboardRateLimits.size > 1000) {
-    const keysToDelete = [];
-    for (const [k, v] of onboardRateLimits) {
-      const latest = v.timestamps[v.timestamps.length - 1] || 0;
-      if (now - latest > ONBOARD_RATE_WINDOW) keysToDelete.push(k);
-    }
-    for (const k of keysToDelete) onboardRateLimits.delete(k);
-  }
-
   next();
 }
-
-// Periodic cleanup every 5 min to prevent unbounded growth
-const _onboardCleanup = setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of onboardRateLimits) {
-    const latest = v.timestamps[v.timestamps.length - 1] || 0;
-    if (now - latest > ONBOARD_RATE_WINDOW) onboardRateLimits.delete(k);
-  }
-}, 5 * 60 * 1000);
-if (_onboardCleanup.unref) _onboardCleanup.unref();
-
-
 /**
  * POST /api/onboard
  *
@@ -110,7 +93,9 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
       avg_ticket,
       ticket_price,
       booking_link,
-      faq
+      faq,
+      calcom_api_key,
+      calcom_event_type_id,
     } = req.body;
 
     // Check if email already exists (prevent duplicate accounts)
@@ -146,6 +131,12 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
         answer: sanitizeString(item.answer)
       })) : []
     };
+
+    let calcomApiKeyEncrypted = null;
+    if (calcom_api_key) {
+      const { encrypt } = require('../utils/encryption');
+      calcomApiKeyEncrypted = encrypt(calcom_api_key);
+    }
 
     // Generate client ID
     const clientId = randomUUID();
@@ -197,9 +188,10 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
       INSERT INTO clients (
         id, business_name, owner_name, owner_phone, owner_email,
         industry, avg_ticket, ticket_price, business_address, website, 
-        booking_link, kb_path, timezone, is_active,
+        booking_link, kb_path, timezone, is_active, calcom_api_key_encrypted,
+        calcom_event_type_id,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       clientId,
       sanitized.business_name,
@@ -215,6 +207,8 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
       kbPath,
       'America/New_York',
       1,
+      calcomApiKeyEncrypted,
+      calcom_event_type_id ? String(calcom_event_type_id) : null,
       now,
       now
     ], 'run');

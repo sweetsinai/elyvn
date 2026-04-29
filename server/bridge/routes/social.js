@@ -155,14 +155,25 @@ async function handleSocialMessage(db, { senderId, text, channel, pageId }) {
     [randomUUID(), client.id, socialId, text, channel, now], 'run'
   );
 
-  // Rate limit brain calls per sender (max 3 per 5 min to prevent Claude cost spikes)
+  // Rate limit brain calls per client to protect Claude quota (max 20 per 5 min across all senders)
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-  const recentBrain = await db.query(
+  const recentClientMessages = await db.query(
+    "SELECT COUNT(*) as c FROM messages WHERE client_id = ? AND direction = 'inbound' AND channel IN ('messenger', 'instagram') AND created_at >= ?",
+    [client.id, fiveMinAgo], 'get'
+  );
+  
+  if (recentClientMessages && recentClientMessages.c > 20) {
+    logger.warn(`[social] Client ${client.id} social rate limit exceeded (${recentClientMessages.c} msgs in 5 min)`);
+    return;
+  }
+
+  // Also keep per-sender limit to prevent individual harassment (max 3 per 5 min)
+  const recentSenderMessages = await db.query(
     "SELECT COUNT(*) as c FROM messages WHERE phone = ? AND client_id = ? AND direction = 'inbound' AND created_at >= ?",
     [socialId, client.id, fiveMinAgo], 'get'
   );
-  if (recentBrain && recentBrain.c > 3) {
-    logger.info(`[social] Rate limited brain call for ${senderId.slice(0, 6)}*** (${recentBrain.c} msgs in 5 min)`);
+  if (recentSenderMessages && recentSenderMessages.c > 3) {
+    logger.info(`[social] Sender ${senderId.slice(0, 6)}*** rate limited (${recentSenderMessages.c} msgs in 5 min)`);
     return;
   }
 

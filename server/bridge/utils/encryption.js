@@ -22,16 +22,21 @@ if (rawKey) {
   try {
     const buf = Buffer.from(rawKey, 'hex');
     if (buf.length !== 32) {
-      logger.error(`[encryption] ENCRYPTION_KEY must be 32 bytes (64 hex chars), got ${buf.length} bytes — passthrough mode`);
+      logger.error(`[FATAL] ENCRYPTION_KEY must be 32 bytes (64 hex chars), got ${buf.length} bytes.`);
+      if (process.env.NODE_ENV === 'production') process.exit(1);
     } else {
       _key = buf;
       logger.info('[encryption] AES-256-GCM encryption enabled');
     }
   } catch (err) {
-    logger.error('[encryption] Invalid ENCRYPTION_KEY hex — PII will NOT be encrypted');
+    logger.error('[FATAL] Invalid ENCRYPTION_KEY hex.');
+    if (process.env.NODE_ENV === 'production') process.exit(1);
   }
 } else if (process.env.NODE_ENV === 'production') {
-  logger.error('[encryption] ENCRYPTION_KEY is required in production — PII will NOT be encrypted');
+  logger.error('[FATAL] ENCRYPTION_KEY is required in production.');
+  process.exit(1);
+} else {
+  logger.warn('[encryption] ENCRYPTION_KEY not set — operating in plaintext passthrough mode for dev');
 }
 
 // Pattern: three colon-separated base64 segments

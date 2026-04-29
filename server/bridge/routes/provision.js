@@ -154,6 +154,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
       timezone,
       area_code,
       knowledge_base,
+      calcom_api_key,
     } = req.body;
 
     // Validate required fields
@@ -280,6 +281,12 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
     const phoneNumber = provisionedNumber?.phoneNumber || process.env.TWILIO_PHONE_NUMBER || null;
     provisioning_status.phone_number = phoneNumber;
 
+    let calcomApiKeyEncrypted = null;
+    if (calcom_api_key) {
+      const { encrypt } = require('../utils/encryption');
+      calcomApiKeyEncrypted = encrypt(calcom_api_key);
+    }
+
     // Step 3: Save client to database
     try {
       sendUpdate('creating_client', 'in_progress', { log: 'Saving client record...' });
@@ -288,8 +295,8 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
           id, business_name, owner_name, owner_phone, owner_email,
           retell_agent_id, retell_llm_id, twilio_phone, phone_number, industry, timezone,
           avg_ticket, ticket_price, business_address, website, booking_link,
-          plan, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          plan, calcom_api_key_encrypted, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         clientId,
         business_name,
@@ -308,6 +315,7 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
         website || null,
         booking_link || null,
         plan || 'pro',
+        calcomApiKeyEncrypted,
         now,
         now
       ], 'run');

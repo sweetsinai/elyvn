@@ -297,8 +297,8 @@ async function recoverStalledJobs(db) {
     // Recover jobs stuck in 'processing' status (crash scenario)
     // Only recover if they've been stuck for > STALLED_JOB_THRESHOLD_MS
     const now = new Date().toISOString();
-    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const thirtyMinAgo = new Date(Date.now() - STALLED_JOB_THRESHOLD_MS).toISOString();
+    const oneHourAgo = new Date(Date.now() - STALE_JOB_THRESHOLD_MS).toISOString();
 
     const processingResult = await db.query(`
       UPDATE job_queue

@@ -61,10 +61,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.telegram.org/bot8199060422:AAEQGNGN6Nrxpy4NXFVaWjOn5xeUW_oz8F0/sendMessage",
+        "url": "https://api.telegram.org/botREPLACE_WITH_TELEGRAM_BOT_TOKEN/sendMessage",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"chat_id\":\"5919406237\",\"text\":\"🔴 ELYVN NOT READY\\n\\nHourly check failed\\nDB: {{ $json.checks?.db ?? 'unknown' }}\\nJobs: {{ $json.checks?.job_queue ?? 'unknown' }}\\nTime: {{ $now.toISO() }}\"}",
+        "jsonBody": "={\"chat_id\":\"REPLACE_WITH_TELEGRAM_CHAT_ID\",\"text\":\"🔴 ELYVN NOT READY\\n\\nHourly check failed\\nDB: {{ $json.checks?.db ?? 'unknown' }}\\nJobs: {{ $json.checks?.job_queue ?? 'unknown' }}\\nTime: {{ $now.toISO() }}\"}",
         "options": {}
       },
       "id": "5",

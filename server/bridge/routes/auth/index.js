@@ -11,6 +11,7 @@ const { requireVerified } = require('./middleware');
 
 router.use('/signup', require('./register'));
 router.use('/login', require('./login'));
+router.use('/refresh', require('./refresh'));
 router.use('/', require('./session'));
 router.use('/', require('./email'));
 

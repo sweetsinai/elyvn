@@ -5,10 +5,11 @@
   "scripts": {
     "dev": "concurrently -n mcp,bridge,dash -c blue,green,yellow \"cd server/mcp && python main.py\" \"cd server/bridge && node index.js\" \"cd dashboard && npx vite\"",
     "start": "cd server/bridge && node index.js",
-    "build": "cd dashboard && npx vite build",
+    "build": "cd dashboard && npx vite build && rm -rf ../server/bridge/public/* && cp -rv dist/* ../server/bridge/public/",
     "db:reset": "rm -f server/mcp/elyvn.db && cd server/mcp && python -c 'from db import init_db; import asyncio; asyncio.run(init_db())'"
   },
   "dependencies": {
+    "better-sqlite3": "^12.9.0",
     "concurrently": "^8.0.0",
     "helmet": "^8.1.0",
     "zod": "^4.3.6"

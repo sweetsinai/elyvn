@@ -20,6 +20,7 @@ const ProvisionSchema = z.object({
   knowledge_base: z.any().optional(),
   retell_voice: safeString({ max: 100 }).optional(),
   retell_language: safeString({ max: 50 }).optional(),
+  calcom_api_key: safeString({ max: 200 }).optional(),
 }).passthrough();
 
 module.exports = { ProvisionSchema };

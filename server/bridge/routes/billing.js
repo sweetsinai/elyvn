@@ -15,6 +15,13 @@ const { validateBody } = require('../middleware/validateRequest');
 const { z } = require('zod');
 const config = require('../utils/config');
 const { API_TIMEOUT_MS } = require('../config/timing');
+const { LRUCache } = require('lru-cache');
+
+// Webhook idempotency cache (stores processed webhook IDs for 24 hours)
+const processedWebhooks = new LRUCache({
+  max: 10000,
+  ttl: 1000 * 60 * 60 * 24, // 24 hours
+});
 
 // ─── Plan configuration ─────────────────────────────────────────────────────
 
@@ -141,13 +148,17 @@ router.post('/generate-link', requireAuth, validateBody(z.object({
   try {
     const db = req.app.locals.db;
     // Verify caller is admin
-    const caller = await db.query('SELECT plan FROM clients WHERE id = ?', [req.clientId], 'get');
+    const caller = await db.query('SELECT role FROM clients WHERE id = ?', [req.clientId], 'get');
+    const isAdmin = caller?.role === 'admin';
+    
+    // Fallback to API key for automated tools if configured
     const provided = req.headers['x-api-key'] || '';
     const expected = process.env.ELYVN_API_KEY || '';
-    const isAdmin = provided.length > 0 && expected.length > 0 &&
+    const isApiKeyValid = provided.length > 0 && expected.length > 0 &&
       provided.length === expected.length &&
       require('crypto').timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
-    if (!isAdmin) return res.status(403).json({ error: 'Admin access required' });
+
+    if (!isAdmin && !isApiKeyValid) return res.status(403).json({ error: 'Admin access required' });
 
     const { clientId, planId } = req.body;
     const plan = PLANS[planId];
@@ -219,6 +230,28 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   const db = req.app.locals.db;
   const eventType = payload.type || payload.event_type || '';
   const data = payload.data || payload;
+  const webhookId = req.headers['webhook-id'] || payload.id;
+
+  // Idempotency check: prevent double processing
+  if (webhookId) {
+    // 1. Check in-memory cache first (fast)
+    if (processedWebhooks.has(webhookId)) {
+      logger.info(`[billing] Webhook ${webhookId} already processed (cache), skipping.`);
+      return res.json({ received: true });
+    }
+    
+    // 2. Check DB (persistent)
+    const existing = await db.query('SELECT id FROM processed_webhooks WHERE id = ?', [webhookId], 'get');
+    if (existing) {
+      processedWebhooks.set(webhookId, true); // Update cache
+      logger.info(`[billing] Webhook ${webhookId} already processed (db), skipping.`);
+      return res.json({ received: true });
+    }
+    
+    // Record processing start
+    await db.query('INSERT INTO processed_webhooks (id, source, event_type) VALUES (?, ?, ?)', [webhookId, 'dodo', eventType], 'run');
+    processedWebhooks.set(webhookId, true);
+  }
 
   try {
     switch (eventType) {
@@ -239,11 +272,22 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               plan = ?,
               subscription_status = 'active',
               plan_started_at = ?,
+              grace_period_until = NULL,
               updated_at = ?
             WHERE id = ?
           `, [customerId, subscriptionId, planId || 'growth', now, now, clientId], 'run');
 
-          logger.info(`[billing] Client ${clientId} activated — plan: ${planId}, event: ${eventType}`);
+          // Record payment if available in payload
+          const amount = data.total_amount || data.amount || 0;
+          if (amount > 0) {
+            const paymentId = require('crypto').randomUUID();
+            await db.query(`
+              INSERT INTO payments (id, client_id, dodo_payment_id, amount_cents, status, invoice_url, created_at)
+              VALUES (?, ?, ?, ?, 'success', ?, ?)
+            `, [paymentId, clientId, data.payment_id || webhookId, amount, data.invoice_url || null, now], 'run');
+          }
+
+          logger.info(`[billing] Client ${clientId} activated/renewed — plan: ${planId}, event: ${eventType}`);
           try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: clientId, newValues: { plan: planId, subscription_status: 'active' } }); } catch (_) {}
         } else {
           // Fallback: look up by customer ID
@@ -271,9 +315,13 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             : null;
 
         if (client) {
-          await db.query("UPDATE clients SET subscription_status = 'past_due', updated_at = ? WHERE id = ?", [new Date().toISOString(), client.id], 'run');
-          logger.warn(`[billing] Subscription ${eventType} for client ${client.id}`);
-          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'past_due' } }); } catch (_) {}
+          const gracePeriod = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(); // 3 days
+          await db.query(
+            "UPDATE clients SET subscription_status = 'past_due', grace_period_until = ?, updated_at = ? WHERE id = ?",
+            [gracePeriod, new Date().toISOString(), client.id], 'run'
+          );
+          logger.warn(`[billing] Subscription ${eventType} for client ${client.id}. Grace period until ${gracePeriod}`);
+          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'past_due', grace_period_until: gracePeriod } }); } catch (_) {}
         }
         break;
       }
@@ -349,7 +397,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 router.get('/status', requireAuth, async (req, res) => {
   const db = req.app.locals.db;
   const client = await db.query(
-    'SELECT plan, subscription_status, dodo_customer_id, dodo_subscription_id, plan_started_at FROM clients WHERE id = ?',
+    'SELECT plan, subscription_status, dodo_customer_id, dodo_subscription_id, plan_started_at, grace_period_until FROM clients WHERE id = ?',
     [req.clientId],
     'get'
   );
@@ -358,11 +406,25 @@ router.get('/status', requireAuth, async (req, res) => {
     return res.status(404).json({ error: 'Account not found' });
   }
 
+  const invoices = await db.query(
+    'SELECT dodo_payment_id, amount_cents, status, invoice_url, created_at FROM payments WHERE client_id = ? ORDER BY created_at DESC LIMIT 12',
+    [req.clientId],
+    'all'
+  );
+
   res.json({
     plan: client.plan || 'trial',
     status: client.subscription_status || 'active',
     has_payment: !!client.dodo_customer_id,
     started_at: client.plan_started_at,
+    grace_period_until: client.grace_period_until,
+    invoices: invoices.map(i => ({
+      id: i.dodo_payment_id,
+      amount: i.amount_cents / 100,
+      status: i.status,
+      url: i.invoice_url,
+      date: i.created_at
+    }))
   });
 });
 

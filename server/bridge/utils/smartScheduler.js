@@ -16,13 +16,15 @@ async function getOptimalContactTime(db, leadId, clientId) {
   }
 
   const lead = await db.query(
-    'SELECT phone FROM leads WHERE id = ? AND client_id = ?',
+    'SELECT l.phone, c.timezone FROM leads l JOIN clients c ON l.client_id = c.id WHERE l.id = ? AND l.client_id = ?',
     [leadId, clientId], 'get'
   );
 
   if (!lead) {
     return null;
   }
+
+  const clientTimezone = lead.timezone || 'UTC';
 
   // Get all interactions for this lead
   const calls = await db.query(
@@ -45,9 +47,11 @@ async function getOptimalContactTime(db, leadId, clientId) {
 
   // Analyze calls
   for (const call of calls) {
+    // Convert to client's local hour
     const date = new Date(call.created_at);
-    const hour = date.getHours();
-    const day = date.toLocaleDateString('en-US', { weekday: 'long' });
+    const clientDate = new Date(date.toLocaleString('en-US', { timeZone: clientTimezone }));
+    const hour = clientDate.getHours();
+    const day = clientDate.toLocaleDateString('en-US', { weekday: 'long' });
 
     allTimes.push({ hour, day, type: 'call' });
 
@@ -60,8 +64,9 @@ async function getOptimalContactTime(db, leadId, clientId) {
   // Analyze messages
   for (const msg of messages) {
     const date = new Date(msg.created_at);
-    const hour = date.getHours();
-    const day = date.toLocaleDateString('en-US', { weekday: 'long' });
+    const clientDate = new Date(date.toLocaleString('en-US', { timeZone: clientTimezone }));
+    const hour = clientDate.getHours();
+    const day = clientDate.toLocaleDateString('en-US', { weekday: 'long' });
 
     allTimes.push({ hour, day, type: 'message' });
   }
@@ -148,6 +153,9 @@ async function generateDailySchedule(db, clientId) {
     return [];
   }
 
+  const client = await db.query('SELECT timezone FROM clients WHERE id = ?', [clientId], 'get');
+  const clientTimezone = client?.timezone || 'UTC';
+
   // Get all leads that should be contacted today
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const leads = await db.query(
@@ -159,7 +167,7 @@ async function generateDailySchedule(db, clientId) {
   );
 
   const schedule = [];
-  let currentHour = 10; // Start at 10 AM
+  let currentHour = 10; // Start at 10 AM in client's time
 
   for (const lead of leads) {
     // Get conversion probability for this lead
@@ -182,11 +190,17 @@ async function generateDailySchedule(db, clientId) {
     // Calculate priority (0-10 scale)
     const priority = Math.min(10, (lead.score || 0) + (successRate * 3));
 
-    // Determine scheduled time (spread throughout day, 9 AM to 5 PM)
+    // Determine scheduled time (spread throughout day, 9 AM to 5 PM in client timezone)
     const hour = Math.max(9, Math.min(17, currentHour));
-    const minutes = Math.floor(Math.random() * 60); // Random minutes for natural distribution
-    const scheduledTime = new Date();
-    scheduledTime.setHours(hour, minutes, 0, 0);
+    const minutes = Math.floor(Math.random() * 60);
+
+    // Get current date in client's timezone
+    const { formatInTimeZone, fromZonedTime } = require('date-fns-tz');
+    const dateStr = formatInTimeZone(new Date(), clientTimezone, 'yyyy-MM-dd');
+    
+    // Construct local target time and convert to UTC
+    const localTargetStr = `${dateStr} ${hour.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`;
+    const scheduledTime = fromZonedTime(localTargetStr, clientTimezone);
 
     schedule.push({
       leadId: lead.id,

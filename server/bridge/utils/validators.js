@@ -6,7 +6,7 @@ const EMAIL_RE = /^[a-zA-Z0-9._+-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])
 const URL_RE = /^https?:\/\/[^\s<>"{}|\\^`\[\]]+$/;
 
 const VALID_STAGES = ['new', 'contacted', 'warm', 'hot', 'booked', 'completed', 'lost', 'nurture'];
-const VALID_ACTIONS = ['send_sms', 'schedule_followup', 'cancel_pending_followups', 'update_lead_stage', 'update_lead_score', 'book_appointment', 'notify_owner', 'log_insight', 'no_action'];
+const VALID_ACTIONS = ['send_sms', 'schedule_followup', 'cancel_pending_followups', 'update_lead_stage', 'update_lead_score', 'book_appointment', 'notify_owner', 'record_opt_out', 'log_insight', 'no_action'];
 
 function isValidUUID(str) {
   return typeof str === 'string' && UUID_RE.test(str);

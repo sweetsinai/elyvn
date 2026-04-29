@@ -12,10 +12,14 @@ const { validateBody, validateParams } = require('../middleware/validateRequest'
 const { FormSubmissionSchema, FormParamsSchema } = require('../utils/schemas/form');
 const { AppError } = require('../utils/AppError');
 const timing = require('../config/timing');
+const { LRUCache } = require('lru-cache');
 
 // Speed-to-lead deduplication store: tracks recent speed-to-lead jobs by phone+email within 5 minutes
-const speedToLeadStore = new Map();
-const SPEED_TO_LEAD_DEDUP_WINDOW = timing.FORM_SPEED_TO_LEAD_DEDUP_WINDOW_MS;
+const SPEED_TO_LEAD_DEDUP_WINDOW = timing.FORM_SPEED_TO_LEAD_DEDUP_WINDOW_MS || 300000;
+const speedToLeadStore = new LRUCache({
+  max: 10000,
+  ttl: SPEED_TO_LEAD_DEDUP_WINDOW,
+});
 
 /**
  * Check if a speed-to-lead job was already created for this phone/email in the last 5 minutes.
@@ -23,45 +27,28 @@ const SPEED_TO_LEAD_DEDUP_WINDOW = timing.FORM_SPEED_TO_LEAD_DEDUP_WINDOW_MS;
  */
 function isDuplicateSpeedToLead(phone, email) {
   const key = `${phone}|${email}`;
-  const now = Date.now();
-  const entry = speedToLeadStore.get(key);
+  if (speedToLeadStore.has(key)) return true;
+  speedToLeadStore.set(key, true);
+  return false;
+}
 
-  if (!entry) {
-    // New entry
-    speedToLeadStore.set(key, now);
-    return false;
-  }
 
-  if (now - entry > SPEED_TO_LEAD_DEDUP_WINDOW) {
-    // Expired, update and allow
-    speedToLeadStore.set(key, now);
-    return false;
-  }
-
-  // Duplicate within window
   return true;
 }
 
-// Cleanup dedup store every 10 minutes
-const dedupsCleanupInterval = setInterval(() => {
-  const now = Date.now();
-  for (const [key, timestamp] of speedToLeadStore) {
-    if (now - timestamp > SPEED_TO_LEAD_DEDUP_WINDOW * 2) {
-      speedToLeadStore.delete(key);
-    }
-  }
-}, 10 * 60 * 1000);
-
 // Simple in-memory rate limiter for form submissions
-const formRateLimitStore = new Map();
-const FORM_RATE_LIMIT = timing.FORM_RATE_LIMIT;
-const FORM_RATE_WINDOW = timing.FORM_RATE_WINDOW_MS;
+const FORM_RATE_LIMIT = timing.FORM_RATE_LIMIT || 10;
+const FORM_RATE_WINDOW = timing.FORM_RATE_WINDOW_MS || 60000;
+
+const formRateLimitStore = new LRUCache({
+  max: 5000,
+  ttl: FORM_RATE_WINDOW,
+});
 
 function checkFormRateLimit(ip) {
-  const now = Date.now();
   const entry = formRateLimitStore.get(ip);
-  if (!entry || now - entry.start > FORM_RATE_WINDOW) {
-    formRateLimitStore.set(ip, { start: now, count: 1 });
+  if (!entry) {
+    formRateLimitStore.set(ip, { count: 1 });
     return true;
   }
   entry.count++;
@@ -69,19 +56,8 @@ function checkFormRateLimit(ip) {
   return true;
 }
 
-// Cleanup every 5 minutes
-const rateLimitCleanupInterval = setInterval(() => {
-  const now = Date.now();
-  for (const [ip, entry] of formRateLimitStore) {
-    if (now - entry.start > FORM_RATE_WINDOW * 2) formRateLimitStore.delete(ip);
-  }
-}, 300000);
-
-// Export cleanup function for tests
-function cleanupFormTimers() {
-  if (dedupsCleanupInterval) clearInterval(dedupsCleanupInterval);
-  if (rateLimitCleanupInterval) clearInterval(rateLimitCleanupInterval);
-}
+// Export cleanup function for tests (no-op since LRU handles cleanup)
+function cleanupFormTimers() {}
 
 function formRateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress;

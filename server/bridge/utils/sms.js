@@ -23,7 +23,13 @@ const twilioBreaker = new CircuitBreaker(
   async (options, data) => {
     const response = await httpsRequest(options, data);
     if (response.status !== 201 && response.status !== 200) {
-      const errorMsg = response.body?.message || response.body?.error_message || JSON.stringify(response.body);
+      let errorMsg = response.body?.message || response.body?.error_message || JSON.stringify(response.body);
+      const errorCode = response.body?.code;
+      
+      if (errorCode === 21608) {
+        errorMsg = `Twilio Trial Account Limit: ${data.To} is not verified. Please upgrade to a paid Twilio account or verify the recipient's number in your Twilio console.`;
+      }
+      
       throw new Error(`Twilio API error (${response.status}): ${errorMsg}`);
     }
     return response;

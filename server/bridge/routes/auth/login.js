@@ -8,20 +8,19 @@ const { AppError } = require('../../utils/AppError');
 const { validateBody } = require('../../middleware/validateRequest');
 const { LoginSchema } = require('../../utils/schemas/auth');
 const timing = require('../../config/timing');
-const { verifyPassword, createToken } = require('./utils');
+const { LRUCache } = require('lru-cache');
+const { verifyPassword } = require('./utils');
+const { generateAuthTokens } = require('../../utils/tokenService');
 const { logAudit } = require('../../utils/auditLog');
 
-const loginAttempts = new Map(); // ip+email -> { count, lockedUntil }
-const LOGIN_MAX_ATTEMPTS = timing.LOGIN_MAX_ATTEMPTS;
-const LOGIN_LOCKOUT_MS = timing.LOGIN_LOCKOUT_MS;
+const loginAttempts = new LRUCache({
+  max: 5000,
+  ttl: 3600000, // 1 hour
+});
+const LOGIN_MAX_ATTEMPTS = timing.LOGIN_MAX_ATTEMPTS || 10;
+const LOGIN_LOCKOUT_MS = timing.LOGIN_LOCKOUT_MS || 900000;
 
-// Evict expired lockout entries every 10 minutes to prevent unbounded memory growth
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, val] of loginAttempts) {
-    if (val.lockedUntil < now) loginAttempts.delete(key);
-  }
-}, 10 * 60 * 1000).unref();
+
 
 router.post('/', validateBody(LoginSchema), async (req, res, next) => {
   const db = req.app.locals.db;
@@ -71,12 +70,14 @@ router.post('/', validateBody(LoginSchema), async (req, res, next) => {
 
     loginAttempts.delete(attemptKey);
 
-    const token = createToken({ clientId: client.id, email: client.owner_email });
+    const { accessToken, refreshToken, expiresIn } = await generateAuthTokens(db, client.id, { email: client.owner_email });
 
     logAudit(db, { action: 'auth_success', ip: req.ip, clientId: client.id, details: { email } }).catch(() => {});
     logger.info(`[auth] Login: ${email} → client ${client.id}`);
     res.json({
-      token,
+      token: accessToken,
+      refreshToken,
+      expiresIn,
       clientId: client.id,
       email: client.owner_email,
       business_name: client.business_name,

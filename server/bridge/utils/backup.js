@@ -13,6 +13,50 @@ function getLogger() {
 }
 
 /**
+ * Upload a file to S3/R2
+ */
+async function uploadToS3(filePath, fileName) {
+  const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+  const { Upload } = require('@aws-sdk/lib-storage');
+  
+  const bucket = process.env.S3_BUCKET;
+  const region = process.env.S3_REGION || 'auto';
+  const accessKeyId = process.env.S3_ACCESS_KEY;
+  const secretAccessKey = process.env.S3_SECRET_KEY;
+  const endpoint = process.env.S3_ENDPOINT; // For R2/Wasabi/Minio
+
+  if (!bucket || !accessKeyId || !secretAccessKey) {
+    getLogger().info('[backup] S3 credentials not fully configured — skipping remote upload');
+    return;
+  }
+
+  try {
+    const s3 = new S3Client({
+      region,
+      endpoint,
+      credentials: { accessKeyId, secretAccessKey },
+      forcePathStyle: !!endpoint,
+    });
+
+    const fileStream = fs.createReadStream(filePath);
+    const upload = new Upload({
+      client: s3,
+      params: {
+        Bucket: bucket,
+        Key: `backups/${fileName}`,
+        Body: fileStream,
+      },
+    });
+
+    await upload.done();
+    getLogger().info(`[backup] Successfully uploaded to S3: backups/${fileName}`);
+  } catch (err) {
+    getLogger().error('[backup] S3 upload failed:', err.message);
+    throw err;
+  }
+}
+
+/**
  * Create a backup of the SQLite database
  * Ensures WAL data is flushed before backup via checkpoint
  * @param {string} dbPath - Path to the SQLite database file
@@ -58,6 +102,12 @@ async function backupDatabase(dbPath, db) {
 
     // Clean up old backups (keep last 7)
     cleanupOldBackups(dbPath, 7);
+
+    // Step 3: Remote upload
+    const fileName = path.basename(backupPath);
+    await uploadToS3(backupPath, fileName).catch(err => {
+      getLogger().error('[backup] Remote upload failed:', err.message);
+    });
 
     return { success: true, backupPath };
   } catch (err) {

@@ -8,6 +8,13 @@ const { logger } = require('./logger');
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
 const RETELL_BASE = 'https://api.retellai.com';
 
+const RETELL_ENDPOINTS = {
+  getAgent: (id) => `/get-agent/${id}`,
+  updateLlm: (id) => `/update-retell-llm/${id}`,
+  deleteAgent: (id) => `/delete-agent/${id}`,
+  deleteLlm: (id) => `/delete-retell-llm/${id}`,
+};
+
 /**
  * Helper for Retell API calls using fetch
  */
@@ -142,7 +149,7 @@ async function syncClientToRetell(clientId, db) {
     if (!llmId) {
       logger.info(`[retellSync] Fetching LLM ID for agent ${client.retell_agent_id}`);
       try {
-        const agentData = await retellRequest(`/get-agent/${client.retell_agent_id}`, 'GET');
+        const agentData = await retellRequest(RETELL_ENDPOINTS.getAgent(client.retell_agent_id), 'GET');
         llmId = agentData.response_engine?.llm_id;
         if (llmId) {
           // Backfill llm_id
@@ -184,7 +191,7 @@ async function syncClientToRetell(clientId, db) {
 
     // 6. Update Retell LLM
     logger.info(`[retellSync] Updating Retell LLM ${llmId} for client ${clientId}`);
-    await retellRequest(`/update-retell-llm/${llmId}`, 'PATCH', {
+    await retellRequest(RETELL_ENDPOINTS.updateLlm(llmId), 'PATCH', {
       general_prompt: generalPrompt
     });
 
@@ -203,7 +210,7 @@ async function deleteRetellAgent(agentId) {
   if (!agentId) return;
   logger.info(`[retellSync] Deleting Retell agent ${agentId}`);
   try {
-    return await retellRequest(`/delete-agent/${agentId}`, 'DELETE');
+    return await retellRequest(RETELL_ENDPOINTS.deleteAgent(agentId), 'DELETE');
   } catch (err) {
     logger.warn(`[retellSync] Failed to delete Retell agent ${agentId}: ${err.message}`);
     throw err;
@@ -217,7 +224,7 @@ async function deleteRetellLlm(llmId) {
   if (!llmId) return;
   logger.info(`[retellSync] Deleting Retell LLM ${llmId}`);
   try {
-    return await retellRequest(`/delete-retell-llm/${llmId}`, 'DELETE');
+    return await retellRequest(RETELL_ENDPOINTS.deleteLlm(llmId), 'DELETE');
   } catch (err) {
     logger.warn(`[retellSync] Failed to delete Retell LLM ${llmId}: ${err.message}`);
     throw err;

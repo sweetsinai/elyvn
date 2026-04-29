@@ -52,6 +52,11 @@ function validateEnv() {
     logger.error('[FATAL] JWT_SECRET must be set and at least 32 characters for security');
     process.exit(1);
   }
+  const uniqueChars = new Set(process.env.JWT_SECRET).size;
+  if (uniqueChars < 10) {
+    logger.error(`[FATAL] JWT_SECRET has low entropy (only ${uniqueChars} unique chars). Use a more random secret.`);
+    process.exit(1);
+  }
   if (process.env.NODE_ENV === 'production' && !process.env.DODO_API_KEY) {
     logger.warn('[WARN] DODO_API_KEY not set — billing features disabled');
   }
@@ -59,6 +64,10 @@ function validateEnv() {
     logger.warn('[WARN] TELEGRAM_ADMIN_CHAT_ID not set — critical error alerts to Telegram disabled');
   }
   if (!process.env.ENCRYPTION_KEY) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[FATAL] ENCRYPTION_KEY not set. Cannot start in production without encryption enforcement.');
+      process.exit(1);
+    }
     logger.warn('[WARN] ENCRYPTION_KEY not set — PII columns will not be encrypted. Set a 32-byte hex key for production security.');
   }
 }
@@ -131,8 +140,20 @@ async function initializeDatabase(app) {
     logger.warn('[startup] Failed to verify knowledge base directory:', err.message);
   }
 
-  // Schema validation removed — the validator had incorrect column names
-  // that caused production crashes. Runtime SQL errors are caught per-request.
+  // Validate schema — catch missing columns BEFORE any request hits the DB
+  try {
+    const { validateSchema } = require('../utils/schemaValidator');
+    const { valid, missing } = validateSchema(db._db || db);
+    if (!valid) {
+      logger.error(`[FATAL] Schema validation failed — ${missing.length} missing column(s). Fix migrations and restart.`);
+      if (process.env.NODE_ENV === 'production') {
+        await alertCriticalError('Schema validation failed', new Error(`${missing.length} missing columns: ${missing.map(m => m.table + '.' + m.column).join(', ')}`));
+        process.exit(1); // FATAL in production
+      }
+    }
+  } catch (err) {
+    logger.warn(`[startup] Schema validation error (non-fatal): ${err.message}`);
+  }
 
   // Cancel all pending followup_sms jobs
   try {
