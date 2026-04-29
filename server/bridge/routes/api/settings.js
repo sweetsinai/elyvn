@@ -34,7 +34,8 @@ router.get('/settings/:clientId', async (req, res, next) => {
              onboarding_step, onboarding_completed,
              referral_code,
              lead_webhook_url, booking_webhook_url, call_webhook_url,
-             sms_webhook_url, stage_change_webhook_url
+             sms_webhook_url, stage_change_webhook_url,
+             calcom_api_key_encrypted, calcom_webhook_secret_encrypted
       FROM clients WHERE id = ?
     `, [clientId], 'get');
 
@@ -71,6 +72,8 @@ router.get('/settings/:clientId', async (req, res, next) => {
         calcom_booking_link: client.calcom_booking_link,
         calcom_event_type_id: client.calcom_event_type_id,
         google_review_link: client.google_review_link,
+        calcom_api_key_set: !!client.calcom_api_key_encrypted,
+        calcom_webhook_secret_set: !!client.calcom_webhook_secret_encrypted,
       },
       notifications: {
         notification_mode: client.notification_mode || 'all',

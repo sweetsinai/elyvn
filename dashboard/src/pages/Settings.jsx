@@ -107,6 +107,9 @@ export default function Settings() {
       call_webhook_url: client.call_webhook_url || '',
       sms_webhook_url: client.sms_webhook_url || '',
       stage_change_webhook_url: client.stage_change_webhook_url || '',
+      calcom_api_key: '',
+      calcom_webhook_secret: '',
+      calcom_event_type_id: client.calcom_event_type_id || '',
     });
   };
 
@@ -316,6 +319,57 @@ export default function Settings() {
                         ))}
                         </div>
                       </div>
+
+                      {/* ========== CAL.COM INTEGRATION ========== */}
+                      <h4 style={{ margin: '20px 0 12px', color: '#D4AF37', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        🔗 Cal.com Integration
+                      </h4>
+
+                      {[
+                        { key: 'calcom_api_key', label: 'Cal.com API Key', placeholder: 'cal_live_xxxxxxxxxxxxxxxx', type: 'password' },
+                        { key: 'calcom_webhook_secret', label: 'Webhook Secret', placeholder: 'whsec_xxxxxxxxxxxxxxxx', type: 'password' },
+                        { key: 'calcom_event_type_id', label: 'Event Type ID', placeholder: '12345', type: 'text' },
+                      ].map(f => (
+                        <div key={f.key} style={{ marginBottom: '10px' }}>
+                          <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: '#aaa' }}>
+                            {f.label}
+                          </label>
+                          <input
+                            type={f.type}
+                            value={editData[f.key] || ''}
+                            onChange={e => setEditData(prev => ({ ...prev, [f.key]: e.target.value }))}
+                            placeholder={f.placeholder}
+                            style={{ width: '100%', padding: '8px 10px', background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '13px' }}
+                          />
+                        </div>
+                      ))}
+
+                      <div style={{ marginBottom: '10px' }}>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: '#aaa' }}>
+                          Webhook URL (copy to Cal.com dashboard)
+                        </label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input
+                            type="text"
+                            readOnly
+                            value={`${window.location.origin}/webhooks/calcom/${id}`}
+                            style={{ flex: 1, padding: '8px 10px', background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#888', fontSize: '13px' }}
+                          />
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${window.location.origin}/webhooks/calcom/${id}`);
+                              alert('Webhook URL copied!');
+                            }}
+                            style={{ padding: '8px 16px', background: '#D4AF37', border: 'none', borderRadius: '6px', color: '#000', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}
+                          >
+                            Copy
+                          </button>
+                        </div>
+                        <small style={{ color: '#666', fontSize: '11px' }}>
+                          Paste this URL into your Cal.com webhook settings
+                        </small>
+                      </div>
+
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 12 }}>
                         <button className="btn-ghost" onClick={() => setEditingId(null)}>Cancel</button>
                         <button className="btn-primary" onClick={handleSaveEdit} disabled={saving} style={{ background: 'linear-gradient(135deg, #D4AF37, #9A7840)', border: 'none', color: '#050505', fontWeight: 600 }}>
@@ -361,6 +415,12 @@ export default function Settings() {
                         <div style={{ marginTop: 4, fontSize: 12, color: '#666', display: 'flex', alignItems: 'center', gap: 4 }}>
                           <PhoneForwarded size={11} />
                           <span>Transfer: {client.transfer_phone}</span>
+                        </div>
+                      )}
+
+                      {client.calcom_api_key_set && (
+                        <div style={{ marginTop: '6px', fontSize: '12px', color: '#4ade80' }}>
+                          ✅ Own Cal.com account connected
                         </div>
                       )}
 

@@ -5,39 +5,36 @@ export function useWebSocket(apiKey) {
   const [lastEvent, setLastEvent] = useState(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 10;
 
   const connect = useCallback(() => {
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = window.location.host;
-      // No API key in URL — auth via first message
       const url = `${protocol}//${host}/ws`;
 
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
-      ws.onopen = () => {
-        console.log('[ws] Connected, authenticating...');
-      };
+      ws.onopen = () => {};
 
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
 
-          // Server asks for auth — send API key via message (not URL)
           if (data.type === 'auth_required') {
-            ws.send(JSON.stringify({ type: 'auth', api_key: apiKey || '' }));
+            const fallbackKey = apiKey || sessionStorage.getItem('elyvn_api_key') || '';
+            ws.send(JSON.stringify({ type: 'auth', api_key: fallbackKey }));
             return;
           }
 
-          // Auth confirmed
           if (data.type === 'authenticated') {
             setIsConnected(true);
-            console.log('[ws] Authenticated');
+            reconnectAttempts.current = 0;
             return;
           }
 
-          // Regular event
           setLastEvent(data);
         } catch (err) {
           console.warn('[ws] Parse error:', err);
@@ -50,8 +47,11 @@ export function useWebSocket(apiKey) {
           console.warn('[ws] Auth rejected — not reconnecting');
           return;
         }
-        // Auto-reconnect after 5s
-        reconnectTimeoutRef.current = setTimeout(connect, 5000);
+        if (reconnectAttempts.current < maxReconnectAttempts) {
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
+          reconnectAttempts.current += 1;
+          reconnectTimeoutRef.current = setTimeout(connect, delay);
+        }
       };
 
       ws.onerror = () => {

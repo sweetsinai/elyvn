@@ -86,7 +86,9 @@ export default function Provision() {
     plan: '',
     calcom_booking_link: '',
     transfer_phone: '',
-    area_code: ''
+    area_code: '',
+    calcom_api_key: '',
+    calcom_event_type_id: '',
   });
 
   const [validationErrors, setValidationErrors] = useState({});
@@ -251,7 +253,9 @@ export default function Provision() {
       plan: '',
       calcom_booking_link: '',
       transfer_phone: '',
-      area_code: ''
+      area_code: '',
+      calcom_api_key: '',
+      calcom_event_type_id: '',
     });
     setValidationErrors({});
     setStatus('form');
@@ -762,6 +766,60 @@ export default function Provision() {
                         boxSizing: 'border-box'
                       }}
                     />
+                  </div>
+
+                  {/* Cal.com API Key */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: '#aaa' }}>
+                      Cal.com API Key (optional)
+                    </label>
+                    <input
+                      type="password"
+                      value={formData.calcom_api_key || ''}
+                      onChange={e => setFormData(prev => ({ ...prev, calcom_api_key: e.target.value }))}
+                      placeholder="cal_live_xxxxxxxxxxxxxxxx"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        background: '#0a0a0a',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: '#fff',
+                        fontSize: '13px',
+                        fontFamily: 'inherit',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    <small style={{ color: '#666', fontSize: '11px', display: 'block', marginTop: '4px' }}>
+                      Your personal Cal.com API key. Leave empty to use the default ELYVN account.
+                    </small>
+                  </div>
+
+                  {/* Cal.com Event Type ID */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: '#aaa' }}>
+                      Cal.com Event Type ID (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.calcom_event_type_id || ''}
+                      onChange={e => setFormData(prev => ({ ...prev, calcom_event_type_id: e.target.value }))}
+                      placeholder="e.g. 12345"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        background: '#0a0a0a',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: '#fff',
+                        fontSize: '13px',
+                        fontFamily: 'inherit',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    <small style={{ color: '#666', fontSize: '11px', display: 'block', marginTop: '4px' }}>
+                      Found in your Cal.com event type settings URL
+                    </small>
                   </div>
 
                   <div>

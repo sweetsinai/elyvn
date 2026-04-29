@@ -19,37 +19,56 @@ export default function LoginGate({ children }) {
 
   // Check existing session
   useEffect(() => {
-    const token = sessionStorage.getItem('elyvn_token');
-    const apiKey = sessionStorage.getItem('elyvn_api_key');
+    // 1. Try to verify session via HttpOnly cookies (preferred)
+    fetch(`${API_BASE}/auth/me`, { 
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'include' 
+    })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => {
+        setAuth(data);
+        setChecking(false);
+        // Back-fill sessionStorage for legacy components during transition
+        if (data.token) sessionStorage.setItem('elyvn_token', data.token);
+        if (data.clientId) sessionStorage.setItem('elyvn_client_id', data.clientId);
+      })
+      .catch(() => {
+        // 2. Fallback to sessionStorage for local-only migration state
+        const token = sessionStorage.getItem('elyvn_token');
+        const apiKey = sessionStorage.getItem('elyvn_api_key');
 
-    if (token) {
-      fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.ok ? r.json() : Promise.reject())
-        .then(data => {
-          setAuth({ token, ...data });
+        if (token) {
+          fetch(`${API_BASE}/auth/me`, { 
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: 'include'
+          })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => {
+              setAuth({ token, ...data });
+              setChecking(false);
+            })
+            .catch(() => {
+              sessionStorage.removeItem('elyvn_token');
+              setChecking(false);
+            });
+        } else if (apiKey) {
+          // Legacy API key auth
+          fetch(`${API_BASE}/api/clients`, { headers: { 'x-api-key': apiKey } })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(() => {
+              setAuth({ apiKey, legacy: true });
+              setChecking(false);
+            })
+            .catch(() => {
+              sessionStorage.removeItem('elyvn_api_key');
+              setChecking(false);
+            });
+        } else {
           setChecking(false);
-        })
-        .catch(() => {
-          sessionStorage.removeItem('elyvn_token');
-          setChecking(false);
-        });
-    } else if (apiKey) {
-      // Legacy API key auth
-      fetch(`${API_BASE}/api/clients`, { headers: { 'x-api-key': apiKey } })
-        .then(r => r.ok ? r.json() : Promise.reject())
-        .then(() => {
-          setAuth({ apiKey, legacy: true });
-          sessionStorage.setItem('elyvn_api_key', apiKey);
-          setChecking(false);
-        })
-        .catch(() => {
-          sessionStorage.removeItem('elyvn_api_key');
-          setChecking(false);
-        });
-    } else {
-      setChecking(false);
-    }
+        }
+      });
   }, []);
+
 
   async function handleLogin(e) {
     e.preventDefault();
