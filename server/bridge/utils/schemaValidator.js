@@ -45,6 +45,7 @@ const REQUIRED_SCHEMA = {
     'business_address', 'website', 'booking_link',
     'lead_webhook_url', 'booking_webhook_url', 'call_webhook_url',
     'sms_webhook_url', 'stage_change_webhook_url',
+    'role', 'grace_period_until',
     'created_at', 'updated_at',
   ],
   calls: [
@@ -120,6 +121,12 @@ const REQUIRED_SCHEMA = {
   refresh_tokens: [
     'id', 'client_id', 'token_hash', 'expires_at', 'revoked',
     'created_at', 'updated_at',
+  ],
+  processed_webhooks: [
+    'id', 'source', 'event_type', 'processed_at',
+  ],
+  payments: [
+    'id', 'client_id', 'dodo_payment_id', 'amount_cents', 'currency', 'status', 'invoice_url', 'created_at',
   ],
 };
 

@@ -14,18 +14,12 @@ const { hashPassword, createToken, verifyPassword, verifyToken } = require('../a
 const { validateBody } = require('../../middleware/validateRequest');
 const { ResellerRegisterSchema, ResellerLoginSchema, ResellerCreateClientSchema } = require('../../utils/schemas/reseller');
 
-// Brute-force protection for reseller login
-const resellerLoginAttempts = new Map(); // ip+email -> { count, lockedUntil }
+const { LRUCache } = require('lru-cache');
 const RESELLER_LOGIN_MAX_ATTEMPTS = 5;
 const RESELLER_LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
 
-// Evict expired lockout entries every 10 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, val] of resellerLoginAttempts) {
-    if (val.lockedUntil < now) resellerLoginAttempts.delete(key);
-  }
-}, 10 * 60 * 1000).unref();
+// Brute-force protection for reseller login
+const resellerLoginAttempts = new LRUCache({ max: 5000, ttl: RESELLER_LOGIN_LOCKOUT_MS }); // ip+email -> { count, lockedUntil }
 
 // POST /reseller/register — Create a reseller account
 router.post('/register', validateBody(ResellerRegisterSchema), async (req, res, next) => {

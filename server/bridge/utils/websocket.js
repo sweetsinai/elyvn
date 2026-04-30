@@ -41,39 +41,12 @@ function initWebSocket(server, db) {
           // Handle auth message
           if (msg.type === 'auth') {
             if (msg.api_key) {
-              const API_KEY = process.env.ELYVN_API_KEY;
-              if (!API_KEY) {
-                ws.close(4002, 'Server not configured');
+              logger.warn('[ws] msg.api_key is deprecated, please use msg.token');
+              // fall through to check token, or just reject
+              if (!msg.token) {
+                ws.close(4003, 'Invalid authentication method');
                 return;
               }
-
-              // Timing-safe comparison
-              const provided = Buffer.from(String(msg.api_key));
-              const expected = Buffer.from(String(API_KEY));
-              if (provided.length === expected.length && crypto.timingSafeEqual(provided, expected)) {
-                authenticated = true;
-                clearTimeout(authTimeout);
-                // Global admin key — clientId null means receives all broadcasts
-                authenticatedClients.set(ws, { clientId: null });
-                ws.send(JSON.stringify({ type: 'authenticated', timestamp: new Date().toISOString() }));
-              } else {
-                // Also check client API keys
-                try {
-                  const keyHash = crypto.createHash('sha256').update(msg.api_key).digest('hex');
-                  const keyRecord = await db.query('SELECT id, client_id FROM client_api_keys WHERE api_key_hash = ? AND is_active = 1', [keyHash], 'get');
-                  if (keyRecord) {
-                    authenticated = true;
-                    clearTimeout(authTimeout);
-                    // Tag the connection with the tenant's clientId for isolation
-                    authenticatedClients.set(ws, { clientId: keyRecord.client_id });
-                    ws.send(JSON.stringify({ type: 'authenticated', timestamp: new Date().toISOString() }));
-                    return;
-                  }
-                } catch (e) { /* ignore DB errors */ }
-
-                ws.close(4003, 'Invalid API key');
-              }
-              return;
             }
 
             if (msg.token) {

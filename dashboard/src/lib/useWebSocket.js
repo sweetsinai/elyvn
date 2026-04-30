@@ -24,8 +24,13 @@ export function useWebSocket(apiKey) {
           const data = JSON.parse(event.data);
 
           if (data.type === 'auth_required') {
+            const token = sessionStorage.getItem('elyvn_token') || '';
             const fallbackKey = apiKey || sessionStorage.getItem('elyvn_api_key') || '';
-            ws.send(JSON.stringify({ type: 'auth', api_key: fallbackKey }));
+            if (token) {
+              ws.send(JSON.stringify({ type: 'auth', token: token }));
+            } else {
+              ws.send(JSON.stringify({ type: 'auth', api_key: fallbackKey }));
+            }
             return;
           }
 

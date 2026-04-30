@@ -63,6 +63,8 @@ async function verifySignature(req, res, next) {
       return next(new AppError('WEBHOOK_EXPIRED', 'Webhook expired', 400));
     }
   }
+  
+  return next();
 
   } catch (err) {
     logger.error('[calcom-webhook] Signature verification error:', err.message);

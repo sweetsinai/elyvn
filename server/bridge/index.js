@@ -9,7 +9,8 @@ const { initMonitoring, captureException } = require('./utils/monitoring');
 initMonitoring();
 
 // Startup helpers
-const { alertCriticalError, validateEnv, initializeDatabase, initializeServer } = require('./config/startup');
+const { validateEnv, initializeDatabase, initializeServer } = require('./config/startup');
+const { alertCriticalError } = require('./utils/alert');
 
 // Catch unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
@@ -38,22 +39,24 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Initialize database
-initializeDatabase(app);
+(async () => {
+  // Initialize database
+  await initializeDatabase(app);
 
-// Set up middleware
-const { setupMiddleware } = require('./config/middleware');
-setupMiddleware(app);
+  // Set up middleware
+  const { setupMiddleware } = require('./config/middleware');
+  setupMiddleware(app);
 
-// Mount routes
-const { mountRoutes } = require('./config/routes');
-const routeHandles = mountRoutes(app);
+  // Mount routes
+  const { mountRoutes } = require('./config/routes');
+  const routeHandles = mountRoutes(app);
 
-// Start server
-const server = app.listen(PORT, () => {
-  logger.info(`[server] ELYVN bridge running on port ${PORT}`);
-  initializeServer(app, server, routeHandles);
-});
+  // Start server
+  const server = app.listen(PORT, () => {
+    logger.info(`[server] ELYVN bridge running on port ${PORT}`);
+    initializeServer(app, server, routeHandles);
+  });
+})();
 
 module.exports = app;
  

@@ -12,19 +12,9 @@ const config = require('../../utils/config');
 const timing = require('../../config/timing');
 const { verifyToken } = require('./utils');
 
-const resendCooldowns = new Map(); // clientId -> lastSentAt
+const { LRUCache } = require('lru-cache');
+const resendCooldowns = new LRUCache({ max: 10000, ttl: timing.RESEND_VERIFICATION_COOLDOWN_MS }); // clientId -> lastSentAt
 const RESEND_COOLDOWN_MS = timing.RESEND_VERIFICATION_COOLDOWN_MS;
-
-// Cleanup expired cooldown entries every 5 minutes
-const _cooldownCleanup = setInterval(() => {
-  const now = Date.now();
-  for (const [clientId, lastSent] of resendCooldowns.entries()) {
-    if (now - lastSent >= RESEND_COOLDOWN_MS) {
-      resendCooldowns.delete(clientId);
-    }
-  }
-}, 5 * 60 * 1000);
-_cooldownCleanup.unref();
 
 // GET /auth/verify-email?token=xxx
 router.get('/verify-email', async (req, res, next) => {

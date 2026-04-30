@@ -29,20 +29,9 @@ const anthropicBreaker = new CircuitBreaker(
 );
 
 // Per-client cache for expensive /insights endpoint (5 min TTL, max 500 entries)
-const insightsCache = new Map();
+const { LRUCache } = require('lru-cache');
 const INSIGHTS_CACHE_TTL = 5 * 60 * 1000;
-const INSIGHTS_CACHE_MAX = 500;
-
-// Periodic cleanup every 5 min to prevent unbounded growth
-const _insightsCacheCleanup = setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of insightsCache) {
-    if (now - v.ts > INSIGHTS_CACHE_TTL) insightsCache.delete(k);
-  }
-  // Hard cap: if still over max after TTL sweep, clear entirely
-  if (insightsCache.size > INSIGHTS_CACHE_MAX) insightsCache.clear();
-}, INSIGHTS_CACHE_TTL);
-if (_insightsCacheCleanup.unref) _insightsCacheCleanup.unref();
+const insightsCache = new LRUCache({ max: 1000, ttl: INSIGHTS_CACHE_TTL });
 
 // GET /reports/:clientId — list last 12 weekly reports
 router.get('/reports/:clientId', async (req, res, next) => {

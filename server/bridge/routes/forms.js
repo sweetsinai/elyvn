@@ -32,10 +32,6 @@ function isDuplicateSpeedToLead(phone, email) {
   return false;
 }
 
-
-  return true;
-}
-
 // Simple in-memory rate limiter for form submissions
 const FORM_RATE_LIMIT = timing.FORM_RATE_LIMIT || 10;
 const FORM_RATE_WINDOW = timing.FORM_RATE_WINDOW_MS || 60000;

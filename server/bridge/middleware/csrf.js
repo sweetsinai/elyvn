@@ -67,7 +67,6 @@ function csrfProtection(req, res, next) {
       'https://elyvn.ai',
       'https://app.elyvn.ai',
       'https://api.elyvn.net',
-      'https://dashboard-nine-ebon-97.vercel.app',
       ...(process.env.DASHBOARD_URL ? [process.env.DASHBOARD_URL] : []),
       ...(process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
     ];

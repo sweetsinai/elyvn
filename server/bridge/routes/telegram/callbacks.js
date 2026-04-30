@@ -5,17 +5,18 @@ const { logger } = require('../../utils/logger');
 const { handleCommand } = require('./commands');
 const timing = require('../../config/timing');
 
-// Rate limiting for Telegram callback queries
-const callbackRateLimits = new Map();
+const { LRUCache } = require('lru-cache');
 const CALLBACK_RATE_LIMIT = timing.TELEGRAM_CALLBACK_RATE_LIMIT;
 const CALLBACK_RATE_WINDOW = timing.TELEGRAM_CALLBACK_RATE_WINDOW_MS;
 
+// Rate limiting for Telegram callback queries
+const callbackRateLimits = new LRUCache({ max: 5000, ttl: CALLBACK_RATE_WINDOW });
+
 function callbackRateLimit(chatId) {
   const now = Date.now();
-  const record = callbackRateLimits.get(chatId);
+  let record = callbackRateLimits.get(chatId);
 
   if (record) {
-    // Clean old entries
     record.timestamps = record.timestamps.filter(t => now - t < CALLBACK_RATE_WINDOW);
     if (record.timestamps.length >= CALLBACK_RATE_LIMIT) {
       logger.warn(`[telegram] Callback rate limit exceeded for chatId ${chatId}`);
@@ -23,15 +24,8 @@ function callbackRateLimit(chatId) {
     }
     record.timestamps.push(now);
   } else {
-    callbackRateLimits.set(chatId, { timestamps: [now] });
-  }
-
-  // Cleanup old entries every 5 minutes
-  if (callbackRateLimits.size > 10000) {
-    for (const [k, v] of callbackRateLimits) {
-      const latest = v.timestamps[v.timestamps.length - 1] || 0;
-      if (now - latest > CALLBACK_RATE_WINDOW) callbackRateLimits.delete(k);
-    }
+    record = { timestamps: [now] };
+    callbackRateLimits.set(chatId, record);
   }
 
   return true; // Not rate limited

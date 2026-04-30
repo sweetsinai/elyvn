@@ -175,8 +175,8 @@ function scheduleBackups(dbPath, intervalHours = 24, db) {
     // Alert on failure via Telegram (so owner knows backups are broken)
     if (!result.success) {
       try {
-        const { alertCriticalError } = require('../config/startup');
-        if (alertCriticalError) alertCriticalError(new Error(`Backup failed: ${result.error}`), 'backup.scheduled');
+        const { alertCriticalError } = require('./alert');
+        if (alertCriticalError) alertCriticalError('backup.scheduled', new Error(`Backup failed: ${result.error}`));
       } catch (_) {}
     }
   }, intervalMs);
