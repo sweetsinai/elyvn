@@ -15,6 +15,28 @@ const RETELL_ENDPOINTS = {
   deleteLlm: (id) => `/delete-retell-llm/${id}`,
 };
 
+const { CircuitBreaker } = require('./resilience');
+
+const retellBreaker = new CircuitBreaker(
+  async (url, options) => {
+    // Use AbortSignal.timeout (Node 20+) to ensure request doesn't hang
+    const resp = await fetch(url, { ...options, signal: AbortSignal.timeout(15000) });
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok) {
+      throw new Error(`Retell API error (${resp.status}): ${JSON.stringify(data)}`);
+    }
+
+    return data;
+  },
+  {
+    failureThreshold: 3,
+    resetTimeout: 30000,
+    monitoredErrors: [Error],
+    serviceName: 'Retell',
+  }
+);
+
 /**
  * Helper for Retell API calls using fetch
  */
@@ -36,15 +58,7 @@ async function retellRequest(path, method, body = null) {
     options.body = JSON.stringify(body);
   }
 
-  // Use AbortSignal.timeout (Node 20+) to ensure request doesn't hang
-  const resp = await fetch(url, { ...options, signal: AbortSignal.timeout(15000) });
-  const data = await resp.json().catch(() => ({}));
-
-  if (!resp.ok) {
-    throw new Error(`Retell API error (${resp.status}): ${JSON.stringify(data)}`);
-  }
-
-  return data;
+  return retellBreaker.call(url, options);
 }
 
 /**

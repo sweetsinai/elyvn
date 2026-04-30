@@ -187,6 +187,29 @@ function initScheduler(db) {
     timerHandles.push(setInterval(trackedRetention, SCHEDULER_DAILY_INTERVAL_MS).unref());
   }, retentionDelay).unref());
   logger.info(`[Scheduler] Data retention scheduled ${formatDelay(retentionDelay)} (3 AM)`);
+
+  // Refresh token cleanup — daily at 4 AM
+  const tokenCleanupDelay = getDelayUntilHour(4);
+
+  const trackedTokenCleanup = withFailureTracking(db, 'refresh_token_cleanup', async () => {
+    try {
+      const result = await db.query(`
+        DELETE FROM refresh_tokens 
+        WHERE expires_at < datetime('now') 
+           OR (revoked = 1 AND created_at < datetime('now', '-7 days'))
+      `, [], 'run');
+      logger.info(`[scheduler] Cleaned up ${result.changes} expired refresh tokens`);
+    } catch (err) {
+      logger.error('[scheduler] Refresh token cleanup failed:', err);
+      throw err;
+    }
+  });
+  timerHandles.push(setTimeout(() => {
+    if (!schedulerInitialized) return;
+    trackedTokenCleanup();
+    timerHandles.push(setInterval(trackedTokenCleanup, SCHEDULER_DAILY_INTERVAL_MS).unref());
+  }, tokenCleanupDelay).unref());
+  logger.info(`[Scheduler] Refresh token cleanup scheduled ${formatDelay(tokenCleanupDelay)} (4 AM)`);
 }
 
 function stopScheduler() {
