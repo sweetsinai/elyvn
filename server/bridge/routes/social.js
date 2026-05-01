@@ -203,7 +203,9 @@ async function handleSocialMessage(db, { senderId, text, channel, pageId }) {
         `${icon} <b>New ${channel} message</b>\n\n<b>From:</b> ${esc(senderId.slice(0, 8))}...\n<b>Message:</b> ${esc(text.slice(0, 500))}`
       );
     }
-  } catch (_) {}
+  } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 }
 
 module.exports = router;

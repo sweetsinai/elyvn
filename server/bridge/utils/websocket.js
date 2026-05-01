@@ -73,7 +73,9 @@ function initWebSocket(server, db) {
               const { subscribeToAnalytics } = require('./analyticsStream');
               subscribeToAnalytics(ws);
               ws.send(JSON.stringify({ type: 'subscribed', channel: 'analytics', timestamp: new Date().toISOString() }));
-            } catch (_) { /* analyticsStream not available */ }
+            } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
           }
 
         } catch (err) {

@@ -132,7 +132,9 @@ async function triggerSpeedSequence(db, leadData) {
         await appendEvent(db, leadId, 'lead', Events.FollowupScheduled, {
           touch_number: 4, type: 'reminder_or_nudge', scheduled_at: tomorrow,
         }, clientId);
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     }
 
     const insert5Result = await db.query(`
@@ -147,7 +149,9 @@ async function triggerSpeedSequence(db, leadData) {
         await appendEvent(db, leadId, 'lead', Events.FollowupScheduled, {
           touch_number: 5, type: 'review_or_final', scheduled_at: threeDays,
         }, clientId);
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     }
   } catch (err) {
     logger.error('[SpeedToLead] Follow-up insert failed:', err.message);

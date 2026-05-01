@@ -323,7 +323,9 @@ router.post('/', validateBody(ProvisionSchema), async (req, res, next) => {
       provisioning_status.db_save = true;
       logger.info(`[provision] Successfully saved client to database: ${clientId}`);
       sendUpdate('creating_client', 'completed', { log: 'Client record saved.' });
-      try { logDataMutation(db, { action: 'client_created', table: 'clients', recordId: clientId, newValues: { business_name, owner_phone, plan, industry }, ip: req.ip }); } catch (_) {}
+      try { logDataMutation(db, { action: 'client_created', table: 'clients', recordId: clientId, newValues: { business_name, owner_phone, plan, industry }, ip: req.ip }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     } catch (err) {
       provisioning_status.db_error = err.message;
       logger.error(`[provision] Database save failed: ${err.message}`);

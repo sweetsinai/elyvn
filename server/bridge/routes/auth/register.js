@@ -95,7 +95,9 @@ router.post('/', validateBody(SignupSchema), async (req, res, next) => {
           }
         }).catch(() => {});
       }
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     logger.info(`[auth] New signup: ${email} → client ${clientId} (unverified)`);
     res.status(201).json({

@@ -73,7 +73,9 @@ async function googleReviewRequest(payload, jobId, db) {
     try {
       const { recordMetric } = require('../../utils/metrics');
       recordMetric('review_requests_sent', 1);
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
   } catch (err) {
     logger.error('[reviewRequest] Error:', { error: err.message, stack: err.stack, jobId });

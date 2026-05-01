@@ -13,8 +13,7 @@ const path = require('path');
 const { getKBRoot } = require('./dbConfig');
 const { logger } = require('./logger');
 const { syncClientToRetell } = require('./retellSync');
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const { isValidUUID } = require('./validators');
 
 // In-memory debounce to avoid double-syncing on rapid file writes
 const debounceMap = new Map();
@@ -35,7 +34,7 @@ function initKBWatcher(db) {
       if (eventType === 'change' && filename && filename.endsWith('.json')) {
         const clientId = filename.replace('.json', '');
         
-        if (!UUID_RE.test(clientId)) {
+        if (!isValidUUID(clientId)) {
           return; // Ignore non-client JSON files
         }
 

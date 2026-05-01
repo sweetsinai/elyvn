@@ -215,7 +215,9 @@ router.post('/calls/:clientId/:callId/transfer', validateBody(TransferSchema), a
       try {
         const { broadcast } = require('../../utils/websocket');
         broadcast('call_transfer', { id: callId, status: 'transferred', target }, clientId);
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
       return success(res, { method: 'warm', target, callId });
     }
@@ -228,7 +230,9 @@ router.post('/calls/:clientId/:callId/transfer', validateBody(TransferSchema), a
         try {
           const { broadcast } = require('../../utils/websocket');
           broadcast('call_transfer', { id: callId, status: 'transferred', target }, clientId);
-        } catch (_) {}
+        } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
         return success(res, { method: 'cold', target, callId });
       }

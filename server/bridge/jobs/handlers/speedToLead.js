@@ -137,7 +137,9 @@ async function speedToLeadCallback(db, sendSMS, captureException, payload) {
       const fallbackMsg = `Hi${payload.name ? ' ' + payload.name.split(' ')[0] : ''}! We tried to reach you from ${client.business_name || 'us'}. ${client.calcom_booking_link ? 'Book at: ' + client.calcom_booking_link : 'Call us back!'}`.slice(0, SMS_MAX_LENGTH);
       const fallbackPhone = client.phone_number;
       await sendSMS(payload.phone, fallbackMsg, fallbackPhone, db, client.id);
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   }
 }
 

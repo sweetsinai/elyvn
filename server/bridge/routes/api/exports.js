@@ -31,7 +31,9 @@ router.get('/exports/:clientId/leads', async (req, res, next) => {
     );
 
     // Audit log the export event
-    try { logDataMutation(req.app.locals.db, { action: 'data_export', table: 'leads', recordId: clientId, newValues: { format, count: leads.length }, ip: req.ip }); } catch (_) {}
+    try { logDataMutation(req.app.locals.db, { action: 'data_export', table: 'leads', recordId: clientId, newValues: { format, count: leads.length }, ip: req.ip }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     if (format === 'json') {
       res.setHeader('Content-Disposition', `attachment; filename="leads-${clientId.slice(0, 8)}.json"`);
@@ -138,7 +140,9 @@ router.get('/exports/:clientId/sheets', async (req, res, next) => {
       ),
     ]);
 
-    try { logDataMutation(req.app.locals.db, { action: 'sheets_export', table: 'multi', recordId: clientId, newValues: { format, leads: leads.length, calls: calls.length, messages: messages.length }, ip: req.ip }); } catch (_) {}
+    try { logDataMutation(req.app.locals.db, { action: 'sheets_export', table: 'multi', recordId: clientId, newValues: { format, leads: leads.length, calls: calls.length, messages: messages.length }, ip: req.ip }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     if (format === 'json') {
       res.setHeader('Content-Disposition', `attachment; filename="sheets-${clientId.slice(0, 8)}.json"`);

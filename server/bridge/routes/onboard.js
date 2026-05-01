@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { randomUUID } = require('crypto');
-const path = require('path');
+const { joinSafe } = require('../utils/pathUtils');
 const fsPromises = require('fs').promises;
 const { isValidUUID, sanitizeString } = require('../utils/validators');
 const { getKBRoot } = require('../utils/dbConfig');
@@ -176,7 +176,7 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
 
     // Prepare KB file path
     const kbDir = getKBRoot();
-    const kbAbsPath = path.join(kbDir, `${clientId}.json`);
+    const kbAbsPath = joinSafe(kbDir, `${clientId}.json`);
     const kbPath = kbAbsPath; // Storing absolute path for reliability
 
     // Write KB file
@@ -213,7 +213,9 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
       now
     ], 'run');
 
-    try { logDataMutation(db, { action: 'client_created', table: 'clients', recordId: clientId, newValues: { business_name: sanitized.business_name, owner_email: sanitized.owner_email, industry: sanitized.industry }, ip: req.ip }); } catch (_) {}
+    try { logDataMutation(db, { action: 'client_created', table: 'clients', recordId: clientId, newValues: { business_name: sanitized.business_name, owner_email: sanitized.owner_email, industry: sanitized.industry }, ip: req.ip }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     // Determine base URL for webhooks
     const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
@@ -293,7 +295,9 @@ router.post('/onboard', onboardRateLimit, validateBody(OnboardSchema), async (re
           }
         }).catch(e => logger.warn('[onboard] Google Sheet creation failed (non-fatal):', e.message));
       }
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
   } catch (err) {
     logger.error('[onboard] Error:', err);

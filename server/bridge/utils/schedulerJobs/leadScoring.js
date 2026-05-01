@@ -34,7 +34,9 @@ async function dailyLeadScoring(db) {
               factors: { predictive_score: s.predictive_score },
               model_version: 'v1.0',
             }, client.id);
-          } catch (_) {}
+          } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
         }
 
         totalScored += scores.length;

@@ -3,11 +3,10 @@ const router = express.Router();
 const { randomUUID } = require('crypto');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
-const path = require('path');
-const { isValidUUID } = require('../../utils/validators');
+const { joinSafe } = require('../../utils/pathUtils');
+const { isValidUUID, validateEmail, validatePhone, validateLength, LENGTH_LIMITS } = require('../../utils/validators');
 const { logger } = require('../../utils/logger');
 const { AppError } = require('../../utils/AppError');
-const { validateEmail, validatePhone, validateLength, LENGTH_LIMITS } = require('../../utils/inputValidation');
 const { cachedGet, invalidateCache, CACHE_TTL } = require('../../utils/dbAdapter');
 const { parsePagination } = require('../../utils/dbHelpers');
 const { getKBRoot } = require('../../utils/dbConfig');
@@ -19,8 +18,6 @@ const { paginated, success, created } = require('../../utils/response');
 const { clientIsolationParam } = require('../../utils/clientIsolation');
 const { syncClientToRetell } = require('../../utils/retellSync');
 router.param('clientId', clientIsolationParam);
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Safe columns to return — never expose password_hash, verification_token, verification_expires
 const CLIENT_SAFE_COLS = 'id, business_name, owner_name, owner_email, owner_phone, industry, plan, subscription_status, dodo_customer_id, dodo_subscription_id, retell_agent_id, retell_llm_id, retell_phone, twilio_phone, transfer_phone, phone_number, calcom_event_type_id, calcom_booking_link, google_review_link, google_sheet_id, telegram_chat_id, avg_ticket, is_active, notification_mode, whatsapp_phone, lead_webhook_url, booking_webhook_url, call_webhook_url, sms_webhook_url, stage_change_webhook_url, created_at, updated_at';
@@ -183,7 +180,7 @@ router.post('/clients', validateBody(ClientCreateSchema), async (req, res, next)
     if (knowledge_base) {
       const kbDir = getKBRoot();
       try {
-        await fsPromises.writeFile(path.join(kbDir, `${id}.json`), JSON.stringify(knowledge_base, null, 2));
+        await fsPromises.writeFile(joinSafe(kbDir, `${id}.json`), JSON.stringify(knowledge_base, null, 2));
       } catch (err) {
         logger.error('[api] Failed to save KB:', err.message);
       }
@@ -202,7 +199,7 @@ router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req,
   try {
     const db = req.app.locals.db;
     const { clientId } = req.params;
-    if (!UUID_RE.test(clientId)) return next(new AppError('INVALID_INPUT', 'Invalid client ID format', 400));
+    if (!isValidUUID(clientId)) return next(new AppError('INVALID_INPUT', 'Invalid client ID format', 400));
     const updates = req.body;
 
     const existing = await db.query(`SELECT ${CLIENT_SAFE_COLS} FROM clients WHERE id = ?`, [clientId], 'get');
@@ -323,13 +320,15 @@ router.put('/clients/:clientId', validateParams(ClientParamsSchema), async (req,
           ip: req.ip,
         });
       }
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     // Update knowledge base if provided (filesystem op — outside transaction intentionally)
     if (updates.knowledge_base) {
       const kbDir = getKBRoot();
       try {
-        await fsPromises.writeFile(path.join(kbDir, `${clientId}.json`), JSON.stringify(updates.knowledge_base, null, 2));
+        await fsPromises.writeFile(joinSafe(kbDir, `${clientId}.json`), JSON.stringify(updates.knowledge_base, null, 2));
       } catch (err) {
         logger.error('[api] Failed to save KB:', err.message);
       }

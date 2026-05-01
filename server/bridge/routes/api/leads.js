@@ -67,13 +67,17 @@ router.get('/leads/:clientId', validateParams(ClientParamsSchema), validateQuery
         try {
           const decrypted = decrypt(lead.phone_encrypted);
           if (decrypted && decrypted !== lead.phone_encrypted) lead.phone = decrypted;
-        } catch (_) { /* fall back to plaintext phone */ }
+        } catch (err) {
+          logger.debug('[api] phone decryption failed, using plaintext:', err.message);
+        }
       }
       if (lead.email_encrypted) {
         try {
           const decrypted = decrypt(lead.email_encrypted);
           if (decrypted && decrypted !== lead.email_encrypted) lead.email = decrypted;
-        } catch (_) { /* fall back to plaintext email */ }
+        } catch (err) {
+          logger.debug('[api] email decryption failed, using plaintext:', err.message);
+        }
       }
     }
 
@@ -182,7 +186,11 @@ router.put('/leads/:clientId/:leadId', validateBody(LeadUpdateSchema), async (re
 
     // Fire-and-forget: emit LeadStageChanged if stage actually changed
     if (stage && oldStage && oldStage !== stage) {
-      try { appendEvent(db, leadId, 'lead', Events.LeadStageChanged, { from: oldStage, to: stage, trigger: 'api' }, clientId); } catch (_) {}
+      try {
+        appendEvent(db, leadId, 'lead', Events.LeadStageChanged, { from: oldStage, to: stage, trigger: 'api' }, clientId);
+      } catch (err) {
+        logger.error('[api] failed to append lead stage changed event:', err.message);
+      }
 
       // Outbound webhook: notify client's configured stage_change_webhook_url
       try {
@@ -192,7 +200,9 @@ router.put('/leads/:clientId/:leadId', validateBody(LeadUpdateSchema), async (re
           const lead = await db.query('SELECT name, phone, email, score FROM leads WHERE id = ?', [leadId], 'get');
           await fireLeadStageChanged(client, { leadId, oldStage, newStage: stage, leadData: lead || {} });
         }
-      } catch (_whErr) { /* webhook fire must not break request */ }
+      } catch (whErr) {
+        logger.warn('[api] lead stage change webhook failed:', whErr.message);
+      }
     }
 
     // Fire-and-forget: audit trail for lead mutation
@@ -210,7 +220,9 @@ router.put('/leads/:clientId/:leadId', validateBody(LeadUpdateSchema), async (re
         newValues,
         ip: req.ip,
       });
-    } catch (_) {}
+    } catch (err) {
+      logger.error('[api] failed to log lead mutation:', err.message);
+    }
 
     return success(res, { stage: stage || oldStage, revenue_closed, job_value });
   } catch (err) {

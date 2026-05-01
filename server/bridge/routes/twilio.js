@@ -7,8 +7,9 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { logger } = require('../utils/logger');
+const { logger, withCorrelationId } = require('../utils/logger');
 const { handleInboundSMS } = require('./legacySms/handlers');
+const { randomUUID } = require('crypto');
 
 /**
  * Validate Twilio request signature (X-Twilio-Signature)
@@ -63,25 +64,30 @@ router.post('/', (req, res) => {
   const body = req.body?.Body || '';
   const messageSid = req.body?.MessageSid;
 
+  const correlationId = req.headers['x-request-id'] || messageSid || crypto.randomUUID();
+
   if (!from || !to) {
-    logger.warn('[twilio] Missing From/To in webhook');
+    logger.warn('[twilio] Missing From/To in webhook', { correlationId });
     return res.status(400).send('<Response></Response>');
   }
 
   // Respond immediately with empty TwiML
   res.set('Content-Type', 'text/xml');
+  res.set('X-Correlation-ID', correlationId);
   res.send('<Response></Response>');
 
   if (!db) return;
 
-  logger.info(`[twilio] Inbound SMS from ${from.replace(/\d(?=\d{4})/g, '*')} to ${to}`);
+  logger.info(`[twilio] Inbound SMS from ${from.replace(/\d(?=\d{4})/g, '*')} to ${to}`, { correlationId });
 
   // Route through the unified SMS pipeline (same as Legacy SMS)
   // This gives us: brain decisions, lead scoring, guardrails, rate limiting,
   // opt-out checking, Telegram notifications, usage tracking — everything.
   setImmediate(() => {
-    handleInboundSMS(db, { from, to, body, messageId: messageSid }).catch(err => {
-      logger.error('[twilio] Handler error:', err.message);
+    withCorrelationId(correlationId, () => {
+      handleInboundSMS(db, { from, to, body, messageId: messageSid }).catch(err => {
+        logger.error('[twilio] Handler error:', err.message);
+      });
     });
   });
 });

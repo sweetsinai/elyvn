@@ -69,7 +69,9 @@ async function recordJobRun(db, jobName) {
       [jobName, new Date().toISOString()], 'run'
     );
     failureCounts[jobName] = 0;
-  } catch (_) {}
+  } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 }
 
 /**
@@ -88,7 +90,9 @@ function withFailureTracking(db, jobName, fn) {
         try {
           const { alertCriticalError } = require('../config/startup');
           if (alertCriticalError) alertCriticalError(new Error(`${jobName} failed ${MAX_CONSECUTIVE_FAILURES}x consecutively`), 'scheduler');
-        } catch (_) {}
+        } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
       }
     }
   };

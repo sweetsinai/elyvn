@@ -143,7 +143,9 @@ function setupMiddleware(app) {
         httpRequestDuration
           .labels(req.method, req.route?.path || req.path, String(res.statusCode))
           .observe(Date.now() - start);
-      } catch (_) { /* prom-client not available — fail silently */ }
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     });
     next();
   });

@@ -1,3 +1,4 @@
+const { logger } = require('logger');
 /**
  * Critical error alerting
  * Sends critical errors to Telegram admin chat
@@ -15,7 +16,9 @@ async function alertCriticalError(context, error) {
       body: JSON.stringify({ chat_id: chatId, text: msg }),
       signal: AbortSignal.timeout(10000),
     });
-  } catch (_) { /* alerting failure is non-fatal */ }
+  } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 }
 
 module.exports = { alertCriticalError };

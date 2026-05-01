@@ -35,7 +35,9 @@ function createRateLimiterMiddleware(limiter) {
         if (req.app?.locals?.db) {
           logRateLimit(req.app.locals.db, { action: 'rate_limited', ip: req.ip, details: { path: req.path, method: req.method } });
         }
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
       const requestId = req.id || req.headers['x-request-id'] || 'unknown';
       return res.status(429).json({ code: 'RATE_LIMIT_EXCEEDED', message: 'Too many requests', requestId });
     }
@@ -457,7 +459,9 @@ function mountRoutes(app) {
           db.query("SELECT COUNT(*) as c FROM job_queue WHERE status = 'failed'", [], 'get'),
         ]);
         jobQueueDepth = { pending: pending.c, running: running.c, failed: failed.c };
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
       const { getSlidingErrorRate } = require('../utils/metrics');
       const errorRate = getSlidingErrorRate();

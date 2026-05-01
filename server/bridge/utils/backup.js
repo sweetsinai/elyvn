@@ -1,3 +1,4 @@
+const { logger } = require('logger');
 /**
  * Database Backup Utility
  * Creates SQLite backups and manages retention with WAL checkpoint
@@ -177,7 +178,9 @@ function scheduleBackups(dbPath, intervalHours = 24, db) {
       try {
         const { alertCriticalError } = require('./alert');
         if (alertCriticalError) alertCriticalError('backup.scheduled', new Error(`Backup failed: ${result.error}`));
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     }
   }, intervalMs);
 

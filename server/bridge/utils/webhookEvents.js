@@ -75,7 +75,9 @@ async function fireSmsReceived(client, { from, to, body, messageId, leadId }) {
     try {
       const { logMessage } = require('./googleSheets');
       logMessage(client.google_sheet_id, { direction: 'inbound', phone: from, body, channel: 'sms' }).catch(() => {});
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   }
 }
 
@@ -99,7 +101,9 @@ async function fireSmsSent(client, { to, from, body, messageId, leadId }) {
     try {
       const { logMessage } = require('./googleSheets');
       logMessage(client.google_sheet_id, { direction: 'outbound', phone: to, body, channel: 'sms' }).catch(() => {});
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   }
 }
 

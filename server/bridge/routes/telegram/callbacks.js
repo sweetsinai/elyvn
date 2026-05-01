@@ -3,6 +3,7 @@
 const telegram = require('../../utils/telegram');
 const { logger } = require('../../utils/logger');
 const { handleCommand } = require('./commands');
+const { isValidUUID } = require('../../utils/validators');
 const timing = require('../../config/timing');
 
 const { LRUCache } = require('lru-cache');
@@ -120,8 +121,7 @@ async function handleCallback(db, callbackQuery) {
     const leadId = data.split(':')[1];
 
     // Validate UUID format before touching the DB
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!leadId || !UUID_RE.test(leadId)) {
+    if (!leadId || !isValidUUID(leadId)) {
       logger.warn(`[telegram] cancel_speed: invalid leadId "${leadId}"`);
       await telegram.answerCallback(callbackId, 'Invalid lead ID.');
       return;

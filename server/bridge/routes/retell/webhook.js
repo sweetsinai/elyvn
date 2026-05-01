@@ -10,7 +10,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { logger } = require('../../utils/logger');
+const { logger, withCorrelationId } = require('../../utils/logger');
 const { hasNonce, addNonce } = require('../../utils/nonceStore');
 const { AppError } = require('../../utils/AppError');
 
@@ -80,31 +80,38 @@ router.post('/', async (req, res) => {
     return;
   }
 
-  setImmediate(async () => {
-    try {
-      switch (event) {
-        case 'call_started':
-          await handleCallStarted(db, call, correlationId);
-          break;
-        case 'call_ended':
-          await handleCallEnded(db, call, correlationId);
-          break;
-        case 'call_analyzed':
-          await handleCallAnalyzed(db, call, correlationId);
-          break;
-        case 'agent_transfer':
-        case 'transfer_requested':
-          await handleTransfer(db, call, correlationId);
-          break;
-        case 'dtmf':
-          if (call && call.digit === '*') await handleTransfer(db, call, correlationId);
-          break;
-        default:
-          logger.info(`[retell] Unhandled event: ${event}`, { correlationId });
+  setImmediate(() => {
+    withCorrelationId(correlationId, async () => {
+      try {
+        switch (event) {
+          case 'call_started':
+            await handleCallStarted(db, call, correlationId);
+            break;
+          case 'call_ended':
+            await handleCallEnded(db, call, correlationId);
+            break;
+          case 'call_analyzed':
+            await handleCallAnalyzed(db, call, correlationId);
+            break;
+          case 'agent_transfer':
+          case 'transfer_requested':
+            await handleTransfer(db, call, correlationId);
+            break;
+          case 'dtmf':
+            if (call && call.digit === '*') await handleTransfer(db, call, correlationId);
+            break;
+          default:
+            logger.info(`[retell] Unhandled event: ${event}`);
+        }
+      } catch (err) {
+        logger.error('[retell] Processing error', {
+          event,
+          callId: call?.call_id,
+          error: err.message,
+          stack: err.stack
+        });
       }
-    } catch (err) {
-      logger.error('[retell] Processing error', { correlationId, code: 'PROCESSING_ERROR', event, callId: call?.call_id, error: err.message, stack: err.stack });
-    }
+    });
   });
 });
 

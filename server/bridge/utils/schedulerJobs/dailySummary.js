@@ -55,7 +55,9 @@ async function sendDailySummaries(db) {
         let kbText = '';
         try {
           kbText = (await loadKnowledgeBase(client.id)).toLowerCase();
-        } catch (_) {}
+        } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
         const missing = topics.filter(t => t.frequency >= 3 && !kbText.includes(t.topic.toLowerCase()));
         if (missing.length > 0) {
           kbSuggestion = '\n\n<b>FAQ suggestions:</b>\n' +

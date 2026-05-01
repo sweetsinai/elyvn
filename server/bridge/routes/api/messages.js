@@ -62,7 +62,9 @@ router.get('/messages/:clientId', validateParams(MessageParamsSchema), validateQ
         try {
           const decrypted = decrypt(msg.body_encrypted);
           if (decrypted && decrypted !== msg.body_encrypted) msg.body = decrypted;
-        } catch (_) { /* fall back to plaintext body */ }
+        } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
       }
     }
 

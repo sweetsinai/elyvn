@@ -24,6 +24,7 @@ const fs = require('fs');
 const path = require('path');
 const { randomUUID, createHmac } = require('crypto');
 const { logger } = require('./logger');
+const { isSafeUrl } = require('./ssrfFilter');
 
 // ---------------------------------------------------------------------------
 // Config
@@ -78,8 +79,8 @@ function writeQueue(entries) {
  * @returns {string} id of the queued entry
  */
 async function enqueue(url, payload, headers = {}) {
-  if (!url || typeof url !== 'string') {
-    logger.warn('[webhookQueue] enqueue called with invalid url, skipping');
+  if (!url || typeof url !== 'string' || !isSafeUrl(url)) {
+    logger.warn('[webhookQueue] enqueue called with invalid or unsafe url, skipping');
     return null;
   }
 
@@ -113,6 +114,9 @@ async function enqueue(url, payload, headers = {}) {
  * @returns {{ ok: boolean, status?: number, error?: string }}
  */
 async function deliver(entry) {
+  if (!isSafeUrl(entry.url)) {
+    return { ok: false, error: 'Unsafe URL (SSRF protection)' };
+  }
   const body = JSON.stringify(entry.payload);
 
   const outHeaders = {

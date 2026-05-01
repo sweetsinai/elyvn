@@ -150,7 +150,9 @@ async function predictLeadScore(db, leadId, clientId) {
       try {
         const { recordMetric } = require('../metrics');
         recordMetric('feature_persist_failures', 1, 'counter');
-      } catch (_) { /* metrics not available */ }
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     }
 
     return {

@@ -1,3 +1,4 @@
+const { logger } = require('logger');
 /**
  * SQLite Migration Framework
  * Tracks applied migrations in a `_migrations` table.
@@ -1492,7 +1493,9 @@ const migrations = [
       // Create unique index on referral_code if it doesn't exist
       try {
         db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_referral_code ON clients(referral_code) WHERE referral_code IS NOT NULL");
-      } catch (_) { /* index may already exist */ }
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
       // Backfill business_name from name where business_name is NULL (only if name column exists)
       if (cols.includes('name')) {
@@ -1661,7 +1664,9 @@ migrations.push({
     const tables = ['leads', 'calls', 'messages', 'followups', 'appointments', 'job_queue', 'emails_sent', 'prospects', 'campaigns', 'referrals', 'conversations'];
     for (const id of oldIds) {
       for (const t of tables) {
-        try { db.prepare(`DELETE FROM ${t} WHERE client_id = ?`).run(id); } catch (_) {}
+        try { db.prepare(`DELETE FROM ${t} WHERE client_id = ?`).run(id); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
       }
       db.prepare('DELETE FROM clients WHERE id = ?').run(id);
     }
@@ -1695,7 +1700,9 @@ migrations.push({
       const auditCols = db.prepare("PRAGMA table_info('audit_log')").all().map(c => c.name);
       if (!auditCols.includes('hash')) db.exec('ALTER TABLE audit_log ADD COLUMN hash TEXT');
       if (!auditCols.includes('previous_hash')) db.exec('ALTER TABLE audit_log ADD COLUMN previous_hash TEXT');
-    } catch (_) { /* audit_log may not exist yet */ }
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   },
   down() {},
 });

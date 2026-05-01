@@ -48,7 +48,9 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
         try {
           const preview = (body || '').substring(0, 100);
           await db.query("UPDATE conversations SET last_message_at = ?, last_message_preview = ?, updated_at = ? WHERE id = ?", [rlNow, preview, rlNow, convId], 'run');
-        } catch (_) {}
+        } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
       }
       return;
     }
@@ -85,7 +87,9 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
           "UPDATE conversations SET last_message_at = ?, last_message_preview = ?, updated_at = ? WHERE id = ?",
           [linkNow, preview, linkNow, conversationId], 'run'
         );
-      } catch (_) { /* linking must not break request */ }
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     }
 
     // Fire-and-forget event emission
@@ -120,9 +124,13 @@ async function handleNormalMessage(db, client, from, to, body, messageId) {
         UPDATE conversations SET last_message_at = ?, last_message_preview = ?, updated_at = ?
         WHERE id = ?
       `, [outNow, preview, outNow, conversationId], 'run');
-    } catch (_) { /* conversation update must not break request */ }
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
-    try { appendEvent(db, leadId, 'message', Events.SMSSent, { phone: from, channel: 'sms', messageId: outboundId }, client.id); } catch (_) {}
+    try { appendEvent(db, leadId, 'message', Events.SMSSent, { phone: from, channel: 'sms', messageId: outboundId }, client.id); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     // Outbound webhook: fire sms.sent
     try {
@@ -193,7 +201,9 @@ async function handleAiPaused(db, client, from, to, body, messageId) {
       VALUES (?, ?, ?, 'new', ?, ?, ?)
     `, [leadId, client.id, from, new Date().toISOString(), new Date().toISOString(), new Date().toISOString()], 'run');
     try { await db.query('UPDATE leads SET phone_encrypted = ? WHERE id = ?', [encrypt(from), leadId], 'run'); } catch (encErr) { logger.warn('[legacySms] phone encryption failed:', encErr.message); }
-    try { appendEvent(db, leadId, 'lead', Events.LeadCreated, { phone: from, source: 'sms_inbound', ai_paused: true }, client.id); } catch (_) {}
+    try { appendEvent(db, leadId, 'lead', Events.LeadCreated, { phone: from, source: 'sms_inbound', ai_paused: true }, client.id); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   }
   const convId = await ensureConversation(db, client.id, from, leadId);
   const pausedNow = new Date().toISOString();
@@ -204,7 +214,9 @@ async function handleAiPaused(db, client, from, to, body, messageId) {
   try {
     const preview = (body || '').substring(0, 100);
     await db.query("UPDATE conversations SET last_message_at = ?, last_message_preview = ?, updated_at = ? WHERE id = ?", [pausedNow, preview, pausedNow, convId], 'run');
-  } catch (_) {}
+  } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
   if (client.telegram_chat_id) {
     const tg = require('../../utils/telegram');

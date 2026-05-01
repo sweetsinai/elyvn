@@ -1,14 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const fs = require('fs');
-const path = require('path');
+const { joinSafe } = require('../../utils/pathUtils');
 const Anthropic = require('@anthropic-ai/sdk');
-const { isValidUUID } = require('../../utils/validators');
+const { isValidUUID, LENGTH_LIMITS } = require('../../utils/validators');
 const { getKBRoot } = require('../../utils/dbConfig');
 const config = require('../../utils/config');
 const { withTimeout } = require('../../utils/resilience');
 const { logger } = require('../../utils/logger');
-const { LENGTH_LIMITS } = require('../../utils/inputValidation');
 const { emailSendLimit } = require('../../middleware/rateLimits');
 const { AppError } = require('../../utils/AppError');
 const { validateBody } = require('../../middleware/validateRequest');
@@ -16,7 +15,6 @@ const { ChatSchema } = require('../../utils/schemas/chat');
 
 const { ANTHROPIC_TIMEOUT } = require('../../config/timing');
 const anthropic = new Anthropic();
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const sanitize = (s, max) => String(s || '').replace(/[\r\n\t<>{}]/g, ' ').substring(0, max);
 
@@ -50,12 +48,12 @@ router.post('/chat', emailSendLimit, validateBody(ChatSchema), async (req, res, 
     // Load client KB as system context — use auth-derived clientId, not body-supplied one
     // req.clientId comes from JWT/API-key middleware; req.isAdmin may override
     const resolvedClientId = req.isAdmin
-      ? (clientId && UUID_RE.test(clientId) ? clientId : req.clientId)
+      ? (clientId && isValidUUID(clientId) ? clientId : req.clientId)
       : req.clientId;
 
     let systemPrompt = 'You are an AI assistant for the ELYVN operations dashboard.';
 
-    if (resolvedClientId && UUID_RE.test(resolvedClientId)) {
+    if (resolvedClientId && isValidUUID(resolvedClientId)) {
       const clientId = resolvedClientId; // shadow body var so rest of block uses auth value
       const client = await db.query('SELECT id, business_name FROM clients WHERE id = ?', [clientId], 'get');
       if (client) {
@@ -64,17 +62,10 @@ router.post('/chat', emailSendLimit, validateBody(ChatSchema), async (req, res, 
 
       if (isValidUUID(clientId)) {
         const kbDir = getKBRoot();
-        const kbPath = path.join(kbDir, `${clientId}.json`);
         try {
-          // Verify path doesn't escape knowledge_bases directory
-          const resolvedPath = path.resolve(kbPath);
-          const resolvedKbDir = path.resolve(kbDir);
-          if (!resolvedPath.startsWith(resolvedKbDir)) {
-            logger.error('[api] KB path traversal attempted');
-          } else {
-            const kbData = await fs.promises.readFile(kbPath, 'utf8');
-            systemPrompt += `\n\nBusiness Knowledge Base:\n${sanitize(kbData, 4000)}`;
-          }
+          const kbPath = joinSafe(kbDir, `${clientId}.json`);
+          const kbData = await fs.promises.readFile(kbPath, 'utf8');
+          systemPrompt += `\n\nBusiness Knowledge Base:\n${sanitize(kbData, 4000)}`;
         } catch (err) {
           logger.error('[api] Failed to load knowledge base:', err.message);
         }

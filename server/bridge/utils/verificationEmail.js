@@ -3,7 +3,7 @@
  * Sends branded verification emails via SMTP
  */
 
-const { getTransporter } = require('./mailer');
+const { getTransporter } = require('./emailTransport');
 const { logger } = require('./logger');
 const config = require('./config');
 

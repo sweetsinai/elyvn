@@ -80,7 +80,9 @@ function getActiveTraceId() {
       const ctx = span.spanContext();
       if (ctx && ctx.traceId) return ctx.traceId;
     }
-  } catch (_) {}
+  } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   return null;
 }
 

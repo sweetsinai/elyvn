@@ -171,7 +171,9 @@ router.post('/:resellerId/create-client', requireReseller, validateBody(Reseller
         owner_email.toLowerCase().trim(), owner_phone?.trim() || '', industry || '',
         resellerId, reseller.brand_name, new Date().toISOString(), new Date().toISOString()], 'run');
 
-    try { logDataMutation(db, { action: 'reseller_client_created', table: 'clients', recordId: clientId, newValues: { resellerId, business_name } }); } catch (_) {}
+    try { logDataMutation(db, { action: 'reseller_client_created', table: 'clients', recordId: clientId, newValues: { resellerId, business_name } }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     logger.info(`[reseller] Client ${clientId} created by reseller ${resellerId}`);
     created(res, { client_id: clientId, business_name: business_name.trim() });

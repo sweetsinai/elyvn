@@ -17,12 +17,16 @@ async function ensureSchema(db) {
   // Add idempotency_key column to job_queue if it doesn't exist
   try {
     await db.query('ALTER TABLE job_queue ADD COLUMN idempotency_key TEXT', [], 'run');
-  } catch (_) { /* column already exists */ }
+  } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
   // Add unique index on idempotency_key (partial — only for non-null values)
   try {
     await db.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_job_queue_idempotency ON job_queue (idempotency_key) WHERE idempotency_key IS NOT NULL', [], 'run');
-  } catch (_) { /* index already exists */ }
+  } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
   // Create dead_letter_queue table
   await db.query(`
@@ -229,7 +233,9 @@ async function processJobs(db, handlers) {
       ]);
       recordMetric('job_queue_pending', pendingRow?.c || 0, 'gauge');
       recordMetric('job_queue_processing', processingRow?.c || 0, 'gauge');
-    } catch (_) { /* metrics recording must not break job processing */ }
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     return { processed, failed };
   } catch (err) {

@@ -25,7 +25,9 @@ function trackUsage(db, clientId, type) {
     db.query(QUERIES[type], [randomUUID(), clientId, month], 'run').catch(err => {
       logger.warn(`[usageTracker] Failed to record ${type} for ${clientId}:`, err.message);
     });
-  } catch (_) {}
+  } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 }
 
 module.exports = { trackUsage };

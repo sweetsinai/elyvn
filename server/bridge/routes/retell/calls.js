@@ -10,6 +10,7 @@ const { randomUUID } = require('crypto');
 const { normalizePhone } = require('../../utils/phone');
 const { logger } = require('../../utils/logger');
 const queryCache = require('../../utils/queryCache');
+const HttpClient = require('../../utils/httpClient');
 
 const {
   fetchCallTranscript,
@@ -25,6 +26,12 @@ const {
 
 const { RETELL_CALL_TIMEOUT_MS } = require('../../config/timing');
 const AGENT_CONFIG_TTL = 300 * 1000; // 300 seconds — agent configs rarely change
+
+const retellClient = new HttpClient({
+  baseUrl: 'https://api.retellai.com/v2',
+  serviceName: 'Retell',
+  timeoutMs: RETELL_CALL_TIMEOUT_MS || 30000,
+});
 
 /**
  * Look up a client by retell_agent_id with a 5-minute cache.
@@ -93,14 +100,13 @@ async function handleCallStarted(db, call, correlationId) {
           try {
             const RETELL_API_KEY = process.env.RETELL_API_KEY;
             if (RETELL_API_KEY) {
-              fetch(`https://api.retellai.com/v2/end-call/${callId}`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${RETELL_API_KEY}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ end_call_reason: 'plan_limit_exceeded' }),
-                signal: AbortSignal.timeout(RETELL_CALL_TIMEOUT_MS || 30000),
+              retellClient.post(`/end-call/${callId}`, { end_call_reason: 'plan_limit_exceeded' }, {
+                headers: { 'Authorization': `Bearer ${RETELL_API_KEY}` }
               }).catch(e => logger.warn('[retell] End call on limit failed:', e.message));
             }
-          } catch (_) {}
+          } catch (err) {
+            logger.debug('[retell] End call initialization failed:', err.message);
+          }
           return; // Stop processing — call is terminated
         } else if (used === limit) {
           // Last call allowed — warn
@@ -244,7 +250,12 @@ async function analyzeCallConversation(db, callRecord, callData, call, correlati
     }
 
     // Track usage for billing
-    try { const { trackUsage } = require('../../utils/usageTracker'); trackUsage(db, callRecord.client_id, 'call'); } catch (_) {}
+    try {
+      const { trackUsage } = require('../../utils/usageTracker');
+      trackUsage(db, callRecord.client_id, 'call');
+    } catch (err) {
+      logger.debug('[retell] Usage tracking failed:', err.message);
+    }
 
     const sentiment = callAnalysis.user_sentiment || 'neutral';
 
@@ -274,7 +285,9 @@ async function analyzeCallConversation(db, callRecord, callData, call, correlati
         data: { callId, phone: callRecord.caller_phone, outcome, duration, score },
         clientId: callRecord.client_id,
       });
-    } catch (_) { /* non-fatal */ }
+    } catch (err) {
+      logger.debug('[retell] Analytics emission failed:', err.message);
+    }
 
     return { summary, score, outcome, sentiment, duration, bookingId, transcriptText };
   } catch (err) {
@@ -364,7 +377,9 @@ async function handleCallEnded(db, call, correlationId) {
           }).catch(e => logger.warn('[sheets] logCall failed:', e.message));
         }
       }
-    } catch (_whErr) { /* webhook/sheets fire must not break request */ }
+    } catch (whErr) {
+      logger.warn('[retell] webhook/sheets fire failed:', whErr.message);
+    }
   } catch (err) {
     logger.error('[retell] call_ended error:', { correlationId, error: err.message, stack: err.stack });
   }

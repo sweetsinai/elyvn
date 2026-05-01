@@ -146,7 +146,9 @@ async function sendWeeklyReports(db) {
       try {
         const { recordMetric } = require('../metrics');
         recordMetric('weekly_reports_sent', 1);
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     } catch (err) {
       logger.error(`[weeklyReport] Failed for client ${client.id}:`, err.message);
     }

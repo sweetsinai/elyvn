@@ -1,6 +1,6 @@
-const https = require('https');
 const { logger } = require('./logger');
 const { CircuitBreaker } = require('./resilience');
+const HttpClient = require('./httpClient');
 
 // === Twilio config ===
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
@@ -18,21 +18,39 @@ if (SMS_PROVIDER) {
 
 const { SMS_MIN_GAP_MS, SMS_RATE_LIMIT_CLEANUP_MS, SMS_MAX_RATE_LIMIT_ENTRIES, DUPLICATE_SMS_LOOKBACK_MS } = require('../config/timing');
 
+const twilioClient = new HttpClient({
+  baseUrl: 'https://api.twilio.com',
+  serviceName: 'Twilio',
+  timeoutMs: 10000,
+});
+
 // Circuit breaker for Twilio REST API — opens after 5 failures in 60s, cools down 30s.
 const twilioBreaker = new CircuitBreaker(
-  async (options, data) => {
-    const response = await httpsRequest(options, data);
-    if (response.status !== 201 && response.status !== 200) {
-      let errorMsg = response.body?.message || response.body?.error_message || JSON.stringify(response.body);
-      const errorCode = response.body?.code;
-      
-      if (errorCode === 21608) {
-        errorMsg = `Twilio Trial Account Limit: ${data.To} is not verified. Please upgrade to a paid Twilio account or verify the recipient's number in your Twilio console.`;
+  async (formData) => {
+    const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+    const path = `/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
+
+    try {
+      const response = await twilioClient.post(path, formData, {
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        }
+      });
+      return response;
+    } catch (err) {
+      const response = err.response;
+      if (response) {
+        let errorMsg = response.data?.message || response.data?.error_message || response.body;
+        const errorCode = response.data?.code;
+        
+        if (errorCode === 21608) {
+          errorMsg = `Twilio Trial Account Limit: recipient is not verified.`;
+        }
+        throw new Error(`Twilio API error (${response.status}): ${errorMsg}`);
       }
-      
-      throw new Error(`Twilio API error (${response.status}): ${errorMsg}`);
+      throw err;
     }
-    return response;
   },
   {
     failureThreshold: 5,
@@ -41,40 +59,6 @@ const twilioBreaker = new CircuitBreaker(
     serviceName: 'Twilio',
   }
 );
-
-/**
- * Make an HTTPS request and return {status, body}
- */
-function httpsRequest(options, data = null) {
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => {
-        try {
-          const parsed = body ? JSON.parse(body) : {};
-          resolve({ status: res.statusCode, body: parsed });
-        } catch (err) {
-          // Return raw body if JSON parse fails
-          resolve({ status: res.statusCode, body, parseError: err });
-        }
-      });
-    });
-
-    // Add 10s timeout to avoid hanging on network issues
-    req.setTimeout(10000, () => {
-      req.destroy();
-      reject(new Error('Twilio SMS request timed out (10s)'));
-    });
-
-    req.on('error', reject);
-    if (data) {
-      const payload = typeof data === 'string' ? data : JSON.stringify(data);
-      req.write(payload);
-    }
-    req.end();
-  });
-}
 
 // Rate limiter: track last send time per phone number (capped to prevent memory leaks)
 const lastSendTime = new Map();
@@ -103,22 +87,8 @@ async function sendViaTwilio(to, body, from) {
     Body: body,
   }).toString();
 
-  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
-
-  const options = {
-    hostname: 'api.twilio.com',
-    port: 443,
-    path: `/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${auth}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Content-Length': Buffer.byteLength(formData),
-    },
-  };
-
-  const response = await twilioBreaker.call(options, formData);
-  return response.body?.sid || response.body?.message_sid;
+  const response = await twilioBreaker.call(formData);
+  return response.data?.sid || response.data?.message_sid;
 }
 
 /**
@@ -172,8 +142,10 @@ async function sendSMS(to, body, from, db, clientId) {
               const { sendMessage } = require('./telegram');
               sendMessage(client.telegram_chat_id,
                 `&#9888; <b>SMS limit reached</b>\n\nYou've used ${used}/${limit} SMS this month on your ${client.plan} plan.\n\nOutbound messages are paused. Upgrade to resume.`
-              ).catch(() => {});
-            } catch (_) {}
+              ).catch(err => logger.debug('[sms] Telegram alert failed:', err.message));
+            } catch (err) {
+              logger.debug('[sms] Telegram alert require failed:', err.message);
+            }
           }
           return { success: false, error: `SMS limit reached (${limit}/month on ${client.plan} plan)` };
         }
@@ -185,7 +157,9 @@ async function sendSMS(to, body, from, db, clientId) {
               sendMessage(client.telegram_chat_id,
                 `&#128276; <b>SMS usage alert</b>: ${used}/${limit} SMS used this month (${Math.round(used/limit*100)}%).`
               ).catch(() => {});
-            } catch (_) {}
+            } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
           }
         }
       }
@@ -218,10 +192,17 @@ async function sendSMS(to, body, from, db, clientId) {
     try {
       const { recordMetric } = require('./metrics');
       recordMetric('total_sms_sent', 1, 'counter');
-    } catch (_) {}
+    } catch (err) {
+      logger.debug('[sms] Failed to record metric:', err.message);
+    }
 
     // Track usage for billing
-    try { const { trackUsage } = require('./usageTracker'); trackUsage(db, clientId, 'sms'); } catch (_) {}
+    try { 
+      const { trackUsage } = require('./usageTracker'); 
+      trackUsage(db, clientId, 'sms'); 
+    } catch (err) {
+      logger.debug('[sms] Failed to track usage:', err.message);
+    }
 
     return { success: true, messageId };
   } catch (err) {
@@ -231,7 +212,9 @@ async function sendSMS(to, body, from, db, clientId) {
     try {
       const { recordMetric } = require('./metrics');
       recordMetric('total_sms_failed', 1, 'counter');
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     // Don't retry — failed messages stay failed
     logger.error(`[sms] Failed for ${to}: ${err.message} — not retrying`);

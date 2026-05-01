@@ -381,7 +381,9 @@ What actions should ELYVN take?`;
     recordMetric('brain_decision_time_ms', Date.now() - brainStart, 'histogram');
 
     // Track AI decision usage for billing
-    try { const { trackUsage } = require('./usageTracker'); trackUsage(db, leadMemory?.clientId, 'ai_decision'); } catch (_) {}
+    try { const { trackUsage } = require('./usageTracker'); trackUsage(db, leadMemory?.clientId, 'ai_decision'); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     // Extract structured tool_use response (guaranteed JSON via tool_choice)
     let decision = null;
@@ -404,7 +406,9 @@ What actions should ELYVN take?`;
           event_type: eventType,
         }, client?.id || null);
       }
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     // Fallback: parse text response if tool_use not returned
     if (!decision) {

@@ -114,7 +114,9 @@ router.get('/conversations/:clientId/:conversationId/timeline',
             try {
               const decrypted = decrypt(msg.body_encrypted);
               if (decrypted && decrypted !== msg.body_encrypted) msg.body = decrypted;
-            } catch (_) { /* fall back */ }
+            } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
           }
         }
 
@@ -170,7 +172,9 @@ router.get('/conversations/:clientId/:conversationId/timeline',
             try {
               const decrypted = decrypt(msg.body_encrypted);
               if (decrypted && decrypted !== msg.body_encrypted) msg.body = decrypted;
-            } catch (_) { /* fall back */ }
+            } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
           }
         }
 

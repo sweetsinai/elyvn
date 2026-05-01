@@ -223,7 +223,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       const { logAudit } = require('../utils/auditLog');
       const db = req.app?.locals?.db;
       if (db) logAudit(db, { action: 'webhook_signature_invalid', ip: req.ip, details: { source: 'dodo', error: err.message } });
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     return res.status(400).json({ error: 'Invalid webhook signature' });
   }
 
@@ -288,7 +290,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           }
 
           logger.info(`[billing] Client ${clientId} activated/renewed — plan: ${planId}, event: ${eventType}`);
-          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: clientId, newValues: { plan: planId, subscription_status: 'active' } }); } catch (_) {}
+          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: clientId, newValues: { plan: planId, subscription_status: 'active' } }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
         } else {
           // Fallback: look up by customer ID
           if (customerId) {
@@ -321,7 +325,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             [gracePeriod, new Date().toISOString(), client.id], 'run'
           );
           logger.warn(`[billing] Subscription ${eventType} for client ${client.id}. Grace period until ${gracePeriod}`);
-          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'past_due', grace_period_until: gracePeriod } }); } catch (_) {}
+          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'past_due', grace_period_until: gracePeriod } }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
         }
         break;
       }
@@ -341,7 +347,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         if (client) {
           await db.query("UPDATE clients SET subscription_status = 'canceled', plan = 'canceled', updated_at = ? WHERE id = ?", [new Date().toISOString(), client.id], 'run');
           logger.info(`[billing] Subscription ${eventType} for client ${client.id}`);
-          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'canceled', plan: 'canceled' } }); } catch (_) {}
+          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: { subscription_status: 'canceled', plan: 'canceled' } }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
         }
         break;
       }
@@ -378,7 +386,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
           await db.query(sql, params, 'run');
           logger.info(`[billing] Subscription updated for client ${client.id} — status: ${status}`);
-          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: updates }); } catch (_) {}
+          try { logDataMutation(db, { action: 'client_updated', table: 'clients', recordId: client.id, newValues: updates }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
         }
         break;
       }

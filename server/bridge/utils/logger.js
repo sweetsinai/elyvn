@@ -1,3 +1,4 @@
+const { logger } = require('logger');
 /**
  * File-based Logger
  * Writes structured JSON logs to rotating files (production) or human-readable logs (development).
@@ -31,7 +32,9 @@ function _getRequestContextStorage() {
   if (!_requestContextStorage) {
     try {
       ({ asyncLocalStorage: _requestContextStorage } = require('../middleware/requestContext'));
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   }
   return _requestContextStorage;
 }
@@ -64,7 +67,9 @@ function getCorrelationId() {
 // Ensure log directory exists
 try {
   fs.mkdirSync(LOG_DIR, { recursive: true });
-} catch (_) {}
+} catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
 let currentDate = '';
 let writeStream = null;
@@ -73,7 +78,9 @@ function getStream() {
   const today = new Date().toISOString().split('T')[0];
   if (today !== currentDate || !writeStream) {
     if (writeStream) {
-      try { writeStream.end(); } catch (_) {}
+      try { writeStream.end(); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     }
     currentDate = today;
     const logFile = path.join(LOG_DIR, `elyvn-${today}.log`);
@@ -246,21 +253,27 @@ function setupLogger() {
     originalLog.apply(console, args);
     try {
       getStream().write(formatFileEntry('INFO', args));
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   };
 
   console.error = (...args) => {
     originalError.apply(console, args);
     try {
       getStream().write(formatFileEntry('ERROR', args));
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   };
 
   console.warn = (...args) => {
     originalWarn.apply(console, args);
     try {
       getStream().write(formatFileEntry('WARN', args));
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   };
 
   // Clean up old logs on startup, then daily
@@ -292,7 +305,9 @@ function cleanOldLogs() {
 // Graceful close
 function closeLogger() {
   if (writeStream) {
-    try { writeStream.end(); } catch (_) {}
+    try { writeStream.end(); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   }
 }
 
@@ -303,28 +318,36 @@ const logger = {
     originalLog.apply(console, formatConsoleArgs('INFO', args));
     try {
       getStream().write(formatFileEntry('INFO', args));
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   },
   warn: (...args) => {
     if (!shouldLog('warn')) return;
     originalWarn.apply(console, formatConsoleArgs('WARN', args));
     try {
       getStream().write(formatFileEntry('WARN', args));
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   },
   error: (...args) => {
     if (!shouldLog('error')) return;
     originalError.apply(console, formatConsoleArgs('ERROR', args));
     try {
       getStream().write(formatFileEntry('ERROR', args));
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   },
   debug: (...args) => {
     if (!shouldLog('debug')) return;
     originalLog.apply(console, formatConsoleArgs('DEBUG', args));
     try {
       getStream().write(formatFileEntry('DEBUG', args));
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   },
 };
 

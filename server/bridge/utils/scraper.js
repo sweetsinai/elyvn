@@ -1,6 +1,7 @@
 const { randomUUID } = require('crypto');
 const { SCRAPER_RETRY_DELAY_MS } = require('../config/timing');
 const { logger } = require('./logger');
+const { isSafeUrl } = require('./ssrfFilter');
 
 async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
   const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
@@ -66,12 +67,14 @@ async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
 
           phone = detail.international_phone_number || detail.formatted_phone_number || null;
           website = detail.website || null;
-        } catch (_) {}
+        } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
       }
 
       // Try to scrape email from website
       let email = null;
-      if (website) {
+      if (website && isSafeUrl(website)) {
         try {
           const siteResp = await fetch(website, {
             signal: AbortSignal.timeout(5000),
@@ -82,7 +85,9 @@ async function scrapeGoogleMaps(db, industry, city, state, limit = 50) {
             const emailMatch = html.match(/mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i);
             if (emailMatch) email = emailMatch[1];
           }
-        } catch (_) {}
+        } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
       }
 
       // Dedup by name+city

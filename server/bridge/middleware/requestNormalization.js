@@ -1,3 +1,4 @@
+const { logger } = require('../utils/logger');
 /**
  * Request Normalization Middleware
  * Cleans and normalizes incoming request body fields:
@@ -63,7 +64,9 @@ function requestNormalization(req, res, next) {
       try {
         const { setClientId } = require('../utils/supabaseAdapter');
         setClientId(req.tenantId);
-      } catch (_) { /* supabaseAdapter not available — SQLite mode */ }
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     }
   } catch (_) {
     // Normalization is best-effort — never block the request

@@ -220,7 +220,9 @@ async function processLeadFromCall(db, { callRecord, callId, outcome, summary, s
         appendEvent(db, evtLead.id, 'lead', Events.LeadStageChanged, { from: 'new', to: evtLead.stage, trigger: 'call_ended' }, clientId);
       }
     }
-  } catch (_) {}
+  } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
   // Booking reference
   if (bookingId) {
@@ -229,7 +231,9 @@ async function processLeadFromCall(db, { callRecord, callId, outcome, summary, s
       await db.query(`
         UPDATE leads SET calcom_booking_id = ?, stage = 'booked', updated_at = ? WHERE id = ?
       `, [bookingId, new Date().toISOString(), lead.id], 'run');
-      try { appendEvent(db, lead.id, 'lead', Events.LeadStageChanged, { from: 'contacted', to: 'booked', trigger: 'booking', bookingId }, clientId); } catch (_) {}
+      try { appendEvent(db, lead.id, 'lead', Events.LeadStageChanged, { from: 'contacted', to: 'booked', trigger: 'booking', bookingId }, clientId); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     }
   }
 

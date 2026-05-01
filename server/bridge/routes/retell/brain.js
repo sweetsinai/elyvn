@@ -13,11 +13,18 @@ const { addTraceHeaders } = require('../../utils/tracing');
 const { AppError } = require('../../utils/AppError');
 const { logger } = require('../../utils/logger');
 const config = require('../../utils/config');
+const HttpClient = require('../../utils/httpClient');
 
 const { API_TIMEOUT_MS } = require('../../config/timing');
 
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
 const RETELL_BASE = 'https://api.retellai.com/v2';
+
+const retellClient = new HttpClient({
+  baseUrl: RETELL_BASE,
+  serviceName: 'Retell',
+  timeoutMs: API_TIMEOUT_MS || 30000,
+});
 
 const SUMMARY_PROMPT_VERSION = 'retell-summary-v1';
 const SCORE_PROMPT_VERSION = 'retell-score-v1';
@@ -35,10 +42,9 @@ const anthropic = new Anthropic();
 
 // Circuit breaker for Retell REST API
 const retellBreaker = new CircuitBreaker(
-  async (url, opts) => {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(API_TIMEOUT_MS || 30000), ...opts });
-    if (!resp.ok) throw new AppError('UPSTREAM_ERROR', `Retell API ${resp.status}`, 502);
-    return resp;
+  async (path, opts) => {
+    const response = await retellClient.request(path, opts);
+    return response;
   },
   {
     failureThreshold: 3, failureWindow: 60000, cooldownPeriod: 30000, serviceName: 'Retell',
@@ -64,17 +70,16 @@ async function fetchCallTranscript(callId) {
     return {};
   }
   try {
-    const retellResp = await retellBreaker.call(`${RETELL_BASE}/get-call/${callId}`, {
+    const response = await retellBreaker.call(`/get-call/${callId}`, {
       headers: addTraceHeaders({ 'Authorization': `Bearer ${RETELL_API_KEY}` }),
-      signal: AbortSignal.timeout(API_TIMEOUT_MS || 30000),
     });
-    if (retellResp && retellResp.fallback) {
+    if (response && response.fallback) {
       logger.warn(`[retell] Retell circuit breaker fallback for ${callId}`);
       return {};
     }
-    return await retellResp.json();
-  } catch (fetchErr) {
-    logger.warn(`[retell] Retell API fetch error for ${callId}:`, fetchErr.message, '— using webhook payload');
+    return response.data || {};
+  } catch (err) {
+    logger.warn(`[retell] Retell API fetch error for ${callId}:`, err.message, '— using webhook payload');
     return {};
   }
 }

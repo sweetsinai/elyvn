@@ -21,7 +21,9 @@ async function executeActions(db, actions, leadMemory) {
       if (lead?.id) {
         try {
           await appendEvent(db, lead.id, 'lead', Events.BrainActionExecuted, { action: action.action, details: action }, client?.id);
-        } catch (_) {}
+        } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
       }
     } catch (error) {
       logger.error(`[Executor] Failed ${action.action}:`, error.message);
@@ -146,7 +148,9 @@ async function executeOne(db, action, lead, client) {
       try {
         const { recordMetric } = require('./metrics');
         recordMetric('total_brain_decisions', 1, 'counter');
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
       await telegram.sendMessage(client.telegram_chat_id, text);
       return { notified: true };

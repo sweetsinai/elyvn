@@ -169,7 +169,9 @@ router.put('/settings/:clientId', validateBody(SettingsUpdateSchema), async (req
 
     const acceptedValues = {};
     for (const k of Object.keys(body)) { if (ALLOWED.has(k)) acceptedValues[k] = body[k]; }
-    try { logDataMutation(db, { action: 'settings_updated', table: 'clients', recordId: clientId, newValues: acceptedValues }); } catch (_) {}
+    try { logDataMutation(db, { action: 'settings_updated', table: 'clients', recordId: clientId, newValues: acceptedValues }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     return success(res, { fields: Object.keys(body).filter(k => ALLOWED.has(k)) });
   } catch (err) {

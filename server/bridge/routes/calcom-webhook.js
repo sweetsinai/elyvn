@@ -168,7 +168,9 @@ async function handleBookingCreated(db, payload, req) {
       INSERT INTO appointments (id, client_id, phone, name, service, datetime, status, calcom_booking_id, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)
     `, [appointmentId, client.id, phone, name, title || 'Demo', startTime, calcomBookingId, now, now], 'run');
-    try { logDataMutation(db, { action: 'appointment_created', table: 'appointments', recordId: appointmentId, clientId: client.id, newValues: { phone, name, service: title, startTime, calcomBookingId, status: 'confirmed' } }); } catch (_) {}
+    try { logDataMutation(db, { action: 'appointment_created', table: 'appointments', recordId: appointmentId, clientId: client.id, newValues: { phone, name, service: title, startTime, calcomBookingId, status: 'confirmed' } }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   } catch (err) {
     if (!err.message.includes('UNIQUE')) {
       logger.error('[calcom-webhook] Insert appointment error:', err.message);
@@ -269,7 +271,9 @@ async function handleBookingCreated(db, payload, req) {
     appendEvent(db, evtAggId, 'lead', Events.AppointmentBooked, {
       phone, email, name, service: title, startTime, calcomBookingId,
     }, client.id);
-  } catch (_) {}
+  } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
   // Send confirmation SMS if we have a phone number
   if (phone) {
@@ -375,7 +379,9 @@ async function handleBookingCreated(db, payload, req) {
         name, phone, email, service: title || 'Demo',
         start_time: startTime, status: 'confirmed',
       }).catch(e => logger.warn('[sheets] logBooking failed:', e.message));
-    } catch (_) {}
+    } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
   }
 }
 
@@ -390,11 +396,15 @@ async function handleBookingCancelled(db, payload) {
 
     // Update appointment
     await db.query("UPDATE appointments SET status = 'cancelled', updated_at = ? WHERE calcom_booking_id = ?", [now, calcomBookingId], 'run');
-    try { logDataMutation(db, { action: 'appointment_cancelled', table: 'appointments', recordId: calcomBookingId, newValues: { status: 'cancelled' } }); } catch (_) {}
+    try { logDataMutation(db, { action: 'appointment_cancelled', table: 'appointments', recordId: calcomBookingId, newValues: { status: 'cancelled' } }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     // Update lead stage back to contacted
     await db.query("UPDATE leads SET stage = 'contacted', updated_at = ? WHERE calcom_booking_id = ?", [now, calcomBookingId], 'run');
-    try { logDataMutation(db, { action: 'lead_updated', table: 'leads', recordId: calcomBookingId, newValues: { stage: 'contacted' } }); } catch (_) {}
+    try { logDataMutation(db, { action: 'lead_updated', table: 'leads', recordId: calcomBookingId, newValues: { stage: 'contacted' } }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     // Cancel scheduled reminders and review requests for this appointment
     if (appt) {
@@ -402,7 +412,9 @@ async function handleBookingCancelled(db, payload) {
         const { cancelJobs } = require('../utils/jobQueue');
         await cancelJobs(db, `reminder_${appt.id}`);
         await cancelJobs(db, `review_${appt.id}`);
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
       // Telegram notification to client
       try {
@@ -417,7 +429,9 @@ async function handleBookingCancelled(db, payload) {
             `Lead moved back to <b>contacted</b> stage. Follow-up reminders cancelled.`
           ).catch(e => logger.warn('[calcom-webhook] Cancel Telegram failed:', e.message));
         }
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     }
 
     logger.info(`[calcom-webhook] Booking ${calcomBookingId} cancelled`);
@@ -465,7 +479,9 @@ async function handleBookingRescheduled(db, payload) {
            AND status = 'pending'`,
           [cancelNow, appt.id], 'run'
         );
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
       // Schedule new reminders for the updated time
       try {
@@ -498,7 +514,9 @@ async function handleBookingRescheduled(db, payload) {
               from: client.phone_number,
             }, reviewAt, `review_${appt.id}`);
           }
-        } catch (_) {}
+        } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
       }
     }
 
@@ -518,7 +536,9 @@ async function handleBookingRescheduled(db, payload) {
             `Reminders updated automatically.`
           ).catch(e => logger.warn('[calcom-webhook] Reschedule Telegram failed:', e.message));
         }
-      } catch (_) {}
+      } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     }
 
     logger.info(`[calcom-webhook] Booking ${calcomBookingId} rescheduled to ${startTime}`);

@@ -172,7 +172,9 @@ router.post('/onboarding/:clientId/complete-step', validateBody(OnboardingStepSc
       [newStep, completed, new Date().toISOString(), clientId], 'run'
     );
 
-    try { logDataMutation(db, { action: 'onboarding_step', table: 'clients', recordId: clientId, newValues: { step: newStep, completed } }); } catch (_) {}
+    try { logDataMutation(db, { action: 'onboarding_step', table: 'clients', recordId: clientId, newValues: { step: newStep, completed } }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
 
     success(res, { step: newStep, completed: completed === 1 });
   } catch (err) {
@@ -203,7 +205,9 @@ router.post('/plan/:clientId/upgrade', validateBody(PlanUpgradeSchema), async (r
 
         if (!productIds[planId]) {
           await db.query("UPDATE clients SET plan = ?, updated_at = ? WHERE id = ?", [planId, new Date().toISOString(), clientId], 'run');
-          try { logDataMutation(db, { action: 'plan_upgrade', table: 'clients', recordId: clientId, newValues: { plan: planId } }); } catch (_) {}
+          try { logDataMutation(db, { action: 'plan_upgrade', table: 'clients', recordId: clientId, newValues: { plan: planId } }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
           return success(res, { upgraded: true, plan: planId });
         }
 
@@ -236,7 +240,9 @@ router.post('/plan/:clientId/upgrade', validateBody(PlanUpgradeSchema), async (r
 
     // No Dodo — direct update (dev/test)
     await db.query("UPDATE clients SET plan = ?, updated_at = ? WHERE id = ?", [planId, new Date().toISOString(), clientId], 'run');
-    try { logDataMutation(db, { action: 'plan_upgrade', table: 'clients', recordId: clientId, newValues: { plan: planId } }); } catch (_) {}
+    try { logDataMutation(db, { action: 'plan_upgrade', table: 'clients', recordId: clientId, newValues: { plan: planId } }); } catch (err) {
+    logger.debug('Silent catch remediation:', err.message);
+  }
     success(res, { upgraded: true, plan: planId });
   } catch (err) {
     logger.error('[plan] Upgrade error:', err);
