@@ -293,12 +293,15 @@ async function handleCommand(db, message) {
       } else {
         let msg = '📞 <b>Recent calls</b>\n\n';
         for (const c of recent) {
-          const who = c.caller_name || c.caller_phone || 'Unknown';
+          const who = esc(c.caller_name || c.caller_phone || 'Unknown');
           msg += `${outcomeEmoji(c.outcome)} <b>${who}</b>`;
           if (c.duration) msg += ` (${fmtDuration(c.duration)})`;
-          if (c.score) msg += ` — ${c.score}/100`;
+          if (c.score) msg += ` — <code>${c.score}/100</code>`;
           msg += ` — ${timeAgo(c.created_at)}\n`;
-          if (c.summary) msg += `  ${c.summary.substring(0, 120)}\n`;
+          if (c.summary) {
+            const summaryText = c.summary.length > 120 ? c.summary.substring(0, 120) + '...' : c.summary;
+            msg += `  <i>${esc(summaryText)}</i>\n`;
+          }
           msg += '\n';
         }
         const buttons = recent
